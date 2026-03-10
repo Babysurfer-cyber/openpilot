@@ -1003,9 +1003,10 @@ class CarrotServ:
         self.gas_pressed_state = False
       self.source_last = source
 
-      if desired_speed < self.gas_override_speed:
-        source = "gas"
-        desired_speed = self.gas_override_speed
+      #gas 감속 제거
+      #if desired_speed < self.gas_override_speed:
+        #source = "gas"
+        #desired_speed = self.gas_override_speed
 
       self.debugText += f"route={route_speed:.1f}"#f"desired={desired_speed:.1f},{source},g={self.gas_override_speed:.0f}"
 
