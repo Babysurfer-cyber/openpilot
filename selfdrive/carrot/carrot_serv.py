@@ -877,25 +877,6 @@ class CarrotServ:
     road_speed_limit_changed = True if self.nRoadLimitSpeed != self.nRoadLimitSpeed_last else False
     self.nRoadLimitSpeed_last = self.nRoadLimitSpeed
     
-# === [신호등 파란불 알림 추가 시작] ===
-    if not hasattr(self, 'traffic_state_prev'):
-      self.traffic_state_prev = 0
-      self.last_green_beep_time = 0
-
-    if CS is not None:
-      # 이전 상태가 빨간불(1)이고 현재 상태가 파란불(2) 또는 좌회전(3)일 때
-      if self.traffic_state_prev == 1 and self.traffic_state in [2, 3]:
-        # 차량 속도가 2km/h 미만 (정차 중)일 때만 작동
-        if v_ego_kph < 2.0:
-          current_time = time.monotonic()
-          # 5초 이내에 여러 번 울리는 것(오인식 스팸) 방지
-          if current_time - self.last_green_beep_time > 5.0:
-            os.system("paplay /data/openpilot/selfdrive/assets/sounds/chime_ready.wav &")
-            self.last_green_beep_time = current_time
-            
-      self.traffic_state_prev = self.traffic_state
-    # === [신호등 파란불 알림 추가 끝] ===
-    
     #self.bearing = self.nPosAngle #self._update_gps(v_ego, sm)
     self.bearing = self._update_gps(v_ego, sm, gps_service)
 
