@@ -932,14 +932,20 @@ class CarrotServ:
       if self.xSpdType == 4 or (self.xSpdType in [100, 101] and self.xSpdDist <= 0):
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
-    elif CS is not None and CS.speedLimit > 0 and CS.speedLimitDistance > 0:
-      sdi_speed = min(sdi_speed,
-                      self.calculate_current_speed(CS.speedLimitDistance,
-                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
-                                                   self.autoNaviSpeedCtrlEnd,
-                                                   self.autoNaviSpeedDecelRate))
-      #self.active_carrot = 6
-      hda_active = True
+    elif CS is not None and CS.speedLimit > 0:
+      if CS.speedLimitDistance > 0:
+        # 1. 남은 거리가 있을 때는 부드럽게 스르륵 감속 (일반 단속 카메라 및 램프 진입 전)
+        sdi_speed = min(sdi_speed,
+                        self.calculate_current_speed(CS.speedLimitDistance,
+                                                     CS.speedLimit * self.autoNaviSpeedSafetyFactor,
+                                                     self.autoNaviSpeedCtrlEnd,
+                                                     self.autoNaviSpeedDecelRate))
+        hda_active = True
+      elif self.nSdiType in [30, 31, 55, 56]:
+        # 2. 남은 거리가 0이더라도, 내비게이션 고유번호가 '급커브/인터체인지/분기점'일 때는 즉시 감속 유지!
+        # 일반 30km/h 카메라(번호:20) 등은 이 조건을 통과하지 못하므로 오작동하지 않음.
+        sdi_speed = min(sdi_speed, CS.speedLimit * self.autoNaviSpeedSafetyFactor)
+        hda_active = True
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
