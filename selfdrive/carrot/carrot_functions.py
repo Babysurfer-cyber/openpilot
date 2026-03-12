@@ -47,6 +47,11 @@ class CarrotPlanner:
     self.params_count = 0
     self.frame = 0
 
+    # [추가] 앞차 인식 후 감속하는 순간을 포착하기 위한 변수
+    self.params.put_bool_nonblocking("CarrotLeadBraking", False)
+    self.lead_braking_prev = False
+    self.lead_braking_count = 0
+
     #self.log = ""
 
     #self.aChangeCost = 200
@@ -454,8 +459,20 @@ class CarrotPlanner:
     self.fakeCruiseDistance = 0.0
     lead_detected = radarstate.leadOne.status # & radarstate.leadOne.radar
 
+    # [추가] 앞차가 있고, 내 차가 감속(a_ego < -0.2)할 때 안내 스위치 ON
+    if lead_detected and a_ego < -0.2:
+      if not self.lead_braking_prev:
+        self.params.put_bool_nonblocking("CarrotLeadBraking", True)
+      self.lead_braking_prev = True
+      self.lead_braking_count = 0
+    else:
+      self.lead_braking_count += 1
+      if self.lead_braking_count > 20:
+        self.lead_braking_prev = False
+
     self.xStop = self.update_stop_dist(x[31])
     stop_model_x_raw = self.xStop
+
     if self._stop_x_rl is None:
       self._stop_x_rl = stop_model_x_raw
     else:
