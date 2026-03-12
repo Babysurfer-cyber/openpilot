@@ -48,9 +48,9 @@ class CarrotPlanner:
     self.params_count = 0
     self.frame = 0
 
-    # [추가] 앞차 인식 후 감속하는 순간을 포착하기 위한 변수
-    self.lead_braking_prev = False
-    self.lead_braking_count = 0
+    # [추가] 새로운 앞차 1회성 알림을 위한 상태 변수
+    self.lead_alerted = False
+    self.lead_lost_count = 0
 
     #self.log = ""
 
