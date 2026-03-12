@@ -2,6 +2,7 @@ import math
 import numpy as np
 import time
 import wave
+import os
 
 
 from cereal import car, messaging
@@ -204,16 +205,19 @@ class Soundd:
     return new_alert
 
   def get_audible_alert(self, sm):
+  def get_audible_alert(self, sm):
     if sm.updated['selfdriveState']:
       new_alert = sm['selfdriveState'].alertSound.raw
       new_alert = self.update_carrot_alert(sm, new_alert)
 
-      if self.params.get_bool("CarrotLeadBraking"):
-        self.params.put_bool_nonblocking("CarrotLeadBraking", False)
+      # ✅ [새로운 안전한 코드] 에러가 안 나는 메모리 스위치 방식으로 교체합니다.
+      if os.path.exists("/dev/shm/carrot_lead_braking"):
+        os.remove("/dev/shm/carrot_lead_braking")
         new_alert = AudibleAlert.longEngaged
 
       self.update_alert(new_alert)
     elif check_selfdrive_timeout_alert(sm):
+
 
       self.update_alert(AudibleAlert.warningImmediate)
       self.selfdrive_timeout_alert = True
