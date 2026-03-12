@@ -205,7 +205,6 @@ class Soundd:
     return new_alert
 
   def get_audible_alert(self, sm):
-  def get_audible_alert(self, sm):
     if sm.updated['selfdriveState']:
       new_alert = sm['selfdriveState'].alertSound.raw
       new_alert = self.update_carrot_alert(sm, new_alert)
