@@ -1,4 +1,5 @@
 from enum import Enum
+import os 
 
 from cereal import log
 from openpilot.common.params import Params
@@ -48,7 +49,6 @@ class CarrotPlanner:
     self.frame = 0
 
     # [추가] 앞차 인식 후 감속하는 순간을 포착하기 위한 변수
-    self.params.put_bool_nonblocking("CarrotLeadBraking", False)
     self.lead_braking_prev = False
     self.lead_braking_count = 0
 
@@ -462,7 +462,7 @@ class CarrotPlanner:
     # [추가] 앞차가 있고, 내 차가 감속(a_ego < -0.2)할 때 안내 스위치 ON
     if lead_detected and a_ego < -0.2:
       if not self.lead_braking_prev:
-        self.params.put_bool_nonblocking("CarrotLeadBraking", True)
+        open("/dev/shm/carrot_lead_braking", "w").close()
       self.lead_braking_prev = True
       self.lead_braking_count = 0
     else:
