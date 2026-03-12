@@ -207,8 +207,14 @@ class Soundd:
     if sm.updated['selfdriveState']:
       new_alert = sm['selfdriveState'].alertSound.raw
       new_alert = self.update_carrot_alert(sm, new_alert)
+
+      if self.params.get_bool("CarrotLeadBraking"):
+        self.params.put_bool_nonblocking("CarrotLeadBraking", False)
+        new_alert = AudibleAlert.longEngaged
+
       self.update_alert(new_alert)
     elif check_selfdrive_timeout_alert(sm):
+
       self.update_alert(AudibleAlert.warningImmediate)
       self.selfdrive_timeout_alert = True
     elif self.selfdrive_timeout_alert:
