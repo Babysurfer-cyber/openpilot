@@ -1346,75 +1346,24 @@ class BlindSpotDrawer : ModelDrawer {
 protected:
     QPolygonF lane_barrier_vertices[2];
 
-    // 기준 차선(line)으로부터 y_offset 만큼 떨어진 위치까지 꽉 채우는 면적 생성
-    void update_adjacent_lane_data(const UIState* s, const cereal::XYZTData::Reader& line, QPolygonF* pvd, int max_idx, float y_offset) {
-        const auto line_x = line.getX(), line_y = line.getY(), line_z = line.getZ();
-        
-        QPolygonF inner_points, outer_points;
-        inner_points.reserve(max_idx + 1);
-        outer_points.reserve(max_idx + 1);
-
-        for (int i = 0; i <= max_idx; i++) {
-            if (line_x[i] < 0) continue;
-            
-            QPointF p_inner, p_outer;
-            // inner: 현재 내 차선 (안쪽 경계)
-            bool l = _model->mapToScreen(line_x[i], line_y[i], line_z[i] + 1.22, &p_inner);
-            // outer: 현재 차선에서 옆으로 3.2m(차로 폭) 이동한 위치 (바깥쪽 경계)
-            bool r = _model->mapToScreen(line_x[i], line_y[i] + y_offset, line_z[i] + 1.22, &p_outer);
-            
-            if (l && r) {
-                inner_points.push_back(p_inner);
-                // 다각형이 꼬이지 않도록 바깥쪽 점은 역순으로 저장
-                outer_points.push_front(p_outer); 
-            }
-        }
-        *pvd = inner_points + outer_points;
-    }
-
-protected:
-    void ui_draw_bsd(const UIState* s, const QPolygonF& vd, NVGcolor color) {
-        if (vd.size() == 0) return;
-
-        nvgBeginPath(s->vg);
-        
-        // 화면 제일 밑바닥부터 칠하기 위해 시작점 연장
-        nvgMoveTo(s->vg, vd.at(0).x(), s->fb_h);
-        for (int i = 0; i < vd.size(); i++) {
-            nvgLineTo(s->vg, vd.at(i).x(), vd.at(i).y());
-        }
-        nvgLineTo(s->vg, vd.at(vd.size() - 1).x(), s->fb_h);
-        nvgClosePath(s->vg);
-
-        // 확실한 빨간색 및 투명도 지정
-        NVGcolor solid_color = color;
-        solid_color.a = 200; 
-        NVGcolor transparent = color;
-        transparent.a = 0;   // 먼 곳은 완전히 투명하게 자연스럽게 페이드아웃
-
-        // 내 차 바로 앞쪽은 진하게, 멀어질수록 투명해지는 그라데이션
-        NVGpaint paint = nvgLinearGradient(s->vg, s->fb_w / 2, s->fb_h, s->fb_w / 2, s->fb_h * 0.45f, solid_color, transparent);
-
-        nvgFillPaint(s->vg, paint);
-        nvgFill(s->vg);
-    }
-
     bool make_data(const UIState* s) {
         SubMaster& sm = *(s->sm);
         if (!sm.alive("modelV2")) return false;
         const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
         
         const auto lane_lines = model.getLaneLines();
-        
         float max_distance = s->max_distance;
         int max_idx_l = get_path_length_idx(lane_lines[1], max_distance);
         int max_idx_r = get_path_length_idx(lane_lines[2], max_distance);
 
-        // 좌측 차로: 좌측 차선(lane_lines[1])에서 왼쪽으로 3.2m 확장
-        update_adjacent_lane_data(s, lane_lines[1], &lane_barrier_vertices[0], max_idx_l, 3.2f);
+        // 오픈파일럿 좌표계: 양수(+)는 왼쪽, 음수(-)는 오른쪽
+        // y_off(0.3f)와 y_shift(0.3f) 조합: 안쪽 경계는 정확히 내 차선에 맞고, 바깥쪽으로만 0.6m 두께로 그려집니다.
         
-        // 우측 차로: 우측 차선(lane_lines[2])에서 오른쪽으로 3.2m 확장 (우측은 음수 방향이므로 -3.2f)
-        update_adjacent_lane_data(s, lane_lines[2], &lane_barrier_vertices[1], max_idx_r, -3.2f);
+        // 1. 좌측 차선(lane_lines[1]): 차선부터 왼쪽(바깥쪽)으로 표시
+        update_line_data(s, lane_lines[1], 0.3f, 1.22f, 1.22f, &lane_barrier_vertices[0], max_idx_l, false, 0.3f);
+        
+        // 2. 우측 차선(lane_lines[2]): 차선부터 오른쪽(바깥쪽)으로 표시
+        update_line_data(s, lane_lines[2], 0.3f, 1.22f, 1.22f, &lane_barrier_vertices[1], max_idx_r, false, -0.3f);
         
         return true;
     }
@@ -1423,7 +1372,7 @@ public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
 
-        // 확실한 빨간색 명시
+        // carrot.cc 파일 상단에 정의된 COLOR_RED 매크로를 그대로 사용합니다.
         NVGcolor color_bsd = COLOR_RED;
 
         SubMaster& sm = *(s->sm);
@@ -1442,15 +1391,18 @@ public:
         bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
             (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
 
+        // 좌측 사각지대 경고
         if (left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange)) {
-            ui_draw_bsd(s, lane_barrier_vertices[0], color_bsd);
+            ui_draw_line(s, lane_barrier_vertices[0], &color_bsd, nullptr);
         }
 
+        // 우측 사각지대 경고
         if (right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange)) {
-            ui_draw_bsd(s, lane_barrier_vertices[1], color_bsd);
+            ui_draw_line(s, lane_barrier_vertices[1], &color_bsd, nullptr);
         }
     }
 };
+
 
 
 
