@@ -1366,9 +1366,9 @@ protected:
 
         // 2. 그라데이션 및 투명도 설정
         NVGcolor solid_color = *color;
-        solid_color.a = 100; // [수정] 기존 180에서 100으로 낮춰 투명도를 더 올림 (은은하게)
+        solid_color.a = 200; 
         NVGcolor transparent = *color;
-        transparent.a = 0;   // 먼 곳은 완전 투명하게 페이드아웃
+        transparent.a = 80;   // 먼 곳은 투명하게 페이드아웃
 
         // 3. 내 차 바로 앞(화면 하단)에서 멀어질수록(화면 중단) 투명해지는 그라데이션 물감을 만듭니다.
         NVGpaint paint = nvgLinearGradient(s->vg, s->fb_w / 2, s->fb_h, s->fb_w / 2, s->fb_h * 0.45f, solid_color, transparent);
