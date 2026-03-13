@@ -1348,74 +1348,6 @@ protected:
 
 protected:
     void ui_draw_bsd(const UIState* s, const QPolygonF& vd, NVGcolor* color, bool right) {
-        int index = vd.length();
-
-        float x[4], y[4];
-        for (int i = 0; i < index / 2 - 2; i += 2) {
-
-            if (right) {
-                x[0] = vd[i + 0].x();
-                y[0] = vd[i + 0].y();
-                x[1] = vd[i + 1].x();
-                y[1] = vd[i + 1].y();
-                x[2] = vd[index - i - 3].x();
-                y[2] = vd[index - i - 3].y();
-                x[3] = vd[index - i - 2].x();
-                y[3] = vd[index - i - 2].y();
-            }
-            else {
-                x[0] = vd[i + 0].x();
-                y[0] = vd[i + 0].y();
-                x[1] = vd[i + 1].x();
-                y[1] = vd[i + 1].y();
-                x[2] = vd[index - i - 3].x();
-                y[2] = vd[index - i - 3].y();
-                x[3] = vd[index - i - 2].x();
-                y[3] = vd[index - i - 2].y();
-            }
-            ui_draw_line2(s, x, y, 4, color, nullptr, 3.0f);
-        }
-    }
-    bool make_data(const UIState* s) {
-        SubMaster& sm = *(s->sm);
-        if (!sm.alive("modelV2")) return false;
-        const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
-        auto model_position = model.getPosition();
-        int max_idx_barrier_l = get_path_length_idx(model_position, 40.0);
-        int max_idx_barrier_r = get_path_length_idx(model_position, 40.0);
-        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[0], max_idx_barrier_l, false, -1.7); // 차선폭을 알면 좋겠지만...
-        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[1], max_idx_barrier_r, false, 1.7);
-        return true;
-    }
-public:
-    void draw(const UIState* s) {
-        if (!make_data(s)) return;
-
-        NVGcolor color = nvgRGBA(255, 215, 0, 150);
-        NVGcolor color2 = nvgRGBA(0, 204, 0, 150);
-
-        SubMaster& sm = *(s->sm);
-        auto car_state = sm["carState"].getCarState();
-        bool left_blindspot = car_state.getLeftBlindspot();
-        bool right_blindspot = car_state.getRightBlindspot();
-
-        auto lead_left = sm["radarState"].getRadarState().getLeadLeft();
-        auto lead_right = sm["radarState"].getRadarState().getLeadRight();
-        auto meta = sm["modelV2"].getModelV2().getMeta();
-        auto laneChangeState = meta.getLaneChangeState();
-        auto laneChangeDirection = meta.getLaneChangeDirection();
-        bool rightLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
-            (laneChangeDirection == cereal::LaneChangeDirection::RIGHT);
-        bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
-            (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
-
-#if 0
-class BlindSpotDrawer : ModelDrawer{
-protected:
-    QPolygonF lane_barrier_vertices[2];
-
-protected:
-    void ui_draw_bsd(const UIState* s, const QPolygonF& vd, NVGcolor* color, bool right) {
         if (vd.size() == 0) return;
 
         // 1. 선을 그리는 대신 도로 바닥에 넓은 면(Path)을 생성합니다.
@@ -1492,6 +1424,7 @@ public:
         }
     }
 };
+
 
 class PathDrawer : ModelDrawer {
 private:
