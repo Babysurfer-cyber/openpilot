@@ -1347,47 +1347,22 @@ protected:
     QPolygonF lane_barrier_vertices[2];
 
 protected:
-    // 그라데이션이 적용된 두꺼운 사각 영역을 그리는 새로운 함수
-    void ui_draw_bsd_gradient(const UIState* s, const QPolygonF& vd, bool right) {
+    // 기존의 복잡한 도형(Polygon) 그리기 대신, 단순히 굵은 선(Stroke)을 긋도록 변경
+    void ui_draw_bsd(const UIState* s, const QPolygonF& vd) {
         if (vd.isEmpty()) return;
 
         nvgBeginPath(s->vg);
-        
-        // update_line_data가 만들어낸 회귀 경로(왕복선)를 그대로 다각형으로 사용합니다.
         nvgMoveTo(s->vg, vd.at(0).x(), vd.at(0).y());
-        for (int i = 1; i < vd.size(); i++) {
+        
+        // update_line_data가 다녀오는 왕복 경로를 만드므로, 절반만 그려서 깔끔한 직선으로 만듭니다.
+        for (int i = 1; i < vd.size() / 2; i++) {
             nvgLineTo(s->vg, vd.at(i).x(), vd.at(i).y());
         }
-        nvgClosePath(s->vg);
 
-        // 그라데이션 색상 정의: 기존 COLOR_RED를 기반으로 투명도 조절
-        NVGcolor strong_red = COLOR_RED; 
-        strong_red.a = 0.8f;              // 안쪽(차선 쪽)은 진하게 (약 200/255)
-        NVGcolor transparent_red = COLOR_RED;
-        transparent_red.a = 0.0f;           // 바깥쪽은 완전히 투명하게
-
-        // 화면 좌표를 기준으로 그라데이션 시작점과 끝점 계산
-        // vd는 안쪽 선(v_off=0)부터 시작해서 바깥쪽 선을 돌아서 다시 안쪽으로 오는 구조입니다.
-        // 따라서 vd.at(0) 부근이 차선에 붙은 안쪽, vd.at(size/2) 부근이 바깥쪽 가장자리입니다.
-        
-        QPointF start_p, end_p;
-        
-        if (right) {
-            // 오른쪽: 왼쪽(차선 쪽)이 진하고 오른쪽(바깥쪽)이 투명
-            start_p = vd.at(0);                       // 안쪽 경계의 한 점
-            end_p = vd.at(vd.size() / 2 - 1);         // 바깥쪽 경계의 대응되는 점
-        } else {
-            // 왼쪽: 오른쪽(차선 쪽)이 진하고 왼쪽(바깥쪽)이 투명
-            // update_line_data 좌표 계산 특성상 왼쪽은 시작점이 바깥쪽일 수 있으므로 정확히 매핑
-            start_p = vd.at(vd.size() - 1);           // 안쪽 경계의 마지막 점
-            end_p = vd.at(vd.size() / 2);             // 바깥쪽 경계의 대략적인 점
-        }
-
-        // NanoVG 선형 그라데이션 페인트 생성
-        NVGpaint paint = nvgLinearGradient(s->vg, start_p.x(), start_p.y(), end_p.x(), end_p.y(), strong_red, transparent_red);
-        
-        nvgFillPaint(s->vg, paint);
-        nvgFill(s->vg);
+        // 색상 및 두께 설정
+        nvgStrokeColor(s->vg, COLOR_RED); // 기존에 정의된 빨간색 매크로 사용
+        nvgStrokeWidth(s->vg, 60.0f);     // 선의 두께 (원하시는 대로 숫자를 조절하세요)
+        nvgStroke(s->vg);
     }
 
     bool make_data(const UIState* s) {
@@ -1398,18 +1373,9 @@ protected:
         int max_idx_barrier_l = get_path_length_idx(model_position, 40.0);
         int max_idx_barrier_r = get_path_length_idx(model_position, 40.0);
         
-        // 기존 1.7 오프셋 위치 유지.
-        // 두께(y_off)를 기존 굵은선(약 1.0f) 대비 5배 늘린 5.0f로 설정.
-        // update_line_data는 y_shift를 중심으로 ±y_off 범위의 다각형(면)을 만듭니다.
-        
-        // 1. 좌측 차선(바깥쪽 5배 두껍게): y_off=2.5(폭5), shift=-1.7-2.5(안쪽끝이 -1.7에 맞춤)
-        // -> 실제 차선(0) 기준으로 왼쪽(-4.2) 방향으로 그려짐.
-        update_line_data(s, model_position, 2.5f, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[0], max_idx_barrier_l, false, -1.7f - 2.5f);
-        
-        // 2. 우측 차선(바깥쪽 5배 두껍게): y_off=2.5(폭5), shift=1.7+2.5(안쪽끝이 1.7에 맞춤)
-        // -> 실제 차선(0) 기준으로 오른쪽(4.2) 방향으로 그려짐.
-        update_line_data(s, model_position, 2.5f, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[1], max_idx_barrier_r, false, 1.7f + 2.5f);
-        
+        // 사용하시던 기존 위치(-1.7, 1.7) 그대로 유지
+        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[0], max_idx_barrier_l, false, -1.7); 
+        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[1], max_idx_barrier_r, false, 1.7);
         return true;
     }
 
@@ -1432,17 +1398,19 @@ public:
         bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
             (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
 
-        // 조건은 기존 유지, 그리는 함수만 새로운 그라데이션 함수로 교체
-        // 경고 상황(블라인드스팟 또는 레이다 차량 접근) 시 모두 빨간색 그라데이션으로 표시
-        
-        // 좌측 경고
-        if (left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange)) {
-            ui_draw_bsd_gradient(s, lane_barrier_vertices[0], false);
+        // 조건은 기존과 똑같이 유지하되, 그리는 함수에 넘기는 인자를 단순화 (무조건 빨간선)
+        if (left_blindspot) {
+            ui_draw_bsd(s, lane_barrier_vertices[0]);
+        }
+        else if (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange) {
+            ui_draw_bsd(s, lane_barrier_vertices[0]);
         }
 
-        // 우측 경고
-        if (right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange)) {
-            ui_draw_bsd_gradient(s, lane_barrier_vertices[1], true);
+        if (right_blindspot) {
+            ui_draw_bsd(s, lane_barrier_vertices[1]);
+        }
+        else if (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange) {
+            ui_draw_bsd(s, lane_barrier_vertices[1]);
         }
     }
 };
