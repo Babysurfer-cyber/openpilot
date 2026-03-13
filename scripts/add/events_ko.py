@@ -566,7 +566,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.laneChangeBlocked: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "사각지대에 차량이 감지되니 대기하세요",
       "",
       AlertStatus.userPrompt, AlertSize.small,
@@ -574,7 +574,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.laneChange: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "차선을 변경합니다",
       "",
       AlertStatus.normal, AlertSize.small,
@@ -1009,7 +1009,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
      ET.WARNING: EngagementAlert(AudibleAlert.audioTurn),
   },
   EventName.trafficSignGreen: {
-    ET.WARNING: EngagementAlert(AudibleAlert.trafficSignGreen),
+    ET.PERMANENT: EngagementAlert(AudibleAlert.trafficSignGreen),
     #ET.WARNING: Alert(
     #  "출발합니다.",
     #  "",
