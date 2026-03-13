@@ -32,19 +32,19 @@
 #define COLOR_BLACK_ALPHA(x) nvgRGBA(0, 0, 0, x)
 #define COLOR_WHITE nvgRGBA(255, 255, 255, 255)
 #define COLOR_WHITE_ALPHA(x) nvgRGBA(255, 255, 255, x)
-#define COLOR_RED_ALPHA(x) nvgRGBA(255, 0, 0, x)
+#define COLOR_RED_ALPHA(x) nvgRGBA(255, 59, 59, x)
 #define COLOR_YELLOW nvgRGBA(218, 202, 37, 255)
 #define COLOR_YELLOW_ALPHA(x) nvgRGBA(218, 202, 37, x)
 //#define COLOR_RED nvgRGBA(201, 34, 49, 255)
-#define COLOR_RED nvgRGBA(255, 0, 0, 255)
+#define COLOR_RED nvgRGBA(255, 59, 59, 255)
 #define COLOR_OCHRE nvgRGBA(218, 111, 37, 255)
 #define COLOR_OCHRE_ALPHA(x) nvgRGBA(218, 111, 37, x)
-#define COLOR_GREEN nvgRGBA(0, 203, 0, 255)
-#define COLOR_GREEN_ALPHA(x) nvgRGBA(0, 153, 0, x)
-#define COLOR_BLUE nvgRGBA(0, 0, 255, 255)
-#define COLOR_BLUE_ALPHA(x) nvgRGBA(0, 0, 255, x)
-#define COLOR_ORANGE nvgRGBA(255, 175, 3, 255)
-#define COLOR_ORANGE_ALPHA(x) nvgRGBA(255, 175, 3, x)
+#define COLOR_GREEN nvgRGBA(0, 255, 148, 255)
+#define COLOR_GREEN_ALPHA(x) nvgRGBA(0, 255, 148, x)
+#define COLOR_BLUE nvgRGBA(0, 122, 255, 255)
+#define COLOR_BLUE_ALPHA(x) nvgRGBA(0, 122, 255, x)
+#define COLOR_ORANGE nvgRGBA(255, 149, 0, 255)
+#define COLOR_ORANGE_ALPHA(x) nvgRGBA(255, 149, 0, x)
 #define COLOR_GREY nvgRGBA(191, 191, 191, 1)
 #define COLOR_GREY_ALPHA(x) nvgRGBA(191, 191, 191, x)
 
@@ -1401,8 +1401,8 @@ public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
 
-        // 파스텔톤 빨간색 (R:255, G:100, B:100) 지정
-        NVGcolor color_bsd = nvgRGBA(255, 100, 100, 255);
+        // 파스텔톤 빨간색 (R:255, G:59, B:59) 지정
+        NVGcolor color_bsd = nvgRGBA(255, 59, 59, 255);
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
