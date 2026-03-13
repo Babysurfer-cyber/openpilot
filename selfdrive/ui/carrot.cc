@@ -1342,29 +1342,40 @@ public:
     }
 };
 
-class BlindSpotDrawer : ModelDrawer {
+class BlindSpotDrawer : ModelDrawer{
 protected:
     QPolygonF lane_barrier_vertices[2];
 
 protected:
-    // 기존의 복잡한 도형(Polygon) 그리기 대신, 단순히 굵은 선(Stroke)을 긋도록 변경
-    void ui_draw_bsd(const UIState* s, const QPolygonF& vd) {
-        if (vd.isEmpty()) return;
+    void ui_draw_bsd(const UIState* s, const QPolygonF& vd, NVGcolor* color, bool right) {
+        int index = vd.length();
 
-        nvgBeginPath(s->vg);
-        nvgMoveTo(s->vg, vd.at(0).x(), vd.at(0).y());
-        
-        // update_line_data가 다녀오는 왕복 경로를 만드므로, 절반만 그려서 깔끔한 직선으로 만듭니다.
-        for (int i = 1; i < vd.size() / 2; i++) {
-            nvgLineTo(s->vg, vd.at(i).x(), vd.at(i).y());
+        float x[4], y[4];
+        for (int i = 0; i < index / 2 - 2; i += 2) {
+
+            if (right) {
+                x[0] = vd[i + 0].x();
+                y[0] = vd[i + 0].y();
+                x[1] = vd[i + 1].x();
+                y[1] = vd[i + 1].y();
+                x[2] = vd[index - i - 3].x();
+                y[2] = vd[index - i - 3].y();
+                x[3] = vd[index - i - 2].x();
+                y[3] = vd[index - i - 2].y();
+            }
+            else {
+                x[0] = vd[i + 0].x();
+                y[0] = vd[i + 0].y();
+                x[1] = vd[i + 1].x();
+                y[1] = vd[i + 1].y();
+                x[2] = vd[index - i - 3].x();
+                y[2] = vd[index - i - 3].y();
+                x[3] = vd[index - i - 2].x();
+                y[3] = vd[index - i - 2].y();
+            }
+            ui_draw_line2(s, x, y, 4, color, nullptr, 3.0f);
         }
-
-        // 색상 및 두께 설정
-        nvgStrokeColor(s->vg, COLOR_RED); // 기존에 정의된 빨간색 매크로 사용
-        nvgStrokeWidth(s->vg, 60.0f);     // 선의 두께 (원하시는 대로 숫자를 조절하세요)
-        nvgStroke(s->vg);
     }
-
     bool make_data(const UIState* s) {
         SubMaster& sm = *(s->sm);
         if (!sm.alive("modelV2")) return false;
@@ -1372,16 +1383,16 @@ protected:
         auto model_position = model.getPosition();
         int max_idx_barrier_l = get_path_length_idx(model_position, 40.0);
         int max_idx_barrier_r = get_path_length_idx(model_position, 40.0);
-        
-        // 사용하시던 기존 위치(-1.7, 1.7) 그대로 유지
-        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[0], max_idx_barrier_l, false, -1.7); 
+        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[0], max_idx_barrier_l, false, -1.7); // 차선폭을 알면 좋겠지만...
         update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[1], max_idx_barrier_r, false, 1.7);
         return true;
     }
-
 public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
+
+        NVGcolor color = nvgRGBA(255, 59, 59, 150);
+        NVGcolor color2 = nvgRGBA(255, 59, 59, 150);
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
@@ -1398,23 +1409,24 @@ public:
         bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
             (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
 
-        // 조건은 기존과 똑같이 유지하되, 그리는 함수에 넘기는 인자를 단순화 (무조건 빨간선)
+#if 0
+        left_blindspot = right_blindspot = true;
+#endif
         if (left_blindspot) {
-            ui_draw_bsd(s, lane_barrier_vertices[0]);
+            ui_draw_bsd(s, lane_barrier_vertices[0], &color, false);
         }
         else if (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange) {
-            ui_draw_bsd(s, lane_barrier_vertices[0]);
+            ui_draw_bsd(s, lane_barrier_vertices[0], &color2, false);
         }
 
         if (right_blindspot) {
-            ui_draw_bsd(s, lane_barrier_vertices[1]);
+            ui_draw_bsd(s, lane_barrier_vertices[1], &color, true);
         }
         else if (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange) {
-            ui_draw_bsd(s, lane_barrier_vertices[1]);
+            ui_draw_bsd(s, lane_barrier_vertices[1], &color2, true);
         }
     }
 };
-
 
 
 class PathDrawer : ModelDrawer {
