@@ -1017,7 +1017,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     #  Priority.LOW, VisualAlert.none, AudibleAlert.trafficSignGreen, 3.),
   },
   EventName.trafficSignChanged: {
-    ET.WARNING: EngagementAlert(AudibleAlert.trafficSignChanged),
+    ET.PERMANENT: EngagementAlert(AudibleAlert.trafficSignChanged),
   },
   EventName.turningLeft: {
     ET.WARNING: Alert(
