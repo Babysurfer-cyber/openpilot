@@ -1722,15 +1722,15 @@ public:
 
         if (show_path_color >= 20) {
           if (longActive) {
-            show_path_color = 13;// green
+            show_path_color = 3;// green
             if (lead_one.getStatus()) {
-              if (abs(accel) < 0.5f) show_path_color = 12; // yellow
-              else if (accel >= 0.5f) show_path_color = 11; // amber
-              else show_path_color = 10; // red
+              if (abs(accel) < 0.5f) show_path_color = 2; // yellow
+              else if (accel >= 0.5f) show_path_color = 1; // amber
+              else show_path_color = 0; // red
             }
           }
           else {
-            show_path_color = 19; // black
+            show_path_color = 9; // black
           }
         }
 
