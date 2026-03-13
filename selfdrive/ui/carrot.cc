@@ -1352,15 +1352,21 @@ protected:
 
         // 1. 선을 그리는 대신 도로 바닥에 넓은 면(Path)을 생성합니다.
         nvgBeginPath(s->vg);
-        nvgMoveTo(s->vg, vd.at(0).x(), vd.at(0).y());
-        for (int i = 1; i < vd.size(); i++) {
+        
+        // [수정] 화면 하단(내 차 바로 앞)이 비어 보이지 않게, 맨 아랫부분을 화면 밑바닥(s->fb_h)으로 연장
+        nvgMoveTo(s->vg, vd.at(0).x(), s->fb_h);
+        
+        for (int i = 0; i < vd.size(); i++) {
             nvgLineTo(s->vg, vd.at(i).x(), vd.at(i).y());
         }
+        
+        // 반대편 끝점도 화면 밑바닥(s->fb_h)으로 연장하여 폴리곤(면)을 닫습니다.
+        nvgLineTo(s->vg, vd.at(vd.size() - 1).x(), s->fb_h);
         nvgClosePath(s->vg);
 
-        // 2. 그라데이션 효과를 위해 색상을 준비합니다. (투명도 조절)
+        // 2. 그라데이션 및 투명도 설정
         NVGcolor solid_color = *color;
-        solid_color.a = 180; // 차와 가까운 부분 투명도 (0~255)
+        solid_color.a = 100; // [수정] 기존 180에서 100으로 낮춰 투명도를 더 올림 (은은하게)
         NVGcolor transparent = *color;
         transparent.a = 0;   // 먼 곳은 완전 투명하게 페이드아웃
 
@@ -1378,14 +1384,15 @@ protected:
         const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
         auto model_position = model.getPosition();
         
-        // 경고가 표시될 거리 (약 40m 앞까지)
-        int max_idx_barrier_l = get_path_length_idx(model_position, 40.0);
-        int max_idx_barrier_r = get_path_length_idx(model_position, 40.0);
+        // [수정] 경고가 표시될 거리를 고정 40m가 아닌 메인 주행 경로(max_distance)와 동일하게 길게 설정
+        float max_distance = s->max_distance;
+        int max_idx_barrier_l = get_path_length_idx(model_position, max_distance);
+        int max_idx_barrier_r = get_path_length_idx(model_position, max_distance);
 
-        // 옆 차선 바닥에 메인 경로와 똑같은 형태의 Path 데이터를 생성합니다.
-        // 폭(1.4), 바닥높이(1.22), 좌우측 이동(-3.0, 3.0)
-        update_line_data(s, model_position, 1.4, 1.22, 1.22, &lane_barrier_vertices[0], max_idx_barrier_l, false, -3.0);
-        update_line_data(s, model_position, 1.4, 1.22, 1.22, &lane_barrier_vertices[1], max_idx_barrier_r, false, 3.0);
+        // [수정] 두께를 1.4에서 0.9(약 2/3 수준)로 줄임
+        // 폭(0.9), 바닥높이(1.22), 좌우측 이동(-3.0, 3.0)
+        update_line_data(s, model_position, 0.9, 1.22, 1.22, &lane_barrier_vertices[0], max_idx_barrier_l, false, -3.0);
+        update_line_data(s, model_position, 0.9, 1.22, 1.22, &lane_barrier_vertices[1], max_idx_barrier_r, false, 3.0);
         
         return true;
     }
