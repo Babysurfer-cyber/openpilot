@@ -1346,27 +1346,26 @@ class BlindSpotDrawer : ModelDrawer {
 protected:
     QPolygonF lane_barrier_vertices[2];
 
-    // [추가] 두 개의 차선(안쪽 차선과 바깥쪽 차선) 사이를 꽉 채우는 폴리곤 영역을 생성하는 함수
-    void update_lane_area_data(const UIState* s, const cereal::XYZTData::Reader& line_inner, const cereal::XYZTData::Reader& line_outer, QPolygonF* pvd, int max_idx) {
-        const auto inner_x = line_inner.getX(), inner_y = line_inner.getY(), inner_z = line_inner.getZ();
-        const auto outer_x = line_outer.getX(), outer_y = line_outer.getY(), outer_z = line_outer.getZ();
+    // 기준 차선(line)으로부터 y_offset 만큼 떨어진 위치까지 꽉 채우는 면적 생성
+    void update_adjacent_lane_data(const UIState* s, const cereal::XYZTData::Reader& line, QPolygonF* pvd, int max_idx, float y_offset) {
+        const auto line_x = line.getX(), line_y = line.getY(), line_z = line.getZ();
         
         QPolygonF inner_points, outer_points;
         inner_points.reserve(max_idx + 1);
         outer_points.reserve(max_idx + 1);
 
         for (int i = 0; i <= max_idx; i++) {
-            // 값이 비정상인 경우 건너뛰기
-            if (inner_x[i] < 0 || outer_x[i] < 0) continue;
+            if (line_x[i] < 0) continue;
             
             QPointF p_inner, p_outer;
-            // z축에 1.22(바닥 높이)를 더해 화면 좌표로 변환
-            bool l = _model->mapToScreen(inner_x[i], inner_y[i], inner_z[i] + 1.22, &p_inner);
-            bool r = _model->mapToScreen(outer_x[i], outer_y[i], outer_z[i] + 1.22, &p_outer);
+            // inner: 현재 내 차선 (안쪽 경계)
+            bool l = _model->mapToScreen(line_x[i], line_y[i], line_z[i] + 1.22, &p_inner);
+            // outer: 현재 차선에서 옆으로 3.2m(차로 폭) 이동한 위치 (바깥쪽 경계)
+            bool r = _model->mapToScreen(line_x[i], line_y[i] + y_offset, line_z[i] + 1.22, &p_outer);
             
             if (l && r) {
                 inner_points.push_back(p_inner);
-                // 바깥쪽 선은 역순으로 넣어야 닫힌 다각형(Polygon)이 꼬이지 않고 예쁘게 그려집니다.
+                // 다각형이 꼬이지 않도록 바깥쪽 점은 역순으로 저장
                 outer_points.push_front(p_outer); 
             }
         }
@@ -1374,28 +1373,26 @@ protected:
     }
 
 protected:
-    void ui_draw_bsd(const UIState* s, const QPolygonF& vd, NVGcolor* color, bool right) {
+    void ui_draw_bsd(const UIState* s, const QPolygonF& vd, NVGcolor color) {
         if (vd.size() == 0) return;
 
         nvgBeginPath(s->vg);
         
-        // 화면 밑바닥(s->fb_h)부터 칠하도록 시작점 연장
+        // 화면 제일 밑바닥부터 칠하기 위해 시작점 연장
         nvgMoveTo(s->vg, vd.at(0).x(), s->fb_h);
-        
         for (int i = 0; i < vd.size(); i++) {
             nvgLineTo(s->vg, vd.at(i).x(), vd.at(i).y());
         }
-        
-        // 반대편 끝점도 화면 밑바닥으로 연장
         nvgLineTo(s->vg, vd.at(vd.size() - 1).x(), s->fb_h);
         nvgClosePath(s->vg);
 
-        // 그라데이션 및 투명도 설정
-        NVGcolor solid_color = *color;
+        // 확실한 빨간색 및 투명도 지정
+        NVGcolor solid_color = color;
         solid_color.a = 200; 
-        NVGcolor transparent = *color;
-        transparent.a = 80;   // 먼 곳은 투명하게
+        NVGcolor transparent = color;
+        transparent.a = 0;   // 먼 곳은 완전히 투명하게 자연스럽게 페이드아웃
 
+        // 내 차 바로 앞쪽은 진하게, 멀어질수록 투명해지는 그라데이션
         NVGpaint paint = nvgLinearGradient(s->vg, s->fb_w / 2, s->fb_h, s->fb_w / 2, s->fb_h * 0.45f, solid_color, transparent);
 
         nvgFillPaint(s->vg, paint);
@@ -1407,18 +1404,17 @@ protected:
         if (!sm.alive("modelV2")) return false;
         const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
         
-        // 모델이 인식한 4개의 차선 데이터를 모두 가져옵니다.
         const auto lane_lines = model.getLaneLines();
         
         float max_distance = s->max_distance;
-        int max_idx = get_path_length_idx(lane_lines[1], max_distance);
+        int max_idx_l = get_path_length_idx(lane_lines[1], max_distance);
+        int max_idx_r = get_path_length_idx(lane_lines[2], max_distance);
 
-        // [수정 핵심] 고정 오프셋 대신 옆 차선의 너비를 동적으로 계산하여 폴리곤을 만듭니다.
-        // 1. 좌측 차로: 좌측 내측 차선(lane_lines[1])과 좌측 외측 차선(lane_lines[0]) 사이의 면적
-        update_lane_area_data(s, lane_lines[1], lane_lines[0], &lane_barrier_vertices[0], max_idx);
+        // 좌측 차로: 좌측 차선(lane_lines[1])에서 왼쪽으로 3.2m 확장
+        update_adjacent_lane_data(s, lane_lines[1], &lane_barrier_vertices[0], max_idx_l, 3.2f);
         
-        // 2. 우측 차로: 우측 내측 차선(lane_lines[2])과 우측 외측 차선(lane_lines[3]) 사이의 면적
-        update_lane_area_data(s, lane_lines[2], lane_lines[3], &lane_barrier_vertices[1], max_idx);
+        // 우측 차로: 우측 차선(lane_lines[2])에서 오른쪽으로 3.2m 확장 (우측은 음수 방향이므로 -3.2f)
+        update_adjacent_lane_data(s, lane_lines[2], &lane_barrier_vertices[1], max_idx_r, -3.2f);
         
         return true;
     }
@@ -1427,7 +1423,8 @@ public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
 
-        NVGcolor color_bsd = nvgRGBA(255, 59, 59, 255); // 파스텔톤 빨간색
+        // 확실한 빨간색 명시
+        NVGcolor color_bsd = COLOR_RED;
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
@@ -1445,17 +1442,16 @@ public:
         bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
             (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
 
-        // 좌측 사각지대 경고 (실제 좌측 차로 영역에 칠함)
         if (left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange)) {
-            ui_draw_bsd(s, lane_barrier_vertices[0], &color_bsd, false);
+            ui_draw_bsd(s, lane_barrier_vertices[0], color_bsd);
         }
 
-        // 우측 사각지대 경고 (실제 우측 차로 영역에 칠함)
         if (right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange)) {
-            ui_draw_bsd(s, lane_barrier_vertices[1], &color_bsd, true);
+            ui_draw_bsd(s, lane_barrier_vertices[1], color_bsd);
         }
     }
 };
+
 
 
 class PathDrawer : ModelDrawer {
