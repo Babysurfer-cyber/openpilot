@@ -1346,34 +1346,42 @@ class BlindSpotDrawer : ModelDrawer {
 protected:
     QPolygonF lane_barrier_vertices[2];
 
+protected:
+    // 기존의 복잡한 도형(Polygon) 그리기 대신, 단순히 굵은 선(Stroke)을 긋도록 변경
+    void ui_draw_bsd(const UIState* s, const QPolygonF& vd) {
+        if (vd.isEmpty()) return;
+
+        nvgBeginPath(s->vg);
+        nvgMoveTo(s->vg, vd.at(0).x(), vd.at(0).y());
+        
+        // update_line_data가 다녀오는 왕복 경로를 만드므로, 절반만 그려서 깔끔한 직선으로 만듭니다.
+        for (int i = 1; i < vd.size() / 2; i++) {
+            nvgLineTo(s->vg, vd.at(i).x(), vd.at(i).y());
+        }
+
+        // 색상 및 두께 설정
+        nvgStrokeColor(s->vg, COLOR_RED); // 기존에 정의된 빨간색 매크로 사용
+        nvgStrokeWidth(s->vg, 15.0f);     // 선의 두께 (원하시는 대로 숫자를 조절하세요)
+        nvgStroke(s->vg);
+    }
+
     bool make_data(const UIState* s) {
         SubMaster& sm = *(s->sm);
         if (!sm.alive("modelV2")) return false;
         const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
+        auto model_position = model.getPosition();
+        int max_idx_barrier_l = get_path_length_idx(model_position, 40.0);
+        int max_idx_barrier_r = get_path_length_idx(model_position, 40.0);
         
-        const auto lane_lines = model.getLaneLines();
-        float max_distance = s->max_distance;
-        int max_idx_l = get_path_length_idx(lane_lines[1], max_distance);
-        int max_idx_r = get_path_length_idx(lane_lines[2], max_distance);
-
-        // 오픈파일럿 좌표계: 양수(+)는 왼쪽, 음수(-)는 오른쪽
-        // y_off(0.3f)와 y_shift(0.3f) 조합: 안쪽 경계는 정확히 내 차선에 맞고, 바깥쪽으로만 0.6m 두께로 그려집니다.
-        
-        // 1. 좌측 차선(lane_lines[1]): 차선부터 왼쪽(바깥쪽)으로 표시
-        update_line_data(s, lane_lines[1], 0.3f, 1.22f, 1.22f, &lane_barrier_vertices[0], max_idx_l, false, 0.3f);
-        
-        // 2. 우측 차선(lane_lines[2]): 차선부터 오른쪽(바깥쪽)으로 표시
-        update_line_data(s, lane_lines[2], 0.3f, 1.22f, 1.22f, &lane_barrier_vertices[1], max_idx_r, false, -0.3f);
-        
+        // 사용하시던 기존 위치(-1.7, 1.7) 그대로 유지
+        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[0], max_idx_barrier_l, false, -1.7); 
+        update_line_data(s, model_position, 0, 1.2 - 0.05, 1.2 - 0.6, &lane_barrier_vertices[1], max_idx_barrier_r, false, 1.7);
         return true;
     }
 
 public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
-
-        // carrot.cc 파일 상단에 정의된 COLOR_RED 매크로를 그대로 사용합니다.
-        NVGcolor color_bsd = COLOR_RED;
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
@@ -1385,24 +1393,27 @@ public:
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeState = meta.getLaneChangeState();
         auto laneChangeDirection = meta.getLaneChangeDirection();
-        
         bool rightLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
             (laneChangeDirection == cereal::LaneChangeDirection::RIGHT);
         bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
             (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
 
-        // 좌측 사각지대 경고
-        if (left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange)) {
-            ui_draw_line(s, lane_barrier_vertices[0], &color_bsd, nullptr);
+        // 조건은 기존과 똑같이 유지하되, 그리는 함수에 넘기는 인자를 단순화 (무조건 빨간선)
+        if (left_blindspot) {
+            ui_draw_bsd(s, lane_barrier_vertices[0]);
+        }
+        else if (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange) {
+            ui_draw_bsd(s, lane_barrier_vertices[0]);
         }
 
-        // 우측 사각지대 경고
-        if (right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange)) {
-            ui_draw_line(s, lane_barrier_vertices[1], &color_bsd, nullptr);
+        if (right_blindspot) {
+            ui_draw_bsd(s, lane_barrier_vertices[1]);
+        }
+        else if (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange) {
+            ui_draw_bsd(s, lane_barrier_vertices[1]);
         }
     }
 };
-
 
 
 
