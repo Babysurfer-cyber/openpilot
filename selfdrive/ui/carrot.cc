@@ -1709,7 +1709,7 @@ public:
             COLOR_WHITE_ALPHA(alpha),         COLOR_BLACK_ALPHA(alpha),
         };
 
-        bool brake_valid = car_state.getBrakeLights();
+        bool brake_valid = false; // car_state.getBrakeLights(); 
         const auto radar_state = sm["radarState"].getRadarState();
         auto lead_one = radar_state.getLeadOne();
         auto lp = sm["longitudinalPlan"].getLongitudinalPlan();
