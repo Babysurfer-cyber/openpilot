@@ -1017,11 +1017,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     #  Priority.LOW, VisualAlert.none, AudibleAlert.trafficSignGreen, 3.),
   },
   EventName.trafficSignChanged: {
-    ET.WARNING: Alert(
-      "신호가바뀌었어요.",
-      "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.trafficSignChanged, 1.),
+    ET.WARNING: EngagementAlert(AudibleAlert.trafficSignChanged),
   },
   EventName.turningLeft: {
     ET.WARNING: Alert(
