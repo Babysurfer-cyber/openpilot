@@ -1721,7 +1721,7 @@ public:
             show_path_color = 3;// green
             if (lead_one.getStatus()) {
               if (abs(accel) < 0.5f) show_path_color = 2; // yellow
-              else if (accel >= 0.5f) show_path_color = 1; // amber
+              else if (accel >= 0.5f) show_path_color = 2; // yellow로 수정
               else show_path_color = 0; // red
             }
           }
