@@ -582,7 +582,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.steerSaturated: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "핸들을 잡아주세요",
       "회전이 조향 한도를 초과함",
       AlertStatus.userPrompt, AlertSize.mid,
