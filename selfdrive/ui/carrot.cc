@@ -1277,7 +1277,10 @@ public:
         blinker_timer = (blinker_timer + 1) % 16;
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         SubMaster& sm = *(s->sm);
-        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState")) return;
+        
+        // radarState가 추가로 필요하므로 alive 체크에 추가합니다.
+        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState") || !sm.alive("radarState")) return;
+        
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
@@ -1285,43 +1288,48 @@ public:
         float desireStateTurnRight = meta.getDesireState()[2];
         float desireStateLaneChangeLeft = meta.getDesireState()[3];
         float desireStateLaneChangeRight = meta.getDesireState()[4];
-        int desireEvent = 0;    // TODO
+
+        // --- 사각지대 위험 여부 판단 로직 (BlindSpotDrawer와 동일한 기준 적용) ---
+        const auto car_state = sm["carState"].getCarState();
+        bool left_blindspot = car_state.getLeftBlindspot();
+        bool right_blindspot = car_state.getRightBlindspot();
+        
+        auto lead_left = sm["radarState"].getRadarState().getLeadLeft();
+        auto lead_right = sm["radarState"].getRadarState().getLeadRight();
+        
+        // 내 속도의 3배 거리 이내에 옆차선 차량이 다가오거나 사각지대 센서가 켜졌을 때 위험(unsafe)으로 간주
+        bool left_unsafe = left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0);
+        bool right_unsafe = right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0);
+        // -------------------------------------------------------------------------
 
         if (desireStateTurnLeft > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_l", 1.0f);
         else if (desireStateTurnRight > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_r", 1.0f);
         else if (desireStateLaneChangeLeft > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
         else if (desireStateLaneChangeRight > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-        if (desireEvent == 57) {
-            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-        }
-        else if (desireEvent == 58) {
-            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-        }
-        else if (desireEvent == 71) {
-            if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-            }
-            else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-            }
-        }
+        
+        // 차선 변경 준비(PRE_LANE_CHANGE) 상태일 때 아이콘 처리
         if (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) {
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                // 왼쪽이 위험하면 inhibit, 안전하면 steer 아이콘 출력
+                if (left_unsafe) {
+                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                } else {
+                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                }
                 ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
             }
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                // 오른쪽이 위험하면 inhibit, 안전하면 steer 아이콘 출력
+                if (right_unsafe) {
+                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                } else {
+                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                }
                 ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
             }
         }
 
         const auto carrot_man = sm["carrotMan"].getCarrotMan();
-        const auto car_state = sm["carState"].getCarState();
         QString atc_type = QString::fromStdString(carrot_man.getAtcType());
 
         bool left_blinker = car_state.getLeftBlinker() || atc_type=="fork left" || atc_type =="turn left" || atc_type == "atc left";
@@ -1331,16 +1339,17 @@ public:
         _left_blinker = false;
         if (blinker_timer <= 8) {
             if (right_blinker) {
-		_right_blinker = true;
+        _right_blinker = true;
                 ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
             }
             if (left_blinker) {
-		_left_blinker = true;
+        _left_blinker = true;
                 ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
             }
         }
     }
 };
+
 
 class BlindSpotDrawer : ModelDrawer{
 protected:
