@@ -1268,13 +1268,21 @@ public:
 };
 bool _right_blinker = false;
 bool _left_blinker = false;
+
 class DesireDrawer : ModelDrawer {
 protected:
     int icon_size = 256;
     int blinker_timer = 0;
+    int lc_blinker_timer = 0; // 추가: 차선 변경 깜빡임 타이머
 public:
     void draw(const UIState* s, int x, int y) {
         blinker_timer = (blinker_timer + 1) % 16;
+        
+        // 추가: 1분에 90번(1.5Hz) 깜빡이게 설정
+        // 20FPS 기준, 주기는 약 13프레임 (13프레임 = 약 92회/분)
+        lc_blinker_timer = (lc_blinker_timer + 1) % 13;
+        bool lc_blink_state = (lc_blinker_timer < 6);
+
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         SubMaster& sm = *(s->sm);
         
@@ -1310,22 +1318,30 @@ public:
         // 차선 변경 준비(PRE_LANE_CHANGE) 상태일 때 아이콘 처리
         if (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) {
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                // 왼쪽이 위험하면 inhibit, 안전하면 steer 아이콘 출력
+                // 중앙 아이콘: 왼쪽이 위험하면 inhibit, 안전하면 steer
                 if (left_unsafe) {
                     ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
                 } else {
                     ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
                 }
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                
+                // 좌측 차선변경 아이콘: 중앙 아이콘 왼쪽에 배치 및 깜빡임 적용
+                if (lc_blink_state) {
+                    ui_draw_image(s, { x - icon_size / 2 - icon_size, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                }
             }
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
-                // 오른쪽이 위험하면 inhibit, 안전하면 steer 아이콘 출력
+                // 중앙 아이콘: 오른쪽이 위험하면 inhibit, 안전하면 steer
                 if (right_unsafe) {
                     ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
                 } else {
                     ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
                 }
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                
+                // 우측 차선변경 아이콘: 중앙 아이콘 오른쪽에 배치 및 깜빡임 적용
+                if (lc_blink_state) {
+                    ui_draw_image(s, { x + icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                }
             }
         }
 
@@ -1339,11 +1355,11 @@ public:
         _left_blinker = false;
         if (blinker_timer <= 8) {
             if (right_blinker) {
-        _right_blinker = true;
+                _right_blinker = true;
                 ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
             }
             if (left_blinker) {
-        _left_blinker = true;
+                _left_blinker = true;
                 ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
             }
         }
