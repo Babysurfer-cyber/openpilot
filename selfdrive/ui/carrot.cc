@@ -30,7 +30,7 @@
 
 #define COLOR_BLACK nvgRGBA(0, 0, 0, 255)
 #define COLOR_BLACK_ALPHA(x) nvgRGBA(0, 0, 0, x)
-#define COLOR_WHITE nvgRGBA(255, 255, 255, 150)
+#define COLOR_WHITE nvgRGBA(255, 255, 255, 255)
 #define COLOR_WHITE_ALPHA(x) nvgRGBA(255, 255, 255, x)
 #define COLOR_RED_ALPHA(x) nvgRGBA(255, 59, 59, x)
 #define COLOR_YELLOW nvgRGBA(218, 202, 37, 255)
