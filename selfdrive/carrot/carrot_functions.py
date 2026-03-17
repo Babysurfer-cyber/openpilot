@@ -51,6 +51,7 @@ class CarrotPlanner:
     # [추가] 새로운 앞차 1회성 알림을 위한 상태 변수
     self.lead_alerted = False
     self.lead_lost_count = 0
+    self.lead_detect_count = 0  # <--- [추가] 앞차를 인식한 시간을 재는 타이머
 
     #self.log = ""
 
