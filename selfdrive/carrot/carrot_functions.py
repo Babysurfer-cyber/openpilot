@@ -466,7 +466,7 @@ class CarrotPlanner:
       # 아직 이 앞차에 대해 알림을 울리지 않았다면
       if not self.lead_alerted:
         # 크루즈가 켜져 있고 & 내 차가 감속 중일 때 딱 한 번 알림!
-        if is_cruising and a_ego < -0.2:
+        if is_cruising and a_ego < -0.5:
           open("/dev/shm/carrot_lead_braking", "w").close()
           self.lead_alerted = True  # 알림을 줬다고 도장을 찍음 (이 차가 사라질 때까지 반복 안 함)
     else:
