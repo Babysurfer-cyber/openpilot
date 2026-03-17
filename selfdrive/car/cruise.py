@@ -560,6 +560,7 @@ class VCruiseCarrot:
           self._lat_enabled = False
           self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
         self._cruise_cancel_state = True
+        self.carrot_cruise_active = False  # <--- 추가
         #self._v_cruise_kph_at_brake = 0
     else:
       if button_type == ButtonType.accelCruise:
@@ -579,6 +580,7 @@ class VCruiseCarrot:
         self._cruise_cancel_state = True
         self._lat_enabled = False
         self._paddle_decel_active = False
+        self.carrot_cruise_active = False  # <--- 추가
         #self.params.put_bool_nonblocking("ExperimentalMode", not self.params.get_bool("ExperimentalMode"))
         self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
 
@@ -796,6 +798,7 @@ class VCruiseCarrot:
     if CS.brakePressed:
       self._cruise_ready = False
       self._paddle_decel_active = False
+      self.carrot_cruise_active = False  # <--- 추가
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
       if self._brake_pressed_count == 1 and self.enabled_last:
         self._v_cruise_kph_at_brake = self.v_cruise_kph
