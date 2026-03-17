@@ -461,20 +461,29 @@ class CarrotPlanner:
     lead_detected = radarstate.leadOne.status # & radarstate.leadOne.radar
     is_cruising = carstate.cruiseState.enabled # 크루즈 작동 여부 확인
 
-    # [수정] 크루즈 작동 중 + 새로운 앞차에 대해 1회만 알림
+    # [수정] 크루즈 작동 중 + 최초 인식 0.5초 이내 감속 시에만 1회 알림
     if lead_detected:
       self.lead_lost_count = 0
-      # 아직 이 앞차에 대해 알림을 울리지 않았다면
+      self.lead_detect_count += 1  # 앞차를 인식한 시간 카운트 시작
+
+      # 아직 이 앞차에 대해 도장을 찍지 않았다면
       if not self.lead_alerted:
-        # 크루즈가 켜져 있고 & 내 차가 감속 중일 때 딱 한 번 알림!
-        if is_cruising and a_ego < -0.1:
+        
+        # 조건 A: 앞차를 인식한 지 0.5초(50프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
+        if is_cruising and a_ego < -0.1 and self.lead_detect_count <= 50:
           open("/dev/shm/carrot_lead_braking", "w").close()
-          self.lead_alerted = True  # 알림을 줬다고 도장을 찍음 (이 차가 사라질 때까지 반복 안 함)
+          self.lead_alerted = True  # 알림을 줬다고 도장 찍음
+          
+        # 조건 B: 앞차를 인식하고 감속 없이 0.5초가 평화롭게 지나가 버렸다면? -> 소리 없이 도장만 찍어서 기회 박탈!
+        elif self.lead_detect_count > 50:
+          self.lead_alerted = True
+
     else:
-      # 앞차를 완전히 놓쳤을 때 (레이더 깜빡임 방지를 위해 약 1초 대기 후 초기화)
+      # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 1초 대기 후 초기화)
       self.lead_lost_count += 1
       if self.lead_lost_count > 100:
         self.lead_alerted = False
+        self.lead_detect_count = 0  # <--- 새로운 차를 위해 타이머도 0으로 초기화
 
     self.xStop = self.update_stop_dist(x[31])
 
