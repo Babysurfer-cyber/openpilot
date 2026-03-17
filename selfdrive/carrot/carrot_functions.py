@@ -472,7 +472,7 @@ class CarrotPlanner:
     else:
       # 앞차를 완전히 놓쳤을 때 (레이더 깜빡임 방지를 위해 약 1초 대기 후 초기화)
       self.lead_lost_count += 1
-      if self.lead_lost_count > 20:
+      if self.lead_lost_count > 100:
         self.lead_alerted = False
 
     self.xStop = self.update_stop_dist(x[31])
