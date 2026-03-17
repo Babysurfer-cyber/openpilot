@@ -524,10 +524,17 @@ class CarrotPlanner:
       elif lead_detected and (radarstate.leadOne.dRel - stop_model_x_raw) < 2.0:
         self.xState = XState.lead
       elif self.stopping_count == 0:
-        if self.trafficState == TrafficState.green and not self.carrot_stay_stop and not carstate.leftBlinker and self.trafficLightDetectMode != 1:
-          #self.xState = XState.e2ePrepare
-          self.xState = XState.e2eCruise  # 실험모드를 거치지 않고 바로 출발.
-          self.events.add(EventName.trafficSignGreen)
+        # 1. 일단 파란불이고 좌회전 대기가 아니면 무조건 진입! (모드 1 조건 뺌)
+        if self.trafficState == TrafficState.green and not self.carrot_stay_stop and not carstate.leftBlinker:
+          
+          # 2. 방금 전까지 빨간불(또는 인식 안됨)이었다가 파란불로 바뀌었으면 '안내음' 먼저 발생!
+          if trafficState_last in [TrafficState.off, TrafficState.red]:
+            self.events.add(EventName.trafficSignChanged)  # 원하시던 wav 파일이 재생됩니다!
+
+          # 3. 차가 스스로 출발하는 건 '모드 1'이 아닐 때만!
+          if self.trafficLightDetectMode != 1:
+            self.xState = XState.e2eCruise  # 차 출발
+
       self.stopping_count = max(0, self.stopping_count - 1)
       v_cruise = 0
     elif self.xState == XState.e2eStop:
