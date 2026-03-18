@@ -74,8 +74,8 @@ static void ui_draw_text(const UIState* s, float x, float y, const char* string,
     }
     if (shadowOffset != 0.0) {
         //NVGcolor shadowColor = COLOR_BLACK;
-        nvgFillColor(s->vg, shadowColor);
-        nvgText(s->vg, x + shadowOffset, y + shadowOffset, string, NULL);
+        //nvgFillColor(s->vg, shadowColor);
+        //nvgText(s->vg, x + shadowOffset, y + shadowOffset, string, NULL);
     }
     nvgFillColor(s->vg, color);
     nvgText(s->vg, x, y, string, NULL);
