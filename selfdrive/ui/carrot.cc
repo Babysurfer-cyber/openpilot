@@ -923,7 +923,7 @@ protected:
         int max_idx_road_edge = get_path_length_idx(model_lane_lines[0], 100);
         for (int i = 0; i < std::size(road_edge_vertices); i++) {
             road_edge_stds[i] = model_road_edge_stds[i];
-            update_line_data(s, model_road_edges[i], 0.025, 0.0, 0.0, &road_edge_vertices[i], max_idx_road_edge);
+            update_line_data(s, model_road_edges[i], 0.05, 0.0, 0.0, &road_edge_vertices[i], max_idx_road_edge);
         }
         return true;
     }
