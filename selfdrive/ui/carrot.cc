@@ -905,7 +905,7 @@ protected:
         right_lane_line = sm["carState"].getCarState().getRightLaneLine();
         for (int i = 0; i < std::size(lane_line_vertices); i++) {
             lane_line_probs[i] = model_lane_line_probs[i];
-            float line_width = 0.05;
+            float line_width = 0.05; 
             if (i == 1 && left_lane_line >= 20) line_width = 0.08;
             update_line_data(s, model_lane_lines[i], line_width, 0.0, 0.0, &lane_line_vertices[i], max_idx);
             if (i == 1) {
