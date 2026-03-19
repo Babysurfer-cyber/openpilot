@@ -734,7 +734,7 @@ public:
         int disp_y = y + 195;// 175;
         bool draw_dist = false;
         float disp_size = 50;
-        if (softHoldActive || brakeHoldActive || carrotCruise) {
+        if (softHoldActive || brakeHoldActive || (carrotCruise && longActive)) {
             sprintf(str, "%s", (brakeHoldActive) ? "AUTOHOLD" : (softHoldActive) ? "SOFTHOLD": "CARROT");
             ui_draw_text(s, x, disp_y, str, disp_size, COLOR_WHITE, BOLD);
         }
