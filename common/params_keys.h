@@ -170,7 +170,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"CommaLongAcc", {PERSISTENT, INT, "0"}},
 
     {"AutoGasTokSpeed", {PERSISTENT, INT, "0"}},
-    {"AutoGasSyncSpeed", {PERSISTENT, INT, "1"}},
+    {"AutoGasSyncSpeed", {PERSISTENT, INT, "1"} },
+    {"ApplyModelSpeed", {PERSISTENT, INT, "0"} },
     {"AutoEngage", {PERSISTENT, INT, "0"}},
     {"DisableMinSteerSpeed", {PERSISTENT, INT, "0"}},
     {"AutoCurveSpeedLowerLimit", {PERSISTENT, INT, "30"}},
@@ -291,6 +292,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LatMpcInputOffset", {PERSISTENT, INT, "4"}},
 
     {"PathOffset", {PERSISTENT, INT, "0"}},
+    {"CameraYawTrimDeg", {PERSISTENT, INT, "0"}},
 
     {"LateralTorqueCustom", {PERSISTENT, INT, "0"}},
     {"LateralTorqueAccelFactor", {PERSISTENT, INT, "2500"}},

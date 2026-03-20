@@ -18,6 +18,22 @@
       "cdescr": "仅限车道模式 — (-)左侧 / (+)右侧"
     },
     {
+      "group": "조향일반",
+      "name": "CameraYawTrimDeg",
+      "title": "카메라YAW보정*0.01deg(0)",
+      "descr": "카메라 좌우(YAW) 값을 미세조정(+: 오른쪽)",
+      "egroup": "LAT",
+      "etitle": "Camera YAW Correction(0)",
+      "edescr": "Fine tunes camera yaw alignment.(+: right)",
+      "min": -200,
+      "max": 200,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "转向",
+      "ctitle": "摄像头YAW校正(0)",
+      "cdescr": "微调摄像头左右(YAW)值(+: right)"
+    },
+    {
       "group": "조향튜닝",
       "name": "LateralTorqueCustom",
       "title": "_LateralTorqueCustom(0)",
@@ -1314,6 +1330,22 @@
       "cdescr": "如果踩下油门且速度超过设定速度，则更新设定速度"
     },
     {
+      "group": "크루즈",
+      "name": "ApplyModelSpeed",
+      "title": "모델 주행속도 적용 비율",
+      "descr": "모델이 계산한 주행속도를 설정한 비율만큼 적용합니다.",
+      "egroup": "CRUISE",
+      "etitle": "Model Speed Apply Ratio",
+      "edescr": "Applies the model-calculated driving speed by the set ratio.",
+      "min": -120,
+      "max": 120,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "巡航设置",
+      "ctitle": "模型车速应用比例",
+      "cdescr": "按设定比例应用模型计算的行驶速度。"
+    },
+    {
       "group": "화면",
       "name": "ShowDebugUI",
       "title": "디버그정보 표시",
@@ -1765,10 +1797,10 @@
       "group": "시작",
       "name": "EnableRadarTracks",
       "title": "레이더트랙,SCC레이더설정(0)",
-      "descr": "-1: SCC사용(정지차), 0: SCC레이더사용\n 1: 레이더트랙, 2: 레이더트랙(SCC사용)\n 3:레이더트랙(끼어들기,스텔스차량검출)",
+      "descr": "-1: SCC사용(always), 0: SCC레이더사용\n 1: 레이더트랙, 2: 레이더트랙(정지차 SCC사용)\n 3:레이더트랙(끼어들기,스텔스차량검출)",
       "egroup": "START",
       "etitle": "Enable radar tracks(0)",
-      "edescr": "-1: use SCC(Stopped car), 0: SCC Radar\n, 1: RadarTrack, 2: RadarTrack(use SCC)\n 3:RadarTrack(Cutin detect and etc)",
+      "edescr": "-1: use SCC(always), 0: SCC Radar\n, 1: RadarTrack, 2: RadarTrack(stopped car, use SCC)\n 3:RadarTrack(Cutin detect and etc)",
       "min": -1,
       "max": 3,
       "default": 0,

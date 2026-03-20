@@ -211,6 +211,7 @@ class VCruiseCarrot:
     self.d_rel = 0
     self.v_rel = 0
     self.v_lead_kph = 0
+    self.model_v_kph = 0
 
     self._log_timer = 0
     self._log_timeout = int(3/0.01)
@@ -244,7 +245,8 @@ class VCruiseCarrot:
     if self.frame % 10 == 0:
       self.autoCruiseControl = self.params.get_int("AutoCruiseControl") * unit_factor
       self.autoGasTokSpeed = self.params.get_int("AutoGasTokSpeed") * unit_factor
-      self.autoGasSyncSpeed = self.params.get_bool("AutoGasSyncSpeed") * unit_factor
+      self.autoGasSyncSpeed = self.params.get_int("AutoGasSyncSpeed")
+      self.applyModelSpeed = self.params.get_float("ApplyModelSpeed") * 0.01
       self.autoSpeedUptoRoadSpeedLimit = self.params.get_float("AutoSpeedUptoRoadSpeedLimit") * 0.01
       self.autoRoadSpeedAdjust = self.params.get_float("AutoRoadSpeedAdjust") * 0.01
 
@@ -302,10 +304,8 @@ class VCruiseCarrot:
       self.d_rel = lead.dRel if lead.status else 0
       self.v_rel = lead.vRel if lead.status else 0
       self.v_lead_kph = lead.vLeadK * CV.MS_TO_KPH if lead.status else 0
-    if sm.alive['modelV2']:
-      self.model_v_kph = sm['modelV2'].velocity.x[0] * CV.MS_TO_KPH
-    else:
-      self.model_v_kph = 0
+    if sm.alive['drivingModelData']:
+      self.model_v_kph = sm['drivingModelData'].action.desiredVelocity * CV.MS_TO_KPH
 
     self.v_cruise_kph_last = self.v_cruise_kph
     self.is_metric = is_metric
@@ -626,6 +626,14 @@ class VCruiseCarrot:
   def _auto_speed_up(self, v_cruise_kph):
     #if self._pause_auto_speed_up:
     #  return v_cruise_kph
+    if not self._pause_auto_speed_up and self.applyModelSpeed != 0.0:
+      model_kph = self.model_v_kph * abs(self.applyModelSpeed)
+      apply_speed = min(model_kph, self.nRoadLimitSpeed * 1.1)
+
+      if self.applyModelSpeed < 0.0:
+        v_cruise_kph = min(model_kph, apply_speed)
+      elif v_cruise_kph < apply_speed:
+        v_cruise_kph = apply_speed
 
     road_limit_kph = self.nRoadLimitSpeed * self.autoSpeedUptoRoadSpeedLimit
     if road_limit_kph < 1.0:
@@ -684,7 +692,7 @@ class VCruiseCarrot:
 
   def _update_cruise_state(self, CS, CC, v_cruise_kph):
     if not CC.enabled:
-      self._pause_auto_speed_up = False
+      #self._pause_auto_speed_up = False
       if self._brake_pressed_count == -1 and self._soft_hold_active > 0:
         self._soft_hold_active = 2
         #self.autoCruiseControl_cancel_timer = 0
@@ -775,7 +783,7 @@ class VCruiseCarrot:
       self._pause_auto_speed_up = False
       if self._gas_pressed_count == 1 and CS.vEgo < 0.1:
         self._cruise_control(-1, -1, "Cruise off (gasPressed)")
-    elif self._brake_pressed_count == 1:
+    elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
     return self._auto_speed_up(v_cruise_kph)

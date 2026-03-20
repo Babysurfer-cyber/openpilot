@@ -13,6 +13,9 @@ from datetime import datetime
 import traceback
 from typing import Any, Dict, List, Optional
 
+from aiohttp import web
+import asyncio
+
 from ftplib import FTP
 from cereal import log
 import urllib.request
@@ -233,6 +236,9 @@ class CarrotMan:
     self.navd_active = False
 
     self.active_carrot_last = False
+
+    self._rgdata_ts_lock = threading.Lock()
+    self._last_rgdata_timestamp_ms = 0
 
     self.is_metric = self.params.get_bool("IsMetric")
 
@@ -526,7 +532,7 @@ class CarrotMan:
                 #  print(f"carrot_man_thread: send error...: {e}")
 
               except TimeoutError:
-                print("Waiting for data (timeout)...")
+                #print("Waiting for data (timeout)...")
                 self.remote_addr = None
                 time.sleep(1)
 
@@ -600,7 +606,7 @@ class CarrotMan:
                   print(data)
 
               except TimeoutError:
-                print("Waiting for data (timeout)...")
+                #print("Waiting for data (timeout)...")
                 #self.remote_addr = None
                 time.sleep(1)
 
@@ -741,10 +747,11 @@ class CarrotMan:
           if isOnroadCount > 500 and not is_tmux_sent and networkConnected:
             self.send_tmux("Ekdrmsvkdlffjt7710", "onroad", send_settings = True)
             is_tmux_sent = True
-          if self.params.get_bool("CarrotException") and networkConnected:
-            self.params.put_bool("CarrotException", False)
+          carrot_exception = self.params.get("CarrotException")
+          if carrot_exception in ["exception", "log", "tmux_send"] and networkConnected:
+            self.params.put_bool("CarrotException", "")
             self.make_tmux_data()
-            self.send_tmux("Ekdrmsvkdlffjt7710", "exception")
+            self.send_tmux("Ekdrmsvkdlffjt7710", carrot_exception)
         elif 'echo_cmd' in json_obj:
           try:
             result = subprocess.run(json_obj['echo_cmd'], shell=True, capture_output=True, text=False)
@@ -993,6 +1000,27 @@ class CarrotMan:
   def handle_unknown(self, obj: Any):
     print("[UNKNOWN]", str(obj)[:200])
 
+  def _get_timestamp_ms(self, obj: Any) -> int:
+    if not isinstance(obj, dict):
+      return 0
+    try:
+      return int(obj.get("timestamp_ms", 0))
+    except Exception:
+      return 0
+
+
+  def _is_stale_rgdata(self, timestamp_ms: int):
+    if timestamp_ms <= 0:
+      return False, 0
+
+    with self._rgdata_ts_lock:
+      last_ts = self._last_rgdata_timestamp_ms
+      if timestamp_ms <= last_ts:
+        return True, last_ts
+
+      self._last_rgdata_timestamp_ms = timestamp_ms
+      return False, last_ts
+  
   def _dispatch_obj(self, obj: Any):
     if obj is None:
       return
@@ -1015,10 +1043,18 @@ class CarrotMan:
       self.handle_route(obj["vrtx"])
 
     if "rgdata" in obj:
-      self.handle_carrot_state(obj["rgdata"])
-
+      timestamp_ms = self._get_timestamp_ms(obj)
+      stale, last_ts = self._is_stale_rgdata(timestamp_ms)
+      if stale:
+        print(f"[STALE DROP] rgdata ts={timestamp_ms} <= last={last_ts}")
+      else:
+        self.handle_carrot_state(obj["rgdata"])
+      
     if "sinf" in obj:
       self.handle_signal(obj["sinf"])
+
+  def carrot_navi_http_thread(self):
+    asyncio.run(self.carrot_navi_http_server(7713))
 
   def carrot_navi_tcp_server(self, port: int = 7712):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1031,7 +1067,6 @@ class CarrotMan:
       conn, addr = server.accept()
       self.remote_addr = addr
       print("Connected:", addr)
-      #conn.settimeout(5.0)
       conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
       try:
         f = conn.makefile("r", encoding="utf-8", errors="ignore")
@@ -1040,7 +1075,8 @@ class CarrotMan:
             line = f.readline()
           except socket.timeout:
             print("TCP timeout: closing connection", addr)
-            break          
+            break
+
           if not line:
             break
 
@@ -1051,13 +1087,13 @@ class CarrotMan:
           try:
             obj = json.loads(s)
           except Exception:
-            obj = s   # fallback: raw string
+            obj = s
 
           try:
             self._dispatch_obj(obj)
           except Exception as e:
             print("dispatch error:", e, "raw:", repr(s[:200]))
-  
+
       except Exception as e:
         print("TCP error:", e)
 
@@ -1066,7 +1102,73 @@ class CarrotMan:
           conn.close()
         except Exception:
           pass
-        self.remote_addr = None      
+        self.remote_addr = None
+
+  async def carrot_http_post(self, request: web.Request):
+    tmap_version = request.match_info.get("tmap_version", "")
+
+    try:
+      peer = request.transport.get_extra_info("peername")
+    except Exception:
+      peer = None
+
+    #print(f"[HTTP] request from={peer} version={tmap_version}")
+
+    try:
+      obj = await request.json()
+      #if isinstance(obj, dict):
+      #  print(f"[HTTP] json keys={list(obj.keys())[:10]}")
+      #else:
+      #  print(f"[HTTP] json type={type(obj).__name__}")
+    except Exception as e:
+      print(f"[HTTP] json parse error: {e}")
+      return web.json_response({
+        "ok": False,
+        "error": f"invalid json: {e}"
+      }, status=400)
+
+    if isinstance(obj, dict):
+      obj["_tmap_version"] = tmap_version
+
+    try:
+      self._dispatch_obj(obj)
+      #print(f"[HTTP] dispatch ok version={tmap_version}")
+      #print(obj)
+      return web.json_response({
+        "ok": True,
+        "tmap_version": tmap_version
+      })
+    except Exception as e:
+      print(f"[HTTP] dispatch error: {e}")
+      traceback.print_exc()
+      return web.json_response({
+        "ok": False,
+        "error": str(e),
+        "tmap_version": tmap_version
+      }, status=500)
+  
+  async def carrot_http_health(self, request: web.Request):
+    return web.json_response({
+      "ok": True,
+      "service": "carrot_navi_http"
+    })
+
+  async def carrot_navi_http_server(self, port: int = 7713):
+    app = web.Application(client_max_size=1024 * 1024)
+
+    app.router.add_post("/api/navi/{tmap_version}", self.carrot_http_post)
+    app.router.add_get("/health", self.carrot_http_health)
+
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    print("HTTP server listening", port)
+
+    while True:
+      await asyncio.sleep(3600)
 
 def main():
   try:
@@ -1081,6 +1183,8 @@ def main():
   print(f"CarrotMan {carrot_man}")
   threading.Thread(target=carrot_man.kisa_app_thread).start()
   threading.Thread(target=carrot_man.carrot_navi_thread).start()
+  threading.Thread(target=carrot_man.carrot_navi_http_thread).start()
+  
   while True:
     try:
       carrot_man.carrot_man_thread()

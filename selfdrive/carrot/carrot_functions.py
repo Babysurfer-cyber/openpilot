@@ -1,3 +1,4 @@
+import time
 from enum import Enum
 import os 
 
@@ -143,7 +144,7 @@ class CarrotPlanner:
     self.atc_active = False
 
     self._stop_x_rl = None
-
+    self.last_event_time = 0.0
 
   def _params_update(self):
     self.frame += 1
@@ -271,8 +272,8 @@ class CarrotPlanner:
     tf_max = float(max(self.tFollowGap1, self.tFollowGap2, self.tFollowGap3, self.tFollowGap4))
     tf_applied = float(np.clip(tf_applied, tf_min, tf_max))
 
-    self._tf_applied = tf_applied
-    return tf_applied
+    self._tf_applied = max(tf_applied * self.mySafeFactor, 0.3)
+    return self.apply_t_follow(self._tf_applied)
 
   def _update_model_desire(self, sm):
     meta = sm['modelV2'].meta
@@ -286,25 +287,28 @@ class CarrotPlanner:
 
   def dynamic_t_follow(self, t_follow, lead, desired_follow_distance, prev_a):
 
+    gap_dist_adjust = 0.0
     self.jerk_factor_apply = self.jerk_factor
     if self.desireState > 0.9 and self.desireStateCount < int(1.5 / DT_MDL):  # lane change state, 1.5초동안만.
       dynamicTFollowLC = max(0.2, self.dynamicTFollowLC)
       t_follow *= dynamicTFollowLC   # 차선변경시 t_follow를 줄임.
       self.jerk_factor_apply = self.jerk_factor * dynamicTFollowLC   # 차선변경시 jerk factor를 줄여 aggresive하게
     elif lead.status:
-      t_follow += np.interp(prev_a[0], [-2.0, -0.5], [0.1, 0.0])
+      gap_dist_adjust = np.interp(prev_a[0], [-2.0, -0.5], [0.1, 0.0])
       if self.dynamicTFollow > 0.0:
-        gap_dist_adjust = np.clip((desired_follow_distance - lead.dRel) * self.dynamicTFollow, - 0.1, 1.0) * 0.1
-        t_follow += gap_dist_adjust
+        gap_dist_adjust += np.clip((desired_follow_distance - lead.dRel) * self.dynamicTFollow, - 0.1, 1.0) * 0.1
         if gap_dist_adjust < 0:
           self.jerk_factor_apply = self.jerk_factor * 0.5 # 전방차량을 따라갈때는 aggressive하게.
         #self.jerk_factor_apply = np.interp(abs(lead.jLead), [0, 2], [self.jerk_factor, self.jerk_factor * self.j_lead_factor])
 
+    return self.apply_t_follow(t_follow, gap_dist_adjust)
+
+  def apply_t_follow(self, t_follow, adjust_t_follow=0.0):
     if t_follow > self.t_follow_last:
       t_follow = min(t_follow, self.t_follow_last + 0.1 * DT_MDL)
       pass
     self.t_follow_last = t_follow
-    return t_follow
+    return t_follow + adjust_t_follow
 
   def update_stop_dist(self, stop_x):
     stop_x = self.xStopFilter.process(stop_x, median = True)
@@ -374,7 +378,7 @@ class CarrotPlanner:
 
       if trigger_start:
         if self.soft_hold_active > 0:
-          self.events.add(EventName.trafficSignChanged)
+          self.add_event(EventName.trafficSignChanged)
         elif self.xState in [XState.e2eStop, XState.e2eStopped]:
           self.xState = XState.e2eCruise
           self.traffic_starting_count = 10.0 / DT_MDL
@@ -408,6 +412,12 @@ class CarrotPlanner:
       self.eco_target_speed = 0
 
     return v_cruise_kph_apply
+
+  def add_event(self, event_name):
+    now = time.time()
+    if now - self.last_event_time > 5.0:
+      self.events.add(event_name)
+      self.last_event_time = now
 
   def update(self, sm, v_cruise_kph, mode):
     self._params_update()
@@ -517,7 +527,7 @@ class CarrotPlanner:
     if self.soft_hold_active > 0:
       self.xState = XState.e2eStopped
       if trafficState_last in [TrafficState.off, TrafficState.red] and self.trafficState == TrafficState.green:
-        self.events.add(EventName.trafficSignChanged)
+        self.add_event(EventName.trafficSignChanged)
     elif self.xState == XState.e2eStopped:
       if carstate.gasPressed:
         self.xState = XState.e2eCruise #XState.e2ePrepare
@@ -547,7 +557,7 @@ class CarrotPlanner:
         self.xState = XState.lead
       else:
         if self.trafficState == TrafficState.green:
-          self.events.add(EventName.trafficSignGreen)
+          self.add_event(EventName.trafficSignGreen)
           self.xState = XState.e2eCruise
         else:
           self.comfort_brake = self.comfortBrake * 0.9
@@ -577,7 +587,7 @@ class CarrotPlanner:
       if lead_detected:
         self.xState = XState.lead
       elif self.trafficState == TrafficState.red and abs(carstate.steeringAngleDeg) < 30 and self.traffic_starting_count == 0:
-        self.events.add(EventName.trafficStopping)
+        self.add_event(EventName.trafficStopping)
         self.xState = XState.e2eStop
         self.actual_stop_distance = stop_model_x_rl
       else:
