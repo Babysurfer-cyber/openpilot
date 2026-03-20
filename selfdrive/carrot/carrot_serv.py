@@ -943,13 +943,29 @@ class CarrotServ:
                                                      self.autoNaviSpeedDecelRate))
         hda_active = True
         
-      elif CS.speedLimitDistance <= 0 and CS.speedLimit <= 50 and self.roadcate in [0, 1]:
-        # 2. [고속도로 램프 감속 부활 및 안전장치] 
-        # - self.roadcate in [0, 1] : 고속도로나 도시고속도로 일 것
-        # - CS.speedLimit <= 50     : 제한속도가 50km/h 이하일 것 (질문자님이 요청하신 바로 그 조건!)
-        sdi_speed = min(sdi_speed, CS.speedLimit * self.autoNaviSpeedSafetyFactor)
-        hda_active = True
+      else:
+        # 2. [모델 예측 곡률 기반 램프/급커브 감속]
+        # 거리가 0 이하(단속카메라 아님)일 때, 전방에 급커브가 있는지 모델로 확인
+        is_sharp_curve = False
+        
+        if hasattr(CS, 'MD') and CS.MD is not None and len(CS.MD.position.x) > 30:
+            # 전방 약 15m ~ 80m 사이의 미래 경로 탐색
+            for i in range(10, 30):
+                x = CS.MD.position.x[i]
+                y = CS.MD.position.y[i]
+                
+                if x > 10.0:
+                    curvature = (2.0 * abs(y)) / (x * x)
+                    # 곡률이 0.005 이상 (회전 반경 약 200m 이하의 급커브)일 때 스위치 ON
+                    if curvature > 0.005:
+                        is_sharp_curve = True
+                        break
 
+        # 전방에 급커브가 감지되면 도로 종류와 무관하게 무조건 발동!
+        if is_sharp_curve:
+            # 목표 감속 속도는 내비가 주는 제한속도(CS.speedLimit)를 그대로 적용
+            sdi_speed = min(sdi_speed, CS.speedLimit * self.autoNaviSpeedSafetyFactor)
+            hda_active = True
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
