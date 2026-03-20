@@ -959,8 +959,8 @@ class CarrotServ:
                     
                     if x > 10.0:
                         curvature = (2.0 * abs(y)) / (x * x)
-                        # 곡률이 0.005 이상 (회전 반경 약 200m 이하의 급커브)일 때 스위치 ON
-                        if curvature > 0.005:
+                        # 곡률이 0.005 이상 (회전 반경 약 100m 이하의 급커브)일 때 스위치 ON
+                        if curvature > 0.01:
                             is_sharp_curve = True
                             break
 
