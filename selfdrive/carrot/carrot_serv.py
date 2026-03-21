@@ -946,8 +946,6 @@ class CarrotServ:
 
       else:
         # === [추가] 일반 주행 중 제한속도 하락 시 5초간 HDA 감속 ===
-        import time
-        import os
         
         # 1. 초기 변수 세팅 (처음 실행될 때만)
         if not hasattr(self, 'prev_speed_limit'):
