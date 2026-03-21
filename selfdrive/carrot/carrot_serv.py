@@ -867,8 +867,9 @@ class CarrotServ:
       distanceTraveled = sm['selfdriveState'].distanceTraveled
       delta_dist = distanceTraveled - self.totalDistance
       self.totalDistance = distanceTraveled
-      if CS.speedLimit > 0 and self.active_carrot <= 1:
-        self.nRoadLimitSpeed = CS.speedLimit
+      # 🎯 [수정됨] 카메라 등 특별한 이벤트가 없을 때(<=1), 신호가 0이면 0으로 확실히 초기화!
+      if self.active_carrot <= 1:
+        self.nRoadLimitSpeed = CS.speedLimit if CS.speedLimit > 0 else 0
     else:
       v_ego = v_ego_kph = 0
       delta_dist = 0
