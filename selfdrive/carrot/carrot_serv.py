@@ -972,9 +972,9 @@ class CarrotServ:
                 else:
                     self.hda_drop_target_speed = calculated_target
                     
-                    # 감속 모드 ON 및 5초 타이머 설정
+                    # 감속 모드 ON 및 10초 타이머 설정
                     self.hda_drop_active = True
-                    self.hda_drop_end_time = time.time() + 5.0
+                    self.hda_drop_end_time = time.time() + 10.0
                     
                     # 🎵 확실한 audioPrompt 신호탄 생성
                     try:
@@ -988,7 +988,7 @@ class CarrotServ:
 
         self.prev_speed_limit = current_limit
 
-        # 3. 감속 취소 조건 (가속 페달 밟음 OR 5초 경과)
+        # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
         if CS.gasPressed:
             self.hda_drop_active = False
             
