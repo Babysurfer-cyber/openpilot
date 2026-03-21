@@ -2433,24 +2433,49 @@ public:
           ui_draw_text(s, dx, dy - 45, "GPS", 30, COLOR_GREEN, BOLD);
         }
 
-        char gap_str[32];
-        int gap = params.getInt("LongitudinalPersonality") + 1;
+        // =======================================================
+        // 1. 마름모 안의 모델 신뢰도 기반 하이픈(-) 표시
+        // =======================================================
+        int gap = params.getInt("LongitudinalPersonality") + 1; 
         dx = bx + 220;
         dy = by + 77;
-        sprintf(gap_str, "%d", gap);
-        ui_draw_text(s, dx, dy, gap_str, 40, COLOR_WHITE, BOLD);
-        if (gap_last != gap) ui_draw_text_a(s, dx, dy, gap_str, 40, COLOR_WHITE, BOLD);
+
+        // 모델 신뢰도(Lead Probability) 가져오기
+        auto leads = sm["modelV2"].getModelV2().getLeadsV3();
+        float lead_prob = (leads.size() > 0) ? leads[0].getProb() : 0.0;
+        int prob_pct = (int)(lead_prob * 100);
+
+        // 신뢰도에 따른 색상 및 크기(Bold 효과) 변경
+        if (prob_pct >= 85) {
+            // ✅ 평상시 (85% 이상): 일반 두께의 흰색 하이픈
+            ui_draw_text(s, dx, dy, "-", 40, COLOR_WHITE, BOLD);
+        } else {
+            // 🟠 주의 (50~84%): 주황색
+            // 🔴 위험 (50% 미만): 빨간색
+            NVGcolor status_color = (prob_pct >= 50) ? COLOR_ORANGE : COLOR_RED;
+            
+            // 크기를 40으로 키워 굵고 크게(Bold) 시각적 경고 효과 극대화
+            ui_draw_text(s, dx, dy, "-", 40, status_color, BOLD);
+        }
+
+        // 🎯 [복구 및 수정] 차간거리 변경 시 화면 중앙에 나타나는 팝업 애니메이션!
+        if (gap_last != gap) {
+            char anim_gap_str[32];
+            sprintf(anim_gap_str, "%d", gap); // 애니메이션은 - 가 아닌 원래 숫자(1~4)로 띄움
+            ui_draw_text_a(s, dx, dy, anim_gap_str, 40, COLOR_WHITE, BOLD);
+        }
         gap_last = gap;
 
+        // =======================================================
+        // 2. 우측 차간거리 1~4단계 녹색 막대 표시 (기존 유지)
+        // =======================================================
         dx = bx + 300 - 30;
         dy = by + 175 + 10;// -38;
-        //float ddx = 70 / 4.;
         float ddy = 80 / 4.;
 #ifdef __UI_TEST
         gap = 3;
 #endif
         for (int i = 0; i < gap; i++) {
-            //ui_fill_rect(s->vg, { (int)(dx + i * ddx), (int)dy, (int)ddx - 2, 48 }, COLOR_GREEN_ALPHA(180), 4, 3);
             ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_GREEN_ALPHA(210), 4, 3, &white_color);
         }
 
