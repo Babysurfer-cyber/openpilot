@@ -2520,17 +2520,11 @@ public:
             else {
                 disp_speed = nRoadLimitSpeed;
 		            disp_speed = (int)(disp_speed * ((s->scene.is_metric)?1.0:KM_TO_MILE) + 0.5);
-                limit_color = (v_ego * 3.6 > disp_speed + 2) ? COLOR_RED_ALPHA(210) : COLOR_WHITE_ALPHA(210);
+                
+                // 🎯 [추가 수정] 제한속도가 0보다 클 때만 과속 검사 로직 작동!
+                limit_color = (disp_speed > 0 && v_ego * 3.6 > disp_speed + 2) ? COLOR_RED_ALPHA(210) : COLOR_WHITE_ALPHA(210);
+                
                 ui_draw_text(s, dx, dy - 45, "LIMIT", 30, COLOR_WHITE, BOLD);
-            }
-
-            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, limit_color, 15, 2);
-            
-            // 🎯 [수정된 부분] 0이면 '-', 아니면 숫자로 표시!
-            if (disp_speed > 0) {
-                ui_draw_text(s, dx, dy, QString::number(disp_speed).toStdString().c_str(), 40, COLOR_WHITE, BOLD);
-            } else {
-                ui_draw_text(s, dx, dy, "-", 40, COLOR_WHITE, BOLD);
             }
 
         }
