@@ -2525,7 +2525,14 @@ public:
             }
 
             ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, limit_color, 15, 2);
-            ui_draw_text(s, dx, dy, QString::number(disp_speed).toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+            
+            // 🎯 [수정된 부분] 0이면 '-', 아니면 숫자로 표시!
+            if (disp_speed > 0) {
+                ui_draw_text(s, dx, dy, QString::number(disp_speed).toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+            } else {
+                ui_draw_text(s, dx, dy, "-", 40, COLOR_WHITE, BOLD);
+            }
+
         }
 
         if (show_device_state) {
