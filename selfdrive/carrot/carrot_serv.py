@@ -966,17 +966,23 @@ class CarrotServ:
                 current_cruise = CS.cruiseState.speed * 3.6
                 
                 # 타겟 속도 계산 (최저 속도 50km/h 방어선 유지)
-                self.hda_drop_target_speed = max(50.0, current_cruise - speed_diff)
+                calculated_target = max(50.0, current_cruise - speed_diff)
                 
-                # 감속 모드 ON 및 5초 타이머 설정
-                self.hda_drop_active = True
-                self.hda_drop_end_time = time.time() + 5.0
-                
-                # 🎵 확실한 audioPrompt 신호탄 생성
-                try:
-                    open("/dev/shm/carrot_prompt", "w").close()
-                except Exception:
-                    pass
+                # 🛡️ [수정] 계산된 타겟 속도가 현재 크루즈 속도보다 높거나 같으면 무시 (감속 생략)
+                if calculated_target >= current_cruise:
+                    self.hda_drop_active = False
+                else:
+                    self.hda_drop_target_speed = calculated_target
+                    
+                    # 감속 모드 ON 및 5초 타이머 설정
+                    self.hda_drop_active = True
+                    self.hda_drop_end_time = time.time() + 5.0
+                    
+                    # 🎵 확실한 audioPrompt 신호탄 생성
+                    try:
+                        open("/dev/shm/carrot_prompt", "w").close()
+                    except Exception:
+                        pass
 
             elif current_limit > self.prev_speed_limit:
                 # 제한속도가 오르면 타이머가 남았더라도 즉시 해제
