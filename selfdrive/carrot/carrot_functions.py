@@ -424,6 +424,16 @@ class CarrotPlanner:
     self._update_model_desire(sm)
 
     self.events = Events()
+    
+    # === [추가] 제한속도 변경 감지 및 안내음 재생 ===
+    if os.path.isfile("/dev/shm/carrot_prompt"):
+      self.events.add(EventName.audioPrompt)  # 띠링~ 소리 발생!
+      try:
+        os.remove("/dev/shm/carrot_prompt") # 소리 냈으면 신호탄 파일 삭제
+      except Exception:
+        pass
+    # ====================================================
+
     carstate = sm['carState']
     vCluRatio = carstate.vCluRatio
     #controlsState = sm['controlsState']
