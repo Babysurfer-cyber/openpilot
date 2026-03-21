@@ -943,33 +943,57 @@ class CarrotServ:
                                                      self.autoNaviSpeedDecelRate))
         hda_active = True
         
-      else:
-        # 2. [모델 예측 곡률 기반 램프/급커브 감속]
-        # 거리가 0 이하(단속카메라 아님)일 때, 전방에 급커브가 있는지 모델로 확인
-        is_sharp_curve = False
+    else:
+        import time
+        import os
         
-        # CS.MD 대신 sm['modelV2']를 직접 사용하여 모델이 살아있는지 확인!
-        if sm.alive['modelV2'] and sm.valid['modelV2']:
-            md = sm['modelV2']
-            if len(md.position.x) > 30:
-                # 전방 약 15m ~ 80m 사이의 미래 경로 탐색
-                for i in range(10, 30):
-                    x = md.position.x[i]
-                    y = md.position.y[i]
-                    
-                    if x > 10.0:
-                        curvature = (2.0 * abs(y)) / (x * x)
-                        # 곡률이 0.005 이상 (회전 반경 약 100m 이하의 급커브)일 때 스위치 ON
-                        if curvature > 0.01:
-                            is_sharp_curve = True
-                            break
+        # 1. 초기 변수 세팅 (처음 실행될 때만)
+        if not hasattr(self, 'prev_speed_limit'):
+            self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+            self.hda_drop_target_speed = 0
+            self.hda_drop_end_time = 0.0
+            self.hda_drop_active = False
 
-        # 전방에 급커브가 감지되면 도로 종류와 무관하게 무조건 발동!
-        if is_sharp_curve:
-            # 목표 감속 속도는 내비가 주는 제한속도(CS.speedLimit)를 그대로 적용
-            sdi_speed = min(sdi_speed, CS.speedLimit * self.autoNaviSpeedSafetyFactor)
+        current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+
+        # 2. 제한속도 하락 감지 로직
+        if current_limit > 0 and self.prev_speed_limit > 0:
+            if current_limit < self.prev_speed_limit:
+                # 제한속도 하락 감지! (예: 100 -> 80)
+                speed_diff = self.prev_speed_limit - current_limit
+                current_cruise = CS.cruiseState.speed * 3.6
+                
+                # 타겟 속도 계산 (예: 110 - 20 = 90)
+                self.hda_drop_target_speed = max(30.0, current_cruise - speed_diff)
+                
+                # 감속 모드 ON 및 5초 타이머 설정
+                self.hda_drop_active = True
+                self.hda_drop_end_time = time.time() + 5.0  # 현재 시간으로부터 5초 동안 유지
+                
+                # 🎵 오타 없는 확실한 audioPrompt 신호탄 생성
+                try:
+                    open("/dev/shm/carrot_prompt", "w").close()
+                except Exception:
+                    pass
+
+            elif current_limit > self.prev_speed_limit:
+                # 제한속도가 오르면 타이머가 남았더라도 즉시 해제
+                self.hda_drop_active = False
+
+        self.prev_speed_limit = current_limit
+
+        # 3. 감속 취소 조건 (가속 페달 밟음 OR 5초 경과)
+        if CS.gasPressed:
+            self.hda_drop_active = False
+            
+        if self.hda_drop_active and time.time() > self.hda_drop_end_time:
+            self.hda_drop_active = False
+
+        # 4. 콤마 화면에 주황색 HDA 띄우고 속도 줄이기 적용
+        if self.hda_drop_active:
+            # sdi_speed에 타겟 속도를 넣고 hda_active를 True로 주면 주황색 HDA 아이콘 발동!
+            sdi_speed = min(sdi_speed, self.hda_drop_target_speed)
             hda_active = True
-
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
