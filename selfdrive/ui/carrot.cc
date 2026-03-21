@@ -2512,6 +2512,7 @@ public:
             dy = by + 175;
             int disp_speed = 0;
             NVGcolor limit_color = COLOR_GREEN_ALPHA(210);
+            
             if (xSpdLimit > 0 && xSignType != 22) {
                 disp_speed = (int)(xSpdLimit * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5);
                 limit_color = (blink_timer <= 8) ? COLOR_RED_ALPHA(210) : COLOR_YELLOW_ALPHA(210);
@@ -2521,10 +2522,19 @@ public:
                 disp_speed = nRoadLimitSpeed;
 		            disp_speed = (int)(disp_speed * ((s->scene.is_metric)?1.0:KM_TO_MILE) + 0.5);
                 
-                // 🎯 [최종 수정] 제한속도가 0보다 클 때만 과속 검사 로직 작동!
+                // 🎯 제한속도가 0보다 클 때만 과속 검사 작동! (0일 땐 하얀색 테두리 유지)
                 limit_color = (disp_speed > 0 && v_ego * 3.6 > disp_speed + 2) ? COLOR_RED_ALPHA(210) : COLOR_WHITE_ALPHA(210);
                 
                 ui_draw_text(s, dx, dy - 45, "LIMIT", 30, COLOR_WHITE, BOLD);
+            }
+
+            // 👇 지난번에 실수로 날아갔던 "박스 그리기"와 "숫자/- 출력" 코드 복구!
+            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, limit_color, 15, 2);
+            
+            if (disp_speed > 0) {
+                ui_draw_text(s, dx, dy, QString::number(disp_speed).toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+            } else {
+                ui_draw_text(s, dx, dy, "-", 40, COLOR_WHITE, BOLD);
             }
         }
 
