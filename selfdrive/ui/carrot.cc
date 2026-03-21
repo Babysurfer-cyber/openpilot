@@ -2454,8 +2454,8 @@ public:
             // 🔴 위험 (50% 미만): 빨간색
             NVGcolor status_color = (prob_pct >= 50) ? COLOR_ORANGE : COLOR_RED;
             
-            // 크기를 40으로 키워 굵고 크게(Bold) 시각적 경고 효과 극대화
-            ui_draw_text(s, dx, dy, "-", 40, status_color, BOLD);
+            // 크기를 50으로 키워 굵고 크게(Bold) 시각적 경고 효과 극대화
+            ui_draw_text(s, dx, dy, "-", 50, status_color, BOLD);
         }
 
         // 🎯 [복구 및 수정] 차간거리 변경 시 화면 중앙에 나타나는 팝업 애니메이션!
