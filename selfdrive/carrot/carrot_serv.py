@@ -933,7 +933,7 @@ class CarrotServ:
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
     elif CS is not None and CS.speedLimit > 0:
-      
+
       if CS.speedLimitDistance > 0:
         # 1. 일반적인 단속 카메라 (남은 거리가 있을 때 스르륵 감속)
         sdi_speed = min(sdi_speed,
@@ -942,8 +942,9 @@ class CarrotServ:
                                                      self.autoNaviSpeedCtrlEnd,
                                                      self.autoNaviSpeedDecelRate))
         hda_active = True
-        
-    else:
+
+      else:
+        # === [추가] 일반 주행 중 제한속도 하락 시 5초간 HDA 감속 ===
         import time
         import os
         
@@ -963,14 +964,14 @@ class CarrotServ:
                 speed_diff = self.prev_speed_limit - current_limit
                 current_cruise = CS.cruiseState.speed * 3.6
                 
-                # 타겟 속도 계산 (예: 110 - 20 = 90)
-                self.hda_drop_target_speed = max(30.0, current_cruise - speed_diff)
+                # 타겟 속도 계산 (최저 속도 50km/h 방어선 유지)
+                self.hda_drop_target_speed = max(50.0, current_cruise - speed_diff)
                 
                 # 감속 모드 ON 및 5초 타이머 설정
                 self.hda_drop_active = True
-                self.hda_drop_end_time = time.time() + 5.0  # 현재 시간으로부터 5초 동안 유지
+                self.hda_drop_end_time = time.time() + 5.0
                 
-                # 🎵 오타 없는 확실한 audioPrompt 신호탄 생성
+                # 🎵 확실한 audioPrompt 신호탄 생성
                 try:
                     open("/dev/shm/carrot_prompt", "w").close()
                 except Exception:
@@ -991,9 +992,9 @@ class CarrotServ:
 
         # 4. 콤마 화면에 주황색 HDA 띄우고 속도 줄이기 적용
         if self.hda_drop_active:
-            # sdi_speed에 타겟 속도를 넣고 hda_active를 True로 주면 주황색 HDA 아이콘 발동!
             sdi_speed = min(sdi_speed, self.hda_drop_target_speed)
             hda_active = True
+        # =======================================================
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
