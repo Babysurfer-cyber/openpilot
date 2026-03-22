@@ -520,6 +520,7 @@ class VCruiseCarrot:
           v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)  # 현재 차량 속도로 크루즈 세팅
           self._add_log("Carrot Cruise OFF & Set to current speed")
         # ================================================================
+      else:
 
         if self._soft_hold_active > 0:
           self._cruise_control(-1, -1, "Cruise off,softhold mode (decelCruise)")
