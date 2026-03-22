@@ -949,19 +949,19 @@ class CarrotServ:
         
         # 1. 초기 변수 세팅 (처음 실행될 때만)
         if not hasattr(self, 'prev_speed_limit'):
-            self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
-            self.hda_drop_target_speed = 0
-            self.hda_drop_end_time = 0.0
-            self.hda_drop_active = False
+          self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+          self.hda_drop_target_speed = 0
+          self.hda_drop_end_time = 0.0
+          self.hda_drop_active = False
 
         current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
 
-        # 2. 제한속도 하락 감지 로직 (줄 맞춤 수정 완료)
+        # 2. 제한속도 하락 감지 로직 (들여쓰기 완벽 교정!)
         if current_limit > 0 and self.prev_speed_limit > 0:
           if current_limit < self.prev_speed_limit:
             # 제한속도 하락 감지! (예: 100 -> 80)
             
-            # 🎵 [핵심] 감속 제어 여부와 상관없이 무조건 안내음 발생!
+            # 🎵 감속 제어 여부와 상관없이 무조건 안내음 발생!
             try:
               open("/dev/shm/carrot_prompt", "w").close()
             except Exception:
