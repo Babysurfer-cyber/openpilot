@@ -516,31 +516,26 @@ class VCruiseCarrot:
 
         # === [추가] 당근크루즈 작동 중 SET(-) 버튼을 눌렀을 때의 로직 ===
         if self.carrot_cruise_active:
-          self.carrot_cruise_active = False  # 당근크루즈 종료 (기본 크루즈 모드로 복귀)
-          v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)  # 현재 차량 속도로 크루즈 세팅
+          self.carrot_cruise_active = False  # 당근크루즈 종료
+          v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)  # 현재 속도로 크루즈 세팅
           self._add_log("Carrot Cruise OFF & Set to current speed")
-        # ================================================================
-      else:
-
-        if self._soft_hold_active > 0:
-          self._cruise_control(-1, -1, "Cruise off,softhold mode (decelCruise)")
-        elif self._cruise_ready:
-          self._paddle_decel_active = True
-          pass
-        elif not CC.enabled:
-          v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
-        elif self.v_ego_kph_set > v_cruise_kph + 2 and self._cruise_button_mode in [2, 3]:
-          v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
-        elif self._cruise_button_mode in [0, 1]:
-          v_cruise_kph = button_kph
-        elif self.v_ego_kph_set < 1.0:
-          self.carrot_cruise_active = True
-        elif self.v_ego_kph_set > self._cruise_speed_min and v_cruise_kph > self.v_ego_kph_set:
-          v_cruise_kph = self.v_ego_kph_set
         else:
-          #self._cruise_control(-2, -1, "Cruise off (decelCruise)")
-          self.carrot_cruise_active = True
-          #self.events.append(EventName.audioPrompt)
+          if self._soft_hold_active > 0:
+            self._cruise_control(-1, -1, "Cruise off,softhold mode (decelCruise)")
+          elif self._cruise_ready:
+            self._paddle_decel_active = True
+          elif not CC.enabled:
+            v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
+          elif self.v_ego_kph_set > v_cruise_kph + 2 and self._cruise_button_mode in [2, 3]:
+            v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
+          elif self._cruise_button_mode in [0, 1]:
+            v_cruise_kph = button_kph
+          elif self.v_ego_kph_set < 1.0:
+            self.carrot_cruise_active = True
+          elif self.v_ego_kph_set > self._cruise_speed_min and v_cruise_kph > self.v_ego_kph_set:
+            v_cruise_kph = self.v_ego_kph_set
+          else:
+            self.carrot_cruise_active = True
         self._v_cruise_kph_at_brake = 0
 
       elif button_type == ButtonType.gapAdjustCruise:
