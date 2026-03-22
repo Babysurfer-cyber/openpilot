@@ -483,19 +483,15 @@ class CarrotPlanner:
     lead_detected = radarstate.leadOne.status # & radarstate.leadOne.radar
     is_cruising = carstate.cruiseState.enabled # 크루즈 작동 여부 확인
 
-    # [수정] 앞차 최초 인식 + 끼어들기 감지 알림 로직 통합
+    # [수정] 앞차 최초 인식 + 끼어들기 감지 알림 로직 통합 (더욱 완벽한 방식)
     if lead_detected:
       current_lead_dist = radarstate.leadOne.dRel
       
-      # 1. 끼어들기 감지: 앞차가 연속으로 있는데 거리가 5미터 이상 훅 줄어들었고, 마침 내 차가 감속 중이라면!
+      # 1. 끼어들기 감지: 앞차가 연속으로 있는데 거리가 5미터 이상 훅 줄어들었다면?
       if self.prev_lead_status and (self.prev_lead_dist - current_lead_dist) > 5.0:
-        if is_cruising and a_ego < -0.1:
-          try:
-            open("/dev/shm/carrot_lead_braking", "w").close()
-          except Exception:
-            pass
-          self.lead_alerted = True     # 소리 냈으니 도장 쾅!
-          self.lead_detect_count = 51  # 기존 최초인식 로직과 겹치지 않게 카운트 밀어버림
+        # 완전히 새로운 앞차가 나타난 것으로 간주하고 타이머와 도장(알림 상태)을 싹 초기화!
+        self.lead_alerted = False
+        self.lead_detect_count = 0
 
       # 다음 프레임 비교를 위해 저장
       self.prev_lead_dist = current_lead_dist
@@ -504,10 +500,10 @@ class CarrotPlanner:
       self.lead_lost_count = 0
       self.lead_detect_count += 1  # 앞차를 인식한 시간 카운트 시작
 
-      # 2. 기존 최초 인식 시 감속 알림
+      # 2. 최초 인식(또는 끼어들기 리셋) 후 0.5초 이내 감속 알림
       if not self.lead_alerted:
         
-        # 조건 A: 앞차를 인식한 지 0.5초(50프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
+        # 조건 A: 인식한 지 0.5초(50프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
         if is_cruising and a_ego < -0.1 and self.lead_detect_count <= 50:
           try:
             open("/dev/shm/carrot_lead_braking", "w").close()
@@ -515,7 +511,7 @@ class CarrotPlanner:
             pass
           self.lead_alerted = True  # 알림을 줬다고 도장 찍음
           
-        # 조건 B: 앞차를 인식하고 감속 없이 0.5초가 평화롭게 지나가 버렸다면? -> 소리 없이 도장만 찍어서 기회 박탈!
+        # 조건 B: 감속 없이 0.5초가 평화롭게 지나가 버렸다면? -> 소리 없이 기회 박탈
         elif self.lead_detect_count > 50:
           self.lead_alerted = True
 
