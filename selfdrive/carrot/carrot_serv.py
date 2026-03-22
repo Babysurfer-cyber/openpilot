@@ -956,40 +956,40 @@ class CarrotServ:
 
         current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
 
-              # 2. 제한속도 하락 감지 로직
-              if current_limit > 0 and self.prev_speed_limit > 0:
-                  if current_limit < self.prev_speed_limit:
-                      # 제한속도 하락 감지! (예: 100 -> 80)
-                      
-                      # =======================================================
-                      # 🎵 [수정] 감속 제어 여부와 상관없이 무조건 audioPrompt 신호탄 생성!
-                      try:
-                          open("/dev/shm/carrot_prompt", "w").close()
-                      except Exception:
-                          pass
-                      # =======================================================
+                # 2. 제한속도 하락 감지 로직
+                if current_limit > 0 and self.prev_speed_limit > 0:
+                    if current_limit < self.prev_speed_limit:
+                        # 제한속도 하락 감지! (예: 100 -> 80)
+                        
+                        # =======================================================
+                        # 🎵 [핵심 수정] 내 속도, 감속 제어 여부와 상관없이 무조건 안내음 발생!
+                        try:
+                            open("/dev/shm/carrot_prompt", "w").close()
+                        except Exception:
+                            pass
+                        # =======================================================
 
-                      speed_diff = self.prev_speed_limit - current_limit
-                      current_cruise = CS.cruiseState.speed * 3.6
-                      
-                      # 타겟 속도 계산 (최저 속도 50km/h 방어선 유지)
-                      calculated_target = max(50.0, current_cruise - speed_diff)
-                      
-                      # 🛡️ 계산된 타겟 속도가 현재 크루즈 속도보다 높거나 같으면 무시 (감속 생략)
-                      if calculated_target >= current_cruise:
-                          self.hda_drop_active = False
-                      else:
-                          self.hda_drop_target_speed = calculated_target
-                          
-                          # 감속 모드 ON 및 10초 타이머 설정
-                          self.hda_drop_active = True
-                          self.hda_drop_end_time = time.time() + 10.0
+                        speed_diff = self.prev_speed_limit - current_limit
+                        current_cruise = CS.cruiseState.speed * 3.6
+                        
+                        # 타겟 속도 계산 (최저 속도 50km/h 방어선 유지)
+                        calculated_target = max(50.0, current_cruise - speed_diff)
+                        
+                        # 🛡️ 계산된 타겟 속도가 현재 크루즈 속도보다 높거나 같으면 무시 (감속 생략)
+                        if calculated_target >= current_cruise:
+                            self.hda_drop_active = False
+                        else:
+                            self.hda_drop_target_speed = calculated_target
+                            
+                            # 감속 모드 ON 및 10초 타이머 설정
+                            self.hda_drop_active = True
+                            self.hda_drop_end_time = time.time() + 10.0
 
-                  elif current_limit > self.prev_speed_limit:
-                      # 제한속도가 오르면 타이머가 남았더라도 즉시 해제
-                      self.hda_drop_active = False
+                    elif current_limit > self.prev_speed_limit:
+                        # 제한속도가 오르면 타이머가 남았더라도 즉시 해제
+                        self.hda_drop_active = False
 
-        self.prev_speed_limit = current_limit
+                self.prev_speed_limit = current_limit
 
         # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
         if CS.gasPressed:
