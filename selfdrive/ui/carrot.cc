@@ -2436,56 +2436,22 @@ public:
         // =======================================================
         // 1. 마름모 안의 모델 신뢰도 기반 하이픈(-) 표시
         // =======================================================
-        // 1. 기존 차간거리 숫자 및 팝업 애니메이션 처리 준비
+        // 1. 차간거리(Gap) 숫자 표시 (폰트 60 적용)
         // =======================================================
         int gap = params.getInt("LongitudinalPersonality") + 1;
-        dx = bx + 220;
-        dy = by + 77;
+        dx = bx + 220; // x-coordinate for center of rhombus
+        dy = by + 77;  // y-coordinate for center of rhombus
 
-        // =======================================================
-        // 2. 모델 신뢰도(Lead Probability) 기반 하이픈 게이지 표시
-        // =======================================================
-        auto leads = sm["modelV2"].getModelV2().getLeadsV3();
-        float lead_prob = (leads.size() > 0) ? leads[0].getProb() : 0.0;
-        int prob_pct = (int)(lead_prob * 100);
+        char gap_str[32];
+        sprintf(gap_str, "%d", gap);
 
-        int num_lines = 0;   
-        NVGcolor stack_color; 
-
-        // 신뢰도 및 전방 차량 유무에 따른 등급 설정
-        if (prob_pct < 2) {
-            num_lines = 1;               // ⚪ 앞차 없음: 반투명 흰색 한 줄 (대기 상태)
-            stack_color = COLOR_WHITE_ALPHA(150); 
-        } 
-        else if (prob_pct >= 85) {
-            num_lines = 3;               // ✅ 신뢰도 상 (85% 이상): 흰색 세 줄
-            stack_color = COLOR_WHITE;
-        } 
-        else if (prob_pct >= 50) {
-            num_lines = 2;               // 🟠 신뢰도 중 (50~84%): 주황색 두 줄
-            stack_color = COLOR_ORANGE;
-        } 
-        else {
-            num_lines = 1;               // 🔴 신뢰도 하 (50% 미만): 빨간색 한 줄 (위험)
-            stack_color = COLOR_RED;
-        }
-
-        // 아랫쪽 정렬로 하이픈 쌓아서 그리기 (폰트 크기 50)
+        // 마름모 중앙에 숫자 표시 (Font size 60)
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        float base_y = dy + 25; // 기준 바닥점
-        for (int i = 0; i < num_lines; i++) {
-            // 폰트 크기 50 적용, 줄 간격 30으로 설정
-            ui_draw_text(s, dx, base_y - (i * 30), "-", 50, stack_color, BOLD);
-        }
+        ui_draw_text(s, dx, dy, gap_str, 60, COLOR_WHITE, BOLD);
 
-        // =======================================================
-        // 3. 차간거리 조절 시 팝업 애니메이션 (원래 숫자 1~4)
-        // =======================================================
+        // 변경 시 팝업 애니메이션 (Font size 60)
         if (gap_last != gap) {
-            char anim_gap_str[32];
-            sprintf(anim_gap_str, "%d", gap);
-            // 팝업 애니메이션도 시원하게 폰트 크기 50 적용
-            ui_draw_text_a(s, dx, dy, anim_gap_str, 50, COLOR_WHITE, BOLD);
+            ui_draw_text_a(s, dx, dy, gap_str, 60, COLOR_WHITE, BOLD);
         }
         gap_last = gap;
 
