@@ -514,16 +514,19 @@ class VCruiseCarrot:
         self._lat_enabled = True
         self._pause_auto_speed_up = True
 
-        # === [추가] 당근크루즈 작동 중 SET(-) 버튼을 눌렀을 때의 로직 ===
+        # 1. 당근크루즈 작동 중 SET(-)을 누르면 -> 당근 끄고 현재 속도 고정
         if self.carrot_cruise_active:
           self.carrot_cruise_active = False  # 당근크루즈 종료
-          v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)  # 현재 속도로 크루즈 세팅
+          v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)  # 현재 차량 속도로 세팅
           self._add_log("Carrot Cruise OFF & Set to current speed")
+        
+        # 2. 당근크루즈가 아닐 때만 -> 기존의 일반적인 버튼 로직 수행
         else:
           if self._soft_hold_active > 0:
             self._cruise_control(-1, -1, "Cruise off,softhold mode (decelCruise)")
           elif self._cruise_ready:
             self._paddle_decel_active = True
+            pass
           elif not CC.enabled:
             v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
           elif self.v_ego_kph_set > v_cruise_kph + 2 and self._cruise_button_mode in [2, 3]:
@@ -536,6 +539,7 @@ class VCruiseCarrot:
             v_cruise_kph = self.v_ego_kph_set
           else:
             self.carrot_cruise_active = True
+            
         self._v_cruise_kph_at_brake = 0
 
       elif button_type == ButtonType.gapAdjustCruise:
