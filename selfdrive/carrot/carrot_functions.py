@@ -49,10 +49,12 @@ class CarrotPlanner:
     self.params_count = 0
     self.frame = 0
 
-    # [추가] 새로운 앞차 1회성 알림을 위한 상태 변수
+    # [추가] 새로운 앞차 1회성 알림 및 끼어들기 감지를 위한 상태 변수
     self.lead_alerted = False
     self.lead_lost_count = 0
-    self.lead_detect_count = 0  # <--- [추가] 앞차를 인식한 시간을 재는 타이머
+    self.lead_detect_count = 0  # 앞차를 인식한 시간을 재는 타이머
+    self.prev_lead_dist = 250.0   # 이전 앞차와의 거리 (끼어들기 감지용)
+    self.prev_lead_status = False # 이전 앞차 인식 여부 (끼어들기 감지용)
 
     #self.log = ""
 
@@ -481,17 +483,36 @@ class CarrotPlanner:
     lead_detected = radarstate.leadOne.status # & radarstate.leadOne.radar
     is_cruising = carstate.cruiseState.enabled # 크루즈 작동 여부 확인
 
-    # [수정] 크루즈 작동 중 + 최초 인식 0.5초 이내 감속 시에만 1회 알림
+    # [수정] 앞차 최초 인식 + 끼어들기 감지 알림 로직 통합
     if lead_detected:
+      current_lead_dist = radarstate.leadOne.dRel
+      
+      # 1. 끼어들기 감지: 앞차가 연속으로 있는데 거리가 5미터 이상 훅 줄어들었고, 마침 내 차가 감속 중이라면!
+      if self.prev_lead_status and (self.prev_lead_dist - current_lead_dist) > 5.0:
+        if is_cruising and a_ego < -0.1:
+          try:
+            open("/dev/shm/carrot_lead_braking", "w").close()
+          except Exception:
+            pass
+          self.lead_alerted = True     # 소리 냈으니 도장 쾅!
+          self.lead_detect_count = 51  # 기존 최초인식 로직과 겹치지 않게 카운트 밀어버림
+
+      # 다음 프레임 비교를 위해 저장
+      self.prev_lead_dist = current_lead_dist
+      self.prev_lead_status = True
+
       self.lead_lost_count = 0
       self.lead_detect_count += 1  # 앞차를 인식한 시간 카운트 시작
 
-      # 아직 이 앞차에 대해 도장을 찍지 않았다면
+      # 2. 기존 최초 인식 시 감속 알림
       if not self.lead_alerted:
         
         # 조건 A: 앞차를 인식한 지 0.5초(50프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
         if is_cruising and a_ego < -0.1 and self.lead_detect_count <= 50:
-          open("/dev/shm/carrot_lead_braking", "w").close()
+          try:
+            open("/dev/shm/carrot_lead_braking", "w").close()
+          except Exception:
+            pass
           self.lead_alerted = True  # 알림을 줬다고 도장 찍음
           
         # 조건 B: 앞차를 인식하고 감속 없이 0.5초가 평화롭게 지나가 버렸다면? -> 소리 없이 도장만 찍어서 기회 박탈!
@@ -499,6 +520,9 @@ class CarrotPlanner:
           self.lead_alerted = True
 
     else:
+      self.prev_lead_dist = 250.0
+      self.prev_lead_status = False
+
       # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 1초 대기 후 초기화)
       self.lead_lost_count += 1
       if self.lead_lost_count > 100:
@@ -573,8 +597,8 @@ class CarrotPlanner:
           self.comfort_brake = self.comfortBrake * 0.9
           #self.comfort_brake = COMFORT_BRAKE
           self.trafficStopAdjustRatio = np.interp(v_ego_kph, [0, 100], [1.0, 0.7])
-          stop_dist = stop_model_x_rl * np.interp(stop_model_x_rl, [0, 50], [1.0, self.trafficStopAdjustRatio])  ##�����Ÿ��� ���� �����Ÿ� ��������
-          if stop_dist > 10.0: ### 10M�̻��϶���, self.actual_stop_distance�� ������Ʈ��.
+          stop_dist = stop_model_x_rl * np.interp(stop_model_x_rl, [0, 50], [1.0, self.trafficStopAdjustRatio])  ##Ÿ  Ÿ 
+          if stop_dist > 10.0: ### 10M̻϶, self.actual_stop_distance Ʈ.
             self.actual_stop_distance = stop_dist
           stop_model_x = 0
           self.fakeCruiseDistance = 0 if self.actual_stop_distance > 10.0 else 10.0
@@ -617,9 +641,9 @@ class CarrotPlanner:
     self.comfort_brake *= self.mySafeFactor
     self.actual_stop_distance = max(0, self.actual_stop_distance - (v_ego * DT_MDL))
 
-    if stop_model_x == 1000.0: ##  e2eCruise, lead�ΰ��
+    if stop_model_x == 1000.0: ##  e2eCruise, leadΰ
       self.actual_stop_distance = 0.0
-    elif self.actual_stop_distance > 0: ## e2eStop, e2eStopped�ΰ��..
+    elif self.actual_stop_distance > 0: ## e2eStop, e2eStoppedΰ..
       stop_model_x = 0.0
 
     stopping_active = self.xState not in [XState.e2eStop, XState.e2eStopped]
@@ -632,7 +656,7 @@ class CarrotPlanner:
     #   f"stopDist={self.actual_stop_distance:.1f}," +
     #   f"Traffic={str(self.trafficState)}"
     # )
-    #��ȣ�� �������� self.xState.value
+    #ȣ  self.xState.value
 
     stop_dist =  stop_model_x + self.actual_stop_distance
     stop_dist = max(stop_dist, 0.0)
