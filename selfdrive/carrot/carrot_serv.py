@@ -956,12 +956,12 @@ class CarrotServ:
 
         current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
 
-        # 2. 제한속도 하락 감지 로직 (줄 맞춤 수정 완료!)
+        # 2. 제한속도 하락 감지 로직 (줄 맞춤 수정 완료)
         if current_limit > 0 and self.prev_speed_limit > 0:
           if current_limit < self.prev_speed_limit:
             # 제한속도 하락 감지! (예: 100 -> 80)
             
-            # 🎵 감속 제어 여부와 상관없이 무조건 안내음 발생!
+            # 🎵 [핵심] 감속 제어 여부와 상관없이 무조건 안내음 발생!
             try:
               open("/dev/shm/carrot_prompt", "w").close()
             except Exception:
@@ -988,6 +988,7 @@ class CarrotServ:
             self.hda_drop_active = False
 
         self.prev_speed_limit = current_limit
+        
         # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
         if CS.gasPressed:
             self.hda_drop_active = False
