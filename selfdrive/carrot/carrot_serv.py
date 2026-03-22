@@ -935,8 +935,54 @@ class CarrotServ:
         self.active_carrot = 4
     elif CS is not None and CS.speedLimit > 0:
 
+      # === [수정] 안내음 및 제한속도 추적 로직 (항상 제일 먼저 실행되도록 위로 뺌) ===
+      
+      # 1. 초기 변수 세팅 (처음 실행될 때만)
+      if not hasattr(self, 'prev_speed_limit'):
+        self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+        self.hda_drop_target_speed = 0
+        self.hda_drop_end_time = 0.0
+        self.hda_drop_active = False
+
+      current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+
+      # 2. 제한속도 하락 감지 로직 (독립적으로 매 프레임 체크!)
+      if current_limit > 0 and self.prev_speed_limit > 0:
+        if current_limit < self.prev_speed_limit:
+          # 🎵 제한속도 하락 감지! 카메라 유무와 상관없이 즉시 안내음 발생!
+          try:
+            open("/dev/shm/carrot_prompt", "w").close()
+          except Exception:
+            pass
+
+          # 타겟 속도 계산
+          speed_diff = self.prev_speed_limit - current_limit
+          current_cruise = CS.cruiseState.speed * 3.6
+          calculated_target = max(50.0, current_cruise - speed_diff)
+          
+          # 🛡️ 감속 조건 설정
+          if calculated_target < current_cruise:
+            self.hda_drop_target_speed = calculated_target
+            self.hda_drop_active = True
+            self.hda_drop_end_time = time.time() + 10.0  # 10초간 감속
+
+        elif current_limit > self.prev_speed_limit:
+          # 제한속도가 오르면 즉시 해제
+          self.hda_drop_active = False
+
+      self.prev_speed_limit = current_limit
+      
+      # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
+      if CS.gasPressed:
+          self.hda_drop_active = False
+          
+      if self.hda_drop_active and time.time() > self.hda_drop_end_time:
+          self.hda_drop_active = False
+
+      # === [기존] 속도 제어 적용 로직 ===
+      
       if CS.speedLimitDistance > 0:
-        # 1. 일반적인 단속 카메라 (남은 거리가 있을 때 스르륵 감속)
+        # 4-1. 전방 단속 카메라가 있을 때 스르륵 감속
         sdi_speed = min(sdi_speed,
                         self.calculate_current_speed(CS.speedLimitDistance,
                                                      CS.speedLimit * self.autoNaviSpeedSafetyFactor,
@@ -944,65 +990,12 @@ class CarrotServ:
                                                      self.autoNaviSpeedDecelRate))
         hda_active = True
 
-      else:
-        # === [추가] 일반 주행 중 제한속도 하락 시 5초간 HDA 감속 ===
-        
-        # 1. 초기 변수 세팅 (처음 실행될 때만)
-        if not hasattr(self, 'prev_speed_limit'):
-          self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
-          self.hda_drop_target_speed = 0
-          self.hda_drop_end_time = 0.0
-          self.hda_drop_active = False
+      if self.hda_drop_active:
+        # 4-2. 제한속도 하락에 의한 추가 감속 적용 (화면에 주황색 HDA 띄우기)
+        sdi_speed = min(sdi_speed, self.hda_drop_target_speed)
+        hda_active = True
 
-        current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
-
-        # 2. 제한속도 하락 감지 로직 (들여쓰기 완벽 교정!)
-        if current_limit > 0 and self.prev_speed_limit > 0:
-          if current_limit < self.prev_speed_limit:
-            # 제한속도 하락 감지! (예: 100 -> 80)
-            
-            # 🎵 감속 제어 여부와 상관없이 무조건 안내음 발생!
-            try:
-              open("/dev/shm/carrot_prompt", "w").close()
-            except Exception:
-              pass
-
-            speed_diff = self.prev_speed_limit - current_limit
-            current_cruise = CS.cruiseState.speed * 3.6
-            
-            # 타겟 속도 계산 (최저 속도 50km/h 방어선 유지)
-            calculated_target = max(50.0, current_cruise - speed_diff)
-            
-            # 🛡️ 계산된 타겟 속도가 현재 크루즈 속도보다 높거나 같으면 무시 (감속 생략)
-            if calculated_target >= current_cruise:
-              self.hda_drop_active = False
-            else:
-              self.hda_drop_target_speed = calculated_target
-              
-              # 감속 모드 ON 및 10초 타이머 설정
-              self.hda_drop_active = True
-              self.hda_drop_end_time = time.time() + 10.0
-
-          elif current_limit > self.prev_speed_limit:
-            # 제한속도가 오르면 타이머가 남았더라도 즉시 해제
-            self.hda_drop_active = False
-
-        self.prev_speed_limit = current_limit
-        
-        # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
-        if CS.gasPressed:
-            self.hda_drop_active = False
-            
-        if self.hda_drop_active and time.time() > self.hda_drop_end_time:
-            self.hda_drop_active = False
-
-        # 4. 콤마 화면에 주황색 HDA 띄우고 속도 줄이기 적용
-        if self.hda_drop_active:
-            sdi_speed = min(sdi_speed, self.hda_drop_target_speed)
-            hda_active = True
-        # =======================================================
-
-    #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
+    #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}...
     ### TBT 속도제어
     atc_desired, self.atcType, self.atcSpeed, self.atcDist = self.update_auto_turn(v_ego*3.6, sm, self.xTurnInfo, self.xDistToTurn, True)
     atc_desired_next, _, _, _ = self.update_auto_turn(v_ego*3.6, sm, self.xTurnInfoNext, self.xDistToTurnNext, False)
