@@ -924,7 +924,9 @@ class CarrotServ:
 
     sdi_speed = 250
     hda_active = False
+    cam_active = False  # <--- 카메라를 강력하게 제어할 변수 추가!
     ### 과속카메라, 사고방지턱
+
     if (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0:
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
@@ -988,7 +990,7 @@ class CarrotServ:
                                                      CS.speedLimit * self.autoNaviSpeedSafetyFactor,
                                                      self.autoNaviSpeedCtrlEnd,
                                                      self.autoNaviSpeedDecelRate))
-        hda_active = True
+        cam_active = True  # <--- hda 대신 cam으로 강력하게 제어!
 
       if self.hda_drop_active:
         # 4-2. 제한속도 하락에 의한 추가 감속 적용 (화면에 주황색 HDA 띄우기)
@@ -1026,9 +1028,10 @@ class CarrotServ:
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
-      (sdi_speed, "hda" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "cam"),
+      (sdi_speed, "hda" if hda_active else "cam" if cam_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "cam"),
       (limit_speed, "road"),
     ]
+
     if self.turnSpeedControlMode in [1,2]:
       speed_n_sources.append((max(abs(vturn_speed), self.autoCurveSpeedLowerLimit), "vturn"))
 
