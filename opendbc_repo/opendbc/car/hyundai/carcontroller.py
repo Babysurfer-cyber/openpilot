@@ -337,7 +337,17 @@ class CarController(CarControllerBase):
 
       # blinkers
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
+        left_blinker = CC.leftBlinker
+        right_blinker = CC.rightBlinker
+        
+        # === [추가] 후진 시 비상깜빡이 (후깜) 로직 ===
+        # 현재 기어가 후진(reverse) 상태인지 확인합니다.
+        if CS.out.gearShifter == structs.CarState.GearShifter.reverse:
+          left_blinker = True
+          right_blinker = True
+        # ============================================
+        
+        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, left_blinker, right_blinker))
 
       if self.camera_scc_params in [2, 3]:
         self.canfd_toggle_adas(CC, CS)
