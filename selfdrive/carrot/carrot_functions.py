@@ -503,16 +503,16 @@ class CarrotPlanner:
       # 2. 최초 인식(또는 끼어들기 리셋) 후 0.5초 이내 감속 알림
       if not self.lead_alerted:
         
-        # 조건 A: 인식한 지 0.5초(50프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
-        if is_cruising and a_ego < -0.1 and self.lead_detect_count <= 50:
+        # 조건 A: 인식한 지 0.2초(20프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
+        if is_cruising and a_ego < -0.5 and self.lead_detect_count <= 20:
           try:
             open("/dev/shm/carrot_lead_braking", "w").close()
           except Exception:
             pass
           self.lead_alerted = True  # 알림을 줬다고 도장 찍음
           
-        # 조건 B: 감속 없이 0.5초가 평화롭게 지나가 버렸다면? -> 소리 없이 기회 박탈
-        elif self.lead_detect_count > 50:
+        # 조건 B: 감속 없이 0.2초가 평화롭게 지나가 버렸다면? -> 소리 없이 기회 박탈
+        elif self.lead_detect_count > 20:
           self.lead_alerted = True
 
     else:
@@ -521,7 +521,7 @@ class CarrotPlanner:
 
       # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 1초 대기 후 초기화)
       self.lead_lost_count += 1
-      if self.lead_lost_count > 100:
+      if self.lead_lost_count > 50:
         self.lead_alerted = False
         self.lead_detect_count = 0  # <--- 새로운 차를 위해 타이머도 0으로 초기화
 
