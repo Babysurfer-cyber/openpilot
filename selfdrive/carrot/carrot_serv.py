@@ -976,10 +976,10 @@ class CarrotServ:
       
       # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
       if CS.gasPressed:
-          self.hda_drop_active = False
+        self.hda_drop_active = False
           
       if self.hda_drop_active and time.time() > self.hda_drop_end_time:
-          self.hda_drop_active = False
+        self.hda_drop_active = False
 
       # === [기존] 속도 제어 적용 로직 ===
       
