@@ -1068,21 +1068,32 @@ class CarrotServ:
     desired_speed, source = min(speed_n_sources, key=lambda x: x[0])
 
     if CS is not None:
+      # 소스가 변경되면 gas_override 초기화
       if source != self.source_last:
         self.gas_override_speed = 0
         self.gas_pressed_state = CS.gasPressed
-      if CS.vEgo < 0.1 or desired_speed > 150 or source in ["cam", "section", "police"] or CS.brakePressed or road_speed_limit_changed:
+        
+      # === [수정] 카메라/단속 구간 등에서는 브레이크를 밟거나, 정차 시, 혹은 가속 페달을 뗀 상태에서 즉시 오버라이드 해제 ===
+      if CS.vEgo < 0.1 or desired_speed > 150 or CS.brakePressed or road_speed_limit_changed:
         self.gas_override_speed = 0
+      elif source in ["cam", "section", "police", "hda"]: 
+        # 단속 구간(cam, section 등)에서는 가속 페달을 밟는 순간에만 override, 떼면 즉시 0으로 초기화
+        if CS.gasPressed:
+          self.gas_override_speed = max(v_ego_kph, self.gas_override_speed)
+        else:
+          self.gas_override_speed = 0
       elif CS.gasPressed and not self.gas_pressed_state:
         self.gas_override_speed = max(v_ego_kph, self.gas_override_speed)
       else:
         self.gas_pressed_state = False
+        
       self.source_last = source
 
-      #gas 감속 제거
-      #if desired_speed < self.gas_override_speed:
-        #source = "gas"
-        #desired_speed = self.gas_override_speed
+      # === [수정] 가속 페달 오버라이드 로직 활성화 (단, 가속 페달을 밟고 있는 동안만) ===
+      # 페달에서 발을 떼면 gas_override_speed가 0이 되므로, 다시 desired_speed(카메라 감속 속도)를 따르게 됨.
+      if CS.gasPressed and desired_speed < self.gas_override_speed:
+        source = "gas"
+        desired_speed = self.gas_override_speed
 
       self.debugText += f"route={route_speed:.1f}"#f"desired={desired_speed:.1f},{source},g={self.gas_override_speed:.0f}"
 
