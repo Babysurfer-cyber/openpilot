@@ -734,9 +734,7 @@ class CarrotServ:
         1: {"type": "turn left", "speed": turn_speed, "dist": turn_dist_for_speed, "start": start_fork_dist},
         2: {"type": "turn right", "speed": turn_speed, "dist": turn_dist_for_speed, "start": start_fork_dist},
         5: {"type": "straight", "speed": turn_speed, "dist": turn_dist_for_speed, "start": start_turn_dist},
-        3: {"type": "fork left", "speed": fork_speed, "dist": fork_dist_for_speed, "start": start_fork_dist},
-        4: {"type": "fork right", "speed": fork_speed, "dist": fork_dist_for_speed, "start": start_fork_dist},
-        6: {"type": "straight", "speed": fork_speed, "dist": fork_dist_for_speed, "start": start_fork_dist},
+        # 3(분기점 좌), 4(분기점 우), 6(톨게이트)는 ATC 대신 HDA 로직으로 감속하기 위해 여기서 제외합니다.
         7: {"type": "straight", "speed": stop_speed, "dist": stop_dist_for_speed, "start": 1000},
         8: {"type": "straight", "speed": stop_speed, "dist": stop_dist_for_speed, "start": 1000},
     }
@@ -996,6 +994,26 @@ class CarrotServ:
         # 4-2. 제한속도 하락에 의한 추가 감속 적용 (화면에 주황색 HDA 띄우기)
         sdi_speed = min(sdi_speed, self.hda_drop_target_speed)
         hda_active = True
+
+      # === [수정] 진출로/분기점(3, 4), 톨게이트(6) HDA 감속 (현재 속도 기반 1.8m/s^2) ===
+      if self.xTurnInfo in [3, 4, 6] and self.xDistToTurn > 0:
+        # 목표속도: 현재 제한속도 - 30 (최저 50km/h 보장)
+        target_speed = max(50.0, self.nRoadLimitSpeed - 30.0)
+        
+        # 1. 감속 시작 지점(거리) 계산: 도로 제한속도가 아닌 '내 차의 현재 속도(v_ego)' 기준!
+        current_speed_mps = v_ego  # 코드 상단에서 이미 v_ego = CS.vEgo (m/s) 로 정의되어 있음
+        target_speed_mps = target_speed / 3.6
+        
+        if current_speed_mps > target_speed_mps:
+          req_dist = ((current_speed_mps**2) - (target_speed_mps**2)) / (2 * 1.8)
+        else:
+          req_dist = 0
+          
+        # 2. 차량이 계산된 감속 시작 지점(안전 마진 10m 추가)에 도달했을 때 비로소 HDA 개입!
+        if self.xDistToTurn <= req_dist + 10.0:
+          # 기존 감속 로직에 가속도 1.8을 넣어서 부드러운 하강 곡선을 그림
+          sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xDistToTurn, target_speed, 0.0, 1.8))
+          hda_active = True
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}...
     ### TBT 속도제어
