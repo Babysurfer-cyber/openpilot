@@ -997,8 +997,8 @@ class CarrotServ:
 
       # === [수정] 진출로/분기점(3, 4), 톨게이트(6) HDA 감속 (현재 속도 기반 1.8m/s^2) ===
       if self.xTurnInfo in [3, 4, 6] and self.xDistToTurn > 0:
-        # 목표속도: 현재 제한속도 - 30 (최저 70km/h 보장)
-        target_speed = max(70.0, self.nRoadLimitSpeed - 30.0)
+        # 목표속도: 현재 제한속도 - 30 (최저 60km/h 보장)
+        target_speed = max(60.0, self.nRoadLimitSpeed - 30.0)
         
         # 1. 감속 시작 지점(거리) 계산: 도로 제한속도가 아닌 '내 차의 현재 속도(v_ego)' 기준!
         current_speed_mps = v_ego  # 코드 상단에서 이미 v_ego = CS.vEgo (m/s) 로 정의되어 있음
