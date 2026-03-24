@@ -2473,7 +2473,7 @@ public:
 
         // 마름모 중앙에 단일 하이픈 그리기 (폰트 크기 60)
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx, dy, "-", 65, status_color, BOLD);
+        ui_draw_text(s, dx, dy, "▩", 60, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
