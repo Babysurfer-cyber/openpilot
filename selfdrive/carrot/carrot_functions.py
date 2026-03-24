@@ -500,10 +500,10 @@ class CarrotPlanner:
       self.lead_lost_count = 0
       self.lead_detect_count += 1  # 앞차를 인식한 시간 카운트 시작
 
-      # 2. 최초 인식(또는 끼어들기 리셋) 후 0.5초 이내 감속 알림
+      # 2. 최초 인식(또는 끼어들기 리셋) 후 0.2초 이내 감속 알림
       if not self.lead_alerted:
         
-        # 조건 A: 인식한 지 0.2초(20프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
+        # 조건 A: 인식한 지 0.2초(30프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
         if is_cruising and a_ego < -0.5 and self.lead_detect_count <= 20:
           try:
             open("/dev/shm/carrot_lead_braking", "w").close()
@@ -519,7 +519,7 @@ class CarrotPlanner:
       self.prev_lead_dist = 250.0
       self.prev_lead_status = False
 
-      # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 1초 대기 후 초기화)
+      # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 0.5초 대기 후 초기화)
       self.lead_lost_count += 1
       if self.lead_lost_count > 50:
         self.lead_alerted = False
