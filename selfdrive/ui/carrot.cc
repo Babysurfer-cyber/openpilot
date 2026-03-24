@@ -2466,7 +2466,7 @@ public:
             status_color = COLOR_WHITE;            // ✅ 신뢰도 상 (흰색)
         } 
         else if (prob_pct >= 50) {
-            status_color = COLOR_ORANGE;           // 🟠 신뢰도 중 (주황색)
+            status_color = COLOR_YELLOW;           // 🟠 신뢰도 중 (노란색으로 수정)
         } 
         else {
             status_color = COLOR_RED;              // 🔴 신뢰도 하 (빨간색)
@@ -2474,7 +2474,7 @@ public:
 
         // 마름모 중앙에 단일 하이픈 그리기 (폰트 크기 60)
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx, dy, "-", 60, status_color, BOLD);
+        ui_draw_text(s, dx, dy, "◆", 50, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
