@@ -941,8 +941,8 @@ class CarrotServ:
       if not hasattr(self, 'prev_speed_limit'):
         self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
         self.hda_drop_target_speed = 0
-        self.hda_drop_end_time = 0.0
         self.hda_drop_active = False
+        self.hda_drop_original_limit = 0.0  # [NEW] 하락 전 기존 제한속도를 기억하기 위한 변수
 
       # [NEW] 분기점/톨게이트 취소 관리를 위한 상태 변수 추가
       if not hasattr(self, 'turn_gas_canceled'):
@@ -973,29 +973,32 @@ class CarrotServ:
           # 🛡️ 감속 조건 설정
           if calculated_target < current_cruise:
             self.hda_drop_target_speed = calculated_target
+            # [수정] 10초 타이머 대신 하락하기 전의 기존 제한속도를 기억해둠
+            if not self.hda_drop_active:
+              self.hda_drop_original_limit = self.prev_speed_limit
             self.hda_drop_active = True
-            self.hda_drop_end_time = time.time() + 10.0  # 10초간 감속
 
         elif current_limit > self.prev_speed_limit:
-          # 제한속도가 오르면 즉시 해제
-          self.hda_drop_active = False
+          # [수정] 제한속도가 오를 때, '기존 속도(하락 전)'와 같아지거나 그 이상으로 올라가면 감속 해제
+          if current_limit >= self.hda_drop_original_limit:
+            self.hda_drop_active = False
+            self.hda_drop_original_limit = 0.0
 
       self.prev_speed_limit = current_limit
       
-      # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
+      # 3. 감속 취소 조건 (가속 페달 밟음)
       if CS.gasPressed:
         # [수정] 가속 페달을 밟으면 제한속도 하락 감속은 즉시 취소 (영구 취소)
         self.hda_drop_active = False
+        self.hda_drop_original_limit = 0.0
         
         # [NEW] 가속 페달을 밟으면 분기점(3,4) 및 톨게이트(6) 감속도 '영구 취소' 도장을 찍음!
         if self.xTurnInfo in [3, 4, 6]:
           self.turn_gas_canceled = True
           
-      if self.hda_drop_active and time.time() > self.hda_drop_end_time:
-        self.hda_drop_active = False
-
-      # === [기존] 속도 제어 적용 로직 ===
+      # (10초 경과 자동 해제 로직은 유저 요청에 따라 완전히 삭제되었습니다!)
       
+      # === [기존] 속도 제어 적용 로직 === 
       if CS.speedLimitDistance > 0:
         # 4-1. 전방 과속 단속 카메라가 있을 때 스르륵 감속
         # (★주의: 얘는 엑셀을 밟아도 취소 꼬리표(canceled)가 붙지 않기 때문에, 엑셀에서 발을 떼면 즉시 다시 감속으로 복귀함!)
