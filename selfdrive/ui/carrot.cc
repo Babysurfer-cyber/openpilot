@@ -2348,12 +2348,11 @@ public:
         xSpdLimit = 50;
         xSignType = 1;
 #endif
-        // cam_detected 두 줄을 깔끔하게 삭제했습니다.
+        bool cam_detected = false;
+        if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
         NVGcolor stroke_color = COLOR_WHITE;
-        
-        // 🎯 수정: 큰 박스 배경은 깜빡이지 않게 고정!
-        NVGcolor bg_color = COLOR_BLACK_ALPHA(90); 
-        
+        // 👇 이 부분이 큰 박스 전체를 빨간색으로 깜빡이게 하는 범인입니다!
+        NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_BLACK_ALPHA(90):COLOR_BLACK_ALPHA(90);
         if (show_device_state > 0) {
           ui_fill_rect(s->vg, { bx - 120, by - 270, 475, 495 }, bg_color, 30, 2, &stroke_color);
         }
