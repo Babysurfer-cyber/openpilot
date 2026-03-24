@@ -1009,6 +1009,14 @@ class CarrotServ:
                                                      self.autoNaviSpeedDecelRate))
         cam_active = True  # <--- hda 대신 cam으로 강력하게 제어!
 
+        # ========================================================
+        # 👇 [NEW] 순정 내비게이션 카메라 정보를 화면 깜빡임 UI와 연동! 👇
+        self.xSpdLimit = CS.speedLimit
+        self.xSpdDist = CS.speedLimitDistance
+        self.xSpdType = 1  # 1: 고정식 과속카메라 (UI에서 CAM으로 인식하게 만듦)
+        self.active_carrot = max(self.active_carrot, 2)  # 강제로 UI를 깨움
+        # ========================================================
+
       if self.hda_drop_active:
         # 4-2. 제한속도 하락에 의한 추가 감속 적용 (화면에 주황색 HDA 띄우기)
         sdi_speed = min(sdi_speed, self.hda_drop_target_speed)
