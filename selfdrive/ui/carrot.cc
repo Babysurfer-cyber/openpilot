@@ -2380,28 +2380,43 @@ public:
         dy = by + 77;
 
         // =======================================================
-        // 2. 진짜 모델 신뢰도(양쪽 차선 인식률 평균) 기반 3단계 표시
+        // 2. 진짜 모델 신뢰도(차선 인식률) 기반 그라데이션 (안전장치 추가)
         // =======================================================
         auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
         
-        // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
-        float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
+        NVGcolor status_color = COLOR_WHITE_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
+        const char* status_icon = "□";                  // 부팅 중 기본 기호 (하이픈)
 
-        NVGcolor status_color; 
+        // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
+        if (lane_probs.size() > 2) {
+            // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
+            float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
+            status_icon = "▩"; // 데이터가 들어오면 네모 기호로 변경
 
-        if (model_prob >= 0.85f) {
-            status_color = COLOR_WHITE;            // ✅ 신뢰도 상 (안정적: 흰색)
-        } 
-        else if (model_prob >= 0.5f) {
-            status_color = COLOR_YELLOW;           // 🟡 신뢰도 중 (주의: 노란색)
-        } 
-        else {
-            status_color = COLOR_RED;              // 🔴 신뢰도 하 (개입 필요: 빨간색)
+            int r, g, b;
+            if (model_prob >= 0.85f) {
+                // 85% 이상은 완전한 흰색 (길 아주 잘 파악함)
+                r = 255; g = 255; b = 255; 
+            } else if (model_prob >= 0.5f) {
+                // 50% ~ 85%: 노랑(218,202,37)에서 흰색(255,255,255)으로 서서히 변환
+                float ratio = (model_prob - 0.5f) / 0.35f; 
+                r = 218 + (int)((255 - 218) * ratio);
+                g = 202 + (int)((255 - 202) * ratio);
+                b = 37  + (int)((255 -  37) * ratio);
+            } else {
+                // 0% ~ 50%: 완전한 빨강(255,59,59)에서 노랑(218,202,37)으로 서서히 변환
+                float ratio = model_prob / 0.5f; 
+                if (ratio < 0.0f) ratio = 0.0f; // 음수 방지 안전장치
+                r = 255 + (int)((218 - 255) * ratio);
+                g = 59  + (int)((202 -  59) * ratio);
+                b = 59  + (int)((37  -  59) * ratio);
+            }
+            status_color = nvgRGBA(r, g, b, 255);
         }
 
-        // 정중앙 네모 기호(예: ▩) 그리기 (폰트 크기 50)
+        // 정중앙 기호 그리기 (데이터 없으면 '□', 있으면 '▩')
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx, dy, "▩", 50, status_color, BOLD);
+        ui_draw_text(s, dx, dy, status_icon, 50, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
