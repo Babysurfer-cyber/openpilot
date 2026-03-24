@@ -2439,10 +2439,6 @@ public:
           ui_draw_text(s, dx, dy - 45, "GPS", 30, COLOR_GREEN, BOLD);
         }
 
-        // =======================================================
-        // 1. 마름모 안의 모델 신뢰도 기반 하이픈(-) 표시
-        // =======================================================
-        // =======================================================
         // 1. 기존 차간거리 팝업 애니메이션 처리 준비
         // =======================================================
         int gap = params.getInt("LongitudinalPersonality") + 1;
@@ -2450,30 +2446,38 @@ public:
         dy = by + 77;
 
         // =======================================================
-        // 2. 모델 신뢰도(Lead Probability) 기반 단일 하이픈(-) 표시
+        // 2. 진짜 모델 신뢰도(양쪽 차선 인식률 평균) 기반 그라데이션 (예외 없음)
         // =======================================================
-        auto leads = sm["modelV2"].getModelV2().getLeadsV3();
-        float lead_prob = (leads.size() > 0) ? leads[0].getProb() : 0.0;
-        int prob_pct = (int)(lead_prob * 100);
+        auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
+        
+        // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
+        float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
 
         NVGcolor status_color; 
+        int r, g, b;
 
-        if (prob_pct < 2) {
-            status_color = COLOR_WHITE_ALPHA(150); // ⚪ 앞차 없음 (반투명 대기 상태)
-        } 
-        else if (prob_pct >= 85) {
-            status_color = COLOR_WHITE;            // ✅ 신뢰도 상 (흰색)
-        } 
-        else if (prob_pct >= 50) {
-            status_color = COLOR_YELLOW;           // 🟠 신뢰도 중 (노란색으로 수정)
-        } 
-        else {
-            status_color = COLOR_RED;              // 🔴 신뢰도 하 (빨간색)
+        if (model_prob >= 0.85f) {
+            // 85% 이상은 완전한 흰색 (길 아주 잘 파악함)
+            r = 255; g = 255; b = 255; 
+        } else if (model_prob >= 0.5f) {
+            // 50% ~ 85%: 노랑(218,202,37)에서 흰색(255,255,255)으로 서서히 변환
+            float ratio = (model_prob - 0.5f) / 0.35f; 
+            r = 218 + (int)((255 - 218) * ratio);
+            g = 202 + (int)((255 - 202) * ratio);
+            b = 37  + (int)((255 -  37) * ratio);
+        } else {
+            // 0% ~ 50%: 완전한 빨강(255,59,59)에서 노랑(218,202,37)으로 서서히 변환
+            // (차선이 아예 안 보일 때 0% = 완전 빨강으로 직관적인 경고!)
+            float ratio = model_prob / 0.5f; 
+            r = 255 + (int)((218 - 255) * ratio);
+            g = 59  + (int)((202 -  59) * ratio);
+            b = 59  + (int)((37  -  59) * ratio);
         }
+        status_color = nvgRGBA(r, g, b, 255);
 
-        // 마름모 중앙에 단일 하이픈 그리기 (폰트 크기 60)
+        // 정중앙 네모 기호(예: ▣) 그리기 (폰트 크기 50)
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx, dy, "▩", 60, status_color, BOLD);
+        ui_draw_text(s, dx, dy, "▩", 50, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
