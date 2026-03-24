@@ -1310,10 +1310,17 @@ public:
         bool right_unsafe = right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0);
         // -------------------------------------------------------------------------
 
-        if (desireStateTurnLeft > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_l", 1.0f);
-        else if (desireStateTurnRight > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_r", 1.0f);
-        else if (desireStateLaneChangeLeft > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-        else if (desireStateLaneChangeRight > 0.5) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+        if (desireStateTurnLeft > 0.5) {
+            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_l", 1.0f);
+        } else if (desireStateTurnRight > 0.5) {
+            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_r", 1.0f);
+        } else if (desireStateLaneChangeLeft > 0.5) {
+            // 차선 변경 중에도 깜빡이도록 타이머(lc_blink_state) 적용
+            if (lc_blink_state) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+        } else if (desireStateLaneChangeRight > 0.5) {
+            // 차선 변경 중에도 깜빡이도록 타이머(lc_blink_state) 적용
+            if (lc_blink_state) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+        }
         
         // 차선 변경 준비(PRE_LANE_CHANGE) 상태일 때 아이콘 처리
         if (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) {
