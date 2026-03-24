@@ -1041,59 +1041,8 @@ protected:
     bool left_dist_flag = true;
 
     void drawSpeedLimit(const UIState* s) {
-        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        
-        if (xSpdDist > 0) {
-            char str[128] = "";
-
-            // ==========================================
-            // 🎯 튜닝 포인트: 우측 하단 고정 좌표 및 크기 설정
-            // ==========================================
-            float scale = 0.8;          // 표지판 크기 (0.8~1.0 추천)
-            int bx = s->fb_w - 180;     // 화면 오른쪽 끝에서 왼쪽으로 180픽셀 이동 (녹화버튼 근처)
-            int by = s->fb_h - 150;     // 화면 바닥에서 위로 150픽셀 이동
-            // ==========================================
-
-            // 남은 거리 표시
-            if (xSpdDist > 0) {
-                if (s->scene.is_metric) {
-                    if (xSpdDist < 1000) sprintf(str, "%d m", xSpdDist);
-                    else  sprintf(str, "%.1f km", xSpdDist / 1000.f);
-                }
-                else {
-                    if (xSpdDist < 1609) sprintf(str, "%d ft", (int)(xSpdDist * 3.28084)); 
-                    else sprintf(str, "%.1f mi", xSpdDist / 1609.34f); 
-                }
-                // 표지판 밑에 거리 글자 그리기
-                ui_draw_text(s, bx, by + 120 * scale, str, 40 * scale, COLOR_WHITE, BOLD);
-            }
-
-            // 표지판 이미지 또는 원형 그리기
-            if (xSignType == 22) {
-                // 방지턱 이미지
-                ui_draw_image(s, { bx - (int)(60 * scale), by - (int)(50 * scale), (int)(120 * scale), (int)(150 * scale) }, "ic_speed_bump", 1.0f);
-            }
-            else {
-                // 속도 제한 표지판 (빨간 원 + 흰 바탕 + 숫자)
-                nvgBeginPath(s->vg);
-                nvgCircle(s->vg, bx, by, 140 / 2 * scale);
-                nvgFillColor(s->vg, COLOR_WHITE);
-                nvgFill(s->vg);
-                
-                nvgBeginPath(s->vg);
-                nvgCircle(s->vg, bx, by, 130 / 2 * scale);
-                nvgFillColor(s->vg, COLOR_RED);
-                nvgFill(s->vg);
-                
-                nvgBeginPath(s->vg);
-                nvgCircle(s->vg, bx, by, 110 / 2 * scale);
-                nvgFillColor(s->vg, COLOR_WHITE);
-                nvgFill(s->vg);
-                
-                sprintf(str, "%d", (int)(xSpdLimit * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5));
-                ui_draw_text(s, bx, by + 25 * scale - 6 * (1 - scale), str, 60 * scale, COLOR_BLACK, BOLD, 0.0f, 0.0f);
-            }
-        }
+        // 전방 과속카메라 속도표지판을 화면에 표시하지 않습니다.
+        // (UI를 깔끔하게 유지하기 위해 그리기 로직을 모두 삭제함)
     }
 
     int  drawTurnInfoHud(const UIState* s) {
