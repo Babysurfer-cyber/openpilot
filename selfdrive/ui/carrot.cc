@@ -1042,75 +1042,60 @@ protected:
 
     void drawSpeedLimit(const UIState* s) {
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        if (xSpdLimit <= 0) left_dist_flag = true;
+        
         if (xSpdDist > 0) {
-            SubMaster& sm = *(s->sm);
-            const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
-            const auto road_edges = model.getRoadEdges();
-            const auto lane_lines = model.getLaneLines();
             char str[128] = "";
 
-            if (xSpdDist < 100) {
-                int idx = get_path_length_idx(lane_lines[2], xSpdDist);
-                _model->mapToScreen(lane_lines[2].getX()[idx], lane_lines[2].getY()[idx], lane_lines[2].getZ()[idx], &left_dist_point);
-            }
-            else {
-                int idx = get_path_length_idx(road_edges[0], xSpdDist);
-                _model->mapToScreen(road_edges[1].getX()[idx], road_edges[1].getY()[idx], road_edges[1].getZ()[idx], &left_dist_point);
-            }
+            // ==========================================
+            // 🎯 튜닝 포인트: 우측 하단 고정 좌표 및 크기 설정
+            // ==========================================
+            float scale = 0.8;          // 표지판 크기 (0.8~1.0 추천)
+            int bx = s->fb_w - 180;     // 화면 오른쪽 끝에서 왼쪽으로 180픽셀 이동 (녹화버튼 근처)
+            int by = s->fb_h - 150;     // 화면 바닥에서 위로 150픽셀 이동
+            // ==========================================
 
-            float scale = 0.6;
-            if (xSpdDist < 200) scale = 1.0 - (0.6 * xSpdDist / 200.);
-            int bx = left_dist_point.x() + 140 * scale;
-            int by = left_dist_point.y();
-            if (left_dist_flag) {
-                left_dist_x = bx;
-                left_dist_y = by;
-            }
-            else {
-                left_dist_x = left_dist_x * 0.9 + bx * 0.1;
-                left_dist_y = left_dist_y * 0.9 + by * 0.1;
-            }
-
-            bx = left_dist_x;
-            by = left_dist_y;
-            left_dist_flag = false;
-
+            // 남은 거리 표시
             if (xSpdDist > 0) {
-
                 if (s->scene.is_metric) {
                     if (xSpdDist < 1000) sprintf(str, "%d m", xSpdDist);
                     else  sprintf(str, "%.1f km", xSpdDist / 1000.f);
                 }
                 else {
-                    // 1 미터 = 3.28084 피트로 계산
-                    if (xSpdDist < 1609) sprintf(str, "%d ft", (int)(xSpdDist * 3.28084)); // 1609m(1마일)보다 작으면 피트로 표시
-                    else sprintf(str, "%.1f mi", xSpdDist / 1609.34f); // 1609m 이상이면 마일로 표시
+                    if (xSpdDist < 1609) sprintf(str, "%d ft", (int)(xSpdDist * 3.28084)); 
+                    else sprintf(str, "%.1f mi", xSpdDist / 1609.34f); 
                 }
+                // 표지판 밑에 거리 글자 그리기
                 ui_draw_text(s, bx, by + 120 * scale, str, 40 * scale, COLOR_WHITE, BOLD);
             }
 
+            // 표지판 이미지 또는 원형 그리기
             if (xSignType == 22) {
+                // 방지턱 이미지
                 ui_draw_image(s, { bx - (int)(60 * scale), by - (int)(50 * scale), (int)(120 * scale), (int)(150 * scale) }, "ic_speed_bump", 1.0f);
             }
             else {
+                // 속도 제한 표지판 (빨간 원 + 흰 바탕 + 숫자)
                 nvgBeginPath(s->vg);
                 nvgCircle(s->vg, bx, by, 140 / 2 * scale);
                 nvgFillColor(s->vg, COLOR_WHITE);
                 nvgFill(s->vg);
+                
                 nvgBeginPath(s->vg);
                 nvgCircle(s->vg, bx, by, 130 / 2 * scale);
                 nvgFillColor(s->vg, COLOR_RED);
                 nvgFill(s->vg);
+                
                 nvgBeginPath(s->vg);
                 nvgCircle(s->vg, bx, by, 110 / 2 * scale);
                 nvgFillColor(s->vg, COLOR_WHITE);
                 nvgFill(s->vg);
+                
                 sprintf(str, "%d", (int)(xSpdLimit * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5));
                 ui_draw_text(s, bx, by + 25 * scale - 6 * (1 - scale), str, 60 * scale, COLOR_BLACK, BOLD, 0.0f, 0.0f);
             }
         }
-	}
+    }
+
     int  drawTurnInfoHud(const UIState* s) {
       if (s->fb_w < 1200) return -1;
 #ifdef __UI_TEST
