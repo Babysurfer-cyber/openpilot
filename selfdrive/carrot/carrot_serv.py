@@ -944,6 +944,16 @@ class CarrotServ:
         self.hda_drop_end_time = 0.0
         self.hda_drop_active = False
 
+      # [NEW] 분기점/톨게이트 취소 관리를 위한 상태 변수 추가
+      if not hasattr(self, 'turn_gas_canceled'):
+        self.turn_gas_canceled = False
+        self.xTurnInfo_last = -1
+
+      # [NEW] 턴 정보가 달라지면 취소 상태 리셋 (새로운 분기점/톨게이트가 나타나면 다시 감속 활성화)
+      if self.xTurnInfo != self.xTurnInfo_last:
+        self.turn_gas_canceled = False
+        self.xTurnInfo_last = self.xTurnInfo
+
       current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
 
       # 2. 제한속도 하락 감지 로직 (독립적으로 매 프레임 체크!)
@@ -974,7 +984,12 @@ class CarrotServ:
       
       # 3. 감속 취소 조건 (가속 페달 밟음 OR 10초 경과)
       if CS.gasPressed:
+        # [수정] 가속 페달을 밟으면 제한속도 하락 감속은 즉시 취소 (영구 취소)
         self.hda_drop_active = False
+        
+        # [NEW] 가속 페달을 밟으면 분기점(3,4) 및 톨게이트(6) 감속도 '영구 취소' 도장을 찍음!
+        if self.xTurnInfo in [3, 4, 6]:
+          self.turn_gas_canceled = True
           
       if self.hda_drop_active and time.time() > self.hda_drop_end_time:
         self.hda_drop_active = False
@@ -982,7 +997,8 @@ class CarrotServ:
       # === [기존] 속도 제어 적용 로직 ===
       
       if CS.speedLimitDistance > 0:
-        # 4-1. 전방 단속 카메라가 있을 때 스르륵 감속
+        # 4-1. 전방 과속 단속 카메라가 있을 때 스르륵 감속
+        # (★주의: 얘는 엑셀을 밟아도 취소 꼬리표(canceled)가 붙지 않기 때문에, 엑셀에서 발을 떼면 즉시 다시 감속으로 복귀함!)
         sdi_speed = min(sdi_speed,
                         self.calculate_current_speed(CS.speedLimitDistance,
                                                      CS.speedLimit * self.autoNaviSpeedSafetyFactor,
@@ -996,9 +1012,10 @@ class CarrotServ:
         hda_active = True
 
       # === [수정] 진출로/분기점(3, 4), 톨게이트(6) HDA 감속 (현재 속도 기반 1.8m/s^2) ===
-      if self.xTurnInfo in [3, 4, 6] and self.xDistToTurn > 0:
-        # 목표속도: 현재 제한속도 - 30 (최저 60km/h 보장)
-        target_speed = max(60.0, self.nRoadLimitSpeed - 30.0)
+      # [NEW] turn_gas_canceled가 False일 때만(엑셀로 취소하지 않았을 때만) 감속 작동! 엑셀 밟아서 취소 도장 찍히면 무시함.
+      if self.xTurnInfo in [3, 4, 6] and self.xDistToTurn > 0 and not self.turn_gas_canceled:
+        # 목표속도: 현재 제한속도 - 30 (최저 50km/h 보장)
+        target_speed = max(50.0, self.nRoadLimitSpeed - 30.0)
         
         # 1. 감속 시작 지점(거리) 계산: 도로 제한속도가 아닌 '내 차의 현재 속도(v_ego)' 기준!
         current_speed_mps = v_ego  # 코드 상단에서 이미 v_ego = CS.vEgo (m/s) 로 정의되어 있음
