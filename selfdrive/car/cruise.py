@@ -780,8 +780,10 @@ class VCruiseCarrot:
           
 
     if self._gas_pressed_count > self._gas_tok_timer:
-      if CS.aEgo < -0.5:
-        self._cruise_control(-1, 5.0, "Cruise off (gas pressed while braking)")
+      # --- [수정] 과속카메라 감속 중 엑셀 밟았을 때 5초간 먹통되는 현상 제거 ---
+      # if CS.aEgo < -0.5:
+      #   self._cruise_control(-1, 5.0, "Cruise off (gas pressed while braking)")
+      # ----------------------------------------------------------------------
       if self.v_ego_kph_set > v_cruise_kph and self.autoGasSyncSpeed:
         v_cruise_kph = self.v_ego_kph_set
 
