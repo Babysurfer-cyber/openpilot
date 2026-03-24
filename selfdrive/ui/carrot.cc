@@ -2379,7 +2379,7 @@ public:
         // draw speed
         char speed[32];
         sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
-        ui_draw_text(s, bx, by + 50, speed, 120, COLOR_WHITE, BOLD, 3.0f, 8.0f);
+        ui_draw_text(s, bx, by + 50, speed, 110, COLOR_WHITE, BOLD, 2.0f, 8.0f);
         ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
 
         // draw cruise speed
