@@ -2348,8 +2348,7 @@ public:
         xSpdLimit = 50;
         xSignType = 1;
 #endif
-        bool cam_detected = false;
-        if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
+        // cam_detected 두 줄을 깔끔하게 삭제했습니다.
         NVGcolor stroke_color = COLOR_WHITE;
         
         // 🎯 수정: 큰 박스 배경은 깜빡이지 않게 고정!
@@ -2357,6 +2356,9 @@ public:
         
         if (show_device_state > 0) {
           ui_fill_rect(s->vg, { bx - 120, by - 270, 475, 495 }, bg_color, 30, 2, &stroke_color);
+        }
+        else {
+          ui_fill_rect(s->vg, { bx - 120, by - 270 + 140, 475, 495 - 140 }, bg_color, 30, 2, &stroke_color);
         }
 			
         else {
