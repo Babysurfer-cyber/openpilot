@@ -504,9 +504,8 @@ class CarrotPlanner:
       if not self.lead_alerted:
         
         # 조건 A: 인식한 지 0.2초(30프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
-        # if is_cruising and a_ego < -0.5 and self.lead_detect_count <= 20:
-        # [수정 후] a_ego 대신 self.aTarget 사용
-        if is_cruising and self.aTarget < -0.5 and self.lead_detect_count <= 20:
+        if is_cruising and a_ego < -0.5 and self.lead_detect_count <= 20:
+ 
           try:
             open("/dev/shm/carrot_lead_braking", "w").close()
           except Exception:
