@@ -2351,19 +2351,13 @@ public:
         bool cam_detected = false;
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
         NVGcolor stroke_color = COLOR_WHITE;
-        // 👇 이 부분이 큰 박스 전체를 빨간색으로 깜빡이게 하는 범인입니다!
-        NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_BLACK_ALPHA(90):COLOR_BLACK_ALPHA(90);
+        NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_BLACK_ALPHA(100):COLOR_BLACK_ALPHA(90);
         if (show_device_state > 0) {
           ui_fill_rect(s->vg, { bx - 120, by - 270, 475, 495 }, bg_color, 30, 2, &stroke_color);
         }
         else {
           ui_fill_rect(s->vg, { bx - 120, by - 270 + 140, 475, 495 - 140 }, bg_color, 30, 2, &stroke_color);
-        }
-			
-        else {
-          ui_fill_rect(s->vg, { bx - 120, by - 270 + 140, 475, 495 - 140 }, bg_color, 30, 2, &stroke_color);
-        }
-
+		}
 
         // draw traffic light
         int icon_red = icon_size;
