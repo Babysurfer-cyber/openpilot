@@ -96,12 +96,7 @@ class LongitudinalPlanner:
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
-    self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
-    
-    # =========================================================
-    # ▼ [추가] 엑셀을 밟았었는지 기억하는 변수
-    self.prev_gas_pressed = False 
-    
+    self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]     
     self.output_a_target = 0.0
     self.output_v_target_now = 0.0
     self.output_j_target_now = 0.0
@@ -190,29 +185,6 @@ class LongitudinalPlanner:
       self.mpc.prev_a = np.full(N+1, self.a_desired) ## carrot
       accel_limits_turns[0] = accel_limits_turns[0] = 0.0 ## carrot
 
-
-    # =========================================================
-    # ▼ [추가] 과속카메라 앞 엑셀 오버라이드 해제 시 즉각 감속 로직
-    # =========================================================
-    gas_pressed = sm['carState'].gasPressed
-    gas_released = self.prev_gas_pressed and not gas_pressed
-    
-    # 1. 현재 카메라 단속 구간인지 확인
-    camera_limit = 0
-    if 'carrotMan' in sm:
-        camera_limit = sm['carrotMan'].xSpdLimit
-        
-    # 2. 카메라 구간이고 + 방금 엑셀에서 발을 뗐다면?
-    if gas_released and camera_limit > 0:
-        # 가상의 미끄럼틀(목표 속도)을 현재 내 속도(v_ego)로 강제 추락!
-        self.v_desired_filter.x = min(self.v_desired_filter.x, v_ego)
-        # 가속도(a_desired)도 튕기지 않게 현재 가속도로 제한
-        self.a_desired = min(self.a_desired, sm['carState'].aEgo)
-
-    # 3. 다음 프레임 비교를 위해 현재 엑셀 상태를 저장
-    self.prev_gas_pressed = gas_pressed
-    # =========================================================
-    
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
     x, v, a, j, throttle_prob = self.parse_model(sm['modelV2'])
