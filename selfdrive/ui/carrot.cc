@@ -2313,8 +2313,11 @@ public:
         // draw speed
         char speed[32];
         sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
-        ui_draw_text(s, bx, by + 50, speed, 110, COLOR_WHITE, BOLD, 2.0f, 8.0f);
-        ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
+        // 1. 화면 정중앙 상단 좌표 설정
+        int center_x = s->fb_w / 2;
+        int top_y = 180; // 높이가 마음에 안 들면 이 숫자를 조절하세요 (작아지면 위로, 커지면 아래로)
+        // 2. 폰트크기 130, 테두리 0.0f, 그림자 0.0f 적용
+        ui_draw_text(s, center_x, top_y, speed, 130, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw cruise speed
         char cruise_speed[32];
