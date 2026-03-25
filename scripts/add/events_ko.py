@@ -365,7 +365,26 @@ def car_parser_result(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMast
     AlertStatus.normal, AlertSize.small,
     Priority.LOW, VisualAlert.none, AudibleAlert.none, 1., creation_delay=1.)
   
+# =========================================================
+# ▼ 차선 변경 시 딱 한 번만 소리를 내기 위한 커스텀 함수
+# =========================================================
+def lane_change_audio_alert(CP, CS, sm, metric, soft_disable_time, personality):
+  # 오픈파일럿 모델의 차선 변경 상태값 가져오기 (2: 차선 넘어가기 시작함)
+  lc_state = sm['modelV2'].meta.laneChangeState.raw
+  
+  # 상태가 2(시작)일 때만 안내음을 내고, 그 외에는 강제 무음 처리!
+  audio = AudibleAlert.longDisengaged if lc_state == 2 else AudibleAlert.none
 
+  # 우선순위는 기존대로 Priority.LOW 로 유지합니다.
+  return Alert(
+    "차선을 변경합니다",
+    "",
+    AlertStatus.normal, AlertSize.small,
+    Priority.LOW, VisualAlert.none, audio, 1.)
+
+# =========================================================
+# ▼ (이 아래부터 원래 있던 EVENTS 목록이 시작됩니다)
+# =========================================================
 
 EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   # ********** events with no alerts **********
@@ -574,11 +593,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.laneChange: {
-    ET.PERMANENT: Alert(
-      "차선을 변경합니다",
-      "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.longDisengaged, 3.),
+    ET.PERMANENT: lane_change_audio_alert,
   },
 
   EventName.steerSaturated: {
