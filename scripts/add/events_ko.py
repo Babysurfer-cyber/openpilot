@@ -577,7 +577,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "차선을 변경합니다",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.longDisengaged, 5.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.longDisengaged, 1.5),
   },
 
   EventName.steerSaturated: {
