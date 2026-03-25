@@ -258,8 +258,8 @@ static void ui_draw_text_a2(const UIState* s) {
     int x = (s->fb_w / 2 * a_time1 + a_x * (a_max - a_time1)) / a_max;
     int y = ((s->fb_h - 400) * a_time1 + a_y * (a_max - a_time1)) / a_max;
     int size = (350 * a_time1 + a_size * (a_max - a_time1)) / a_max;
-    if (a_time >= 100) ui_draw_text(s, x, y, a_string, size, a_color, a_font, 9.0, 8.0, COLOR_BLACK, COLOR_BLACK);
-    else ui_draw_text(s, x, y, a_string, size, a_color, a_font);
+    if (a_time >= 100) ui_draw_text(s, x, y, a_string, size, a_color, a_font, 0.0f, 0.0f, COLOR_BLACK, COLOR_BLACK);
+    else ui_draw_text(s, x, y, a_string, size, a_color, a_font, 0.0f);
 }
 static void ui_draw_text_a(const UIState* s, float x, float y, const char* string, float size, NVGcolor color, const char* font_name) {
     a_x = x;
