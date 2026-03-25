@@ -200,7 +200,7 @@ class LongitudinalPlanner:
     # 1. 현재 카메라 단속 구간인지 확인
     camera_limit = 0
     if 'carrotMan' in sm:
-        camera_limit = sm['carrotMan'].carrotMan.xSpdLimit
+        camera_limit = sm['carrotMan'].xSpdLimit
         
     # 2. 카메라 구간이고 + 방금 엑셀에서 발을 뗐다면?
     if gas_released and camera_limit > 0:
