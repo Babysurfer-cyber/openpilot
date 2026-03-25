@@ -569,7 +569,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "사각지대에 차량이 감지되니 대기하세요",
       "",
       AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.promptDistracted, .1),
+      Priority.MID, VisualAlert.none, AudibleAlert.promptDistracted, .1),
   },
 
   EventName.laneChange: {
@@ -577,7 +577,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "차선을 변경합니다",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.longDisengaged, 1.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.longDisengaged, 5.),
   },
 
   EventName.steerSaturated: {
@@ -585,7 +585,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "핸들을 잡아주세요",
       "회전이 조향 한도를 초과함",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.MID, VisualAlert.none, AudibleAlert.warningSoft, 2.),
+      Priority.HIGH, VisualAlert.none, AudibleAlert.warningSoft, 2.),
   },
 
   # Thrown when the fan is driven at >50% but is not rotating
