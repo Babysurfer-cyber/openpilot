@@ -573,7 +573,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.laneChange: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "차선을 변경합니다",
       "",
       AlertStatus.normal, AlertSize.small,
