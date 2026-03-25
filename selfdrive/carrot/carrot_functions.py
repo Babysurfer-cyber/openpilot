@@ -520,9 +520,9 @@ class CarrotPlanner:
       self.prev_lead_dist = 250.0
       self.prev_lead_status = False
 
-      # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 0.5초 대기 후 초기화)
+      # 앞차를 완전히 놓쳤을 때 (깜빡임 방지를 위해 1초 대기 후 초기화)
       self.lead_lost_count += 1
-      if self.lead_lost_count > 50:
+      if self.lead_lost_count > 100:
         self.lead_alerted = False
         self.lead_detect_count = 0  # <--- 새로운 차를 위해 타이머도 0으로 초기화
 
