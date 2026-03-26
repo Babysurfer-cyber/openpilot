@@ -2316,8 +2316,8 @@ public:
         // 1. 화면 정중앙 상단 좌표 설정
         int center_x = s->fb_w / 2;
         int top_y = 180; // 높이가 마음에 안 들면 이 숫자를 조절하세요 (작아지면 위로, 커지면 아래로)
-        // 2. 폰트크기 130, 테두리 0.0f, 그림자 0.0f 적용
-        ui_draw_text(s, center_x, top_y, speed, 140, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        // 2. 폰트크기 160, 테두리 0.0f, 그림자 0.0f 적용
+        ui_draw_text(s, center_x, top_y, speed, 160, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw cruise speed
         char cruise_speed[32];
@@ -2335,10 +2335,10 @@ public:
                 cruise_pump_timer = 5; 
             }
         }        
-        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 115까지 펌핑)
+        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 125까지 펌핑)
         float current_size = 100.0f;
         if (cruise_pump_timer > 0) {
-            current_size += (cruise_pump_timer * 4.0f); // 타이머 * 2 만큼 커짐
+            current_size += (cruise_pump_timer * 5.0f); // 타이머 * 5 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
@@ -2348,7 +2348,7 @@ public:
         NVGcolor textColor = COLOR_GREEN;
         NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
-        int apply_x = bx + 180;
+        int apply_x = bx + 190;
         int apply_y = by + 25;
 
         if (apply_source.length()) {
