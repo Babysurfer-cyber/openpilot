@@ -920,6 +920,7 @@ class CarrotServ:
       self.xDistToTurnNext = 0
       self.xTurnInfoNext = -1
 
+    
     sdi_speed = 250
     hda_active = False
     cam_active = False  # <--- 카메라를 강력하게 제어할 변수 추가!
@@ -935,14 +936,11 @@ class CarrotServ:
         self.active_carrot = 4
     elif CS is not None and CS.speedLimit > 0:
 
-      # === [수정] 안내음 및 제한속도 추적 로직 (항상 제일 먼저 실행되도록 위로 뺌) ===
+      # === [수정] 안내음 및 제한속도 추적 로직 ===
       
       # 1. 초기 변수 세팅 (처음 실행될 때만)
       if not hasattr(self, 'prev_speed_limit'):
         self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
-        self.hda_drop_target_speed = 0
-        self.hda_drop_active = False
-        self.hda_drop_original_limit = 0.0  # [NEW] 하락 전 기존 제한속도를 기억하기 위한 변수
 
       # [NEW] 분기점/톨게이트 취소 관리를 위한 상태 변수 추가
       if not hasattr(self, 'turn_gas_canceled'):
@@ -956,58 +954,32 @@ class CarrotServ:
 
       current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
 
-      # 2. 제한속도 하락 감지 로직 (독립적으로 매 프레임 체크!)
+      # 2. 제한속도 하락 감지 로직 (안내음만 발생!)
       if current_limit > 0 and self.prev_speed_limit > 0:
         if current_limit < self.prev_speed_limit:
-          # 🎵 제한속도 하락 감지! 카메라 유무와 상관없이 즉시 안내음 발생!
+          # 🎵 제한속도 하락 감지! 감속 없이 즉시 안내음(carrot_prompt)만 발생시킴
           try:
             open("/dev/shm/carrot_prompt", "w").close()
           except Exception:
             pass
 
-          # 타겟 속도 계산
-          speed_diff = self.prev_speed_limit - current_limit
-          current_cruise = CS.cruiseState.speed * 3.6
-          calculated_target = max(50.0, current_cruise - speed_diff)
-          
-          # 🛡️ 감속 조건 설정
-          if calculated_target < current_cruise:
-            self.hda_drop_target_speed = calculated_target
-            # [수정] 10초 타이머 대신 하락하기 전의 기존 제한속도를 기억해둠
-            if not self.hda_drop_active:
-              self.hda_drop_original_limit = self.prev_speed_limit
-            self.hda_drop_active = True
-
-        elif current_limit > self.prev_speed_limit:
-          # [수정] 제한속도가 오를 때, '기존 속도(하락 전)'와 같아지거나 그 이상으로 올라가면 감속 해제
-          if current_limit >= self.hda_drop_original_limit:
-            self.hda_drop_active = False
-            self.hda_drop_original_limit = 0.0
-
       self.prev_speed_limit = current_limit
       
-      # 3. 감속 취소 조건 (가속 페달 밟음)
+      # 3. 분기점/톨게이트 감속 취소 조건 (가속 페달 밟음)
       if CS.gasPressed:
-        # [수정] 가속 페달을 밟으면 제한속도 하락 감속은 즉시 취소 (영구 취소)
-        self.hda_drop_active = False
-        self.hda_drop_original_limit = 0.0
-        
-        # [NEW] 가속 페달을 밟으면 분기점(3,4) 및 톨게이트(6) 감속도 '영구 취소' 도장을 찍음!
+        # 가속 페달을 밟으면 분기점(3,4) 및 톨게이트(6) 감속은 '영구 취소' 도장!
         if self.xTurnInfo in [3, 4, 6]:
           self.turn_gas_canceled = True
           
-      # (10초 경과 자동 해제 로직은 유저 요청에 따라 완전히 삭제되었습니다!)
-      
       # === [기존] 속도 제어 적용 로직 === 
       if CS.speedLimitDistance > 0:
         # 4-1. 전방 과속 단속 카메라가 있을 때 스르륵 감속
-        # (★주의: 얘는 엑셀을 밟아도 취소 꼬리표(canceled)가 붙지 않기 때문에, 엑셀에서 발을 떼면 즉시 다시 감속으로 복귀함!)
         sdi_speed = min(sdi_speed,
                         self.calculate_current_speed(CS.speedLimitDistance,
                                                      CS.speedLimit * self.autoNaviSpeedSafetyFactor,
                                                      self.autoNaviSpeedCtrlEnd,
                                                      self.autoNaviSpeedDecelRate))
-        cam_active = True  # <--- hda 대신 cam으로 강력하게 제어!
+        cam_active = True 
 
         # ========================================================
         # 👇 [NEW] 순정 내비게이션 카메라 정보를 화면 깜빡임 UI와 연동! 👇
