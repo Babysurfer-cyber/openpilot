@@ -2543,33 +2543,40 @@ public:
 
         if (show_device_state) {
             char str[128];
-            dx = bx - 35;
-            dy = by - 200;
-            mode_color = COLOR_GREEN_ALPHA(190);
-            ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, (cpuTemp>80 && blink_timer<=8)?COLOR_RED : mode_color, 15, 2);
-            ui_draw_text(s, dx, dy-5, "CPU", 25, COLOR_WHITE, BOLD);
-            sprintf(str, "%.0f\u00B0C", cpuTemp);
-            ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
+            
+            // 텍스트 정렬을 가로 중앙, 세로 아래로 설정 (우측 열 맞춤)
+            nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            
+            // 레이아웃 위치 및 간격 설정 (문구 40, 숫자 80에 맞춰 널찍하게 조정)
+            int dx = s->fb_w - 90;   // 화면 오른쪽 끝에서 90px 떨어진 곳을 중심선으로 사용
+            int dy = 280;            // 가장 첫 번째 항목(DISK)의 숫자 Y 좌표 시작점 (글씨가 커져서 살짝 위로 올림)
+            int label_y_gap = 75;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격 (80 폰트에 맞춰 75로 늘림)
+            int step_y = 170;        // 각 항목 그룹 사이의 간격 (답답하지 않게 170으로 시원하게 늘림)
 
-            dx += 150;
-            ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, (memoryUsage > 85 && blink_timer <= 8) ? COLOR_RED : mode_color, 15, 2);
-            ui_draw_text(s, dx, dy-5, "MEM", 25, COLOR_WHITE, BOLD);
+            // 1. DISK (디스크 사용량)
+            ui_draw_text(s, dx, dy - label_y_gap, "DISK", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            sprintf(str, "%.0f%%", 100 - freeSpace);
+            ui_draw_text(s, dx, dy, str, 80, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
+
+            // 2. MEM (메모리 사용량)
+            dy += step_y;
+            NVGcolor mem_color = (memoryUsage > 85) ? COLOR_RED : COLOR_WHITE; // 위험 시 깜빡임 없이 빨간색 고정
+            ui_draw_text(s, dx, dy - label_y_gap, "MEM", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
             sprintf(str, "%d%%", memoryUsage);
-            ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
+            ui_draw_text(s, dx, dy, str, 80, mem_color, BOLD, 0.0f, 0.0f);
 
-            dx += 150;
-            if (disp_timer < 32) {
-              ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, mode_color, 15, 2);
-              ui_draw_text(s, dx, dy - 5, "DISK", 25, COLOR_WHITE, BOLD);
-              sprintf(str, "%.0f%%", 100 - freeSpace);
-              ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
-            }
-            else {
-              ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, mode_color, 15, 2);
-              ui_draw_text(s, dx, dy - 5, "VOLT", 25, COLOR_WHITE, BOLD);
-              sprintf(str, "%.1fV", voltage);
-              ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
-            }
+            // 3. CPU (온도)
+            dy += step_y;
+            NVGcolor cpu_color = (cpuTemp > 80) ? COLOR_RED : COLOR_WHITE; // 위험 시 깜빡임 없이 빨간색 고정
+            ui_draw_text(s, dx, dy - label_y_gap, "CPU", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            sprintf(str, "%.0f\u00B0C", cpuTemp);
+            ui_draw_text(s, dx, dy, str, 80, cpu_color, BOLD, 0.0f, 0.0f);
+
+            // 4. VOLT (차량 전압)
+            dy += step_y;
+            ui_draw_text(s, dx, dy - label_y_gap, "VOLT", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            sprintf(str, "%.1fV", voltage);
+            ui_draw_text(s, dx, dy, str, 80, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         }
     }
     void drawDateTime(const UIState* s) {
