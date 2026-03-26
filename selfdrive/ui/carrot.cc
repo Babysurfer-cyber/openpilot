@@ -2334,10 +2334,10 @@ public:
                 cruise_pump_timer = 15; 
             }
         }        
-        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 130까지 펌핑)
+        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 115까지 펌핑)
         float current_size = 100.0f;
         if (cruise_pump_timer > 0) {
-            current_size += (cruise_pump_timer * 2.0f); // 타이머 * 2 만큼 커짐
+            current_size += (cruise_pump_timer * 1.0f); // 타이머 * 2 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
