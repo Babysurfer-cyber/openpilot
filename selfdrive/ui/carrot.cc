@@ -2321,16 +2321,27 @@ public:
 
         // draw cruise speed
         char cruise_speed[32];
-        int cruise_x = bx;
-        int cruise_y = by + 50;
+        int cruise_x = bx;       // 이동하신 x좌표
+        int cruise_y = by + 50;  // 이동하신 y좌표        
+        // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
+        static int cruise_pump_timer = 0; 
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
-		    else sprintf(cruise_speed, "--");
+        else sprintf(cruise_speed, "--");        
         if (strcmp(cruise_speed_last, cruise_speed) != 0) {
-			    strcpy(cruise_speed_last, cruise_speed);
-          if(strcmp(cruise_speed, "--"))
-            ui_draw_text_a(s, cruise_x, cruise_y, cruise_speed, 100, COLOR_GREEN, BOLD);
-		    }
-        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, 100, COLOR_GREEN, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            strcpy(cruise_speed_last, cruise_speed);
+            if(strcmp(cruise_speed, "--") != 0) {
+                // 속도가 바뀌면 중앙 팝업 대신 펌핑 타이머 시작 (15프레임 동안 커짐)
+                cruise_pump_timer = 15; 
+            }
+        }        
+        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 130까지 펌핑)
+        float current_size = 100.0f;
+        if (cruise_pump_timer > 0) {
+            current_size += (cruise_pump_timer * 2.0f); // 타이머 * 2 만큼 커짐
+            cruise_pump_timer--; // 매 프레임마다 줄어듦
+        }
+        // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
+        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_GREEN, BOLD, 0.0f, 0.0f);
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
@@ -2425,10 +2436,10 @@ public:
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
         // =======================================================
         if (gap_last != gap) {
-            char anim_gap_str[32];
-            sprintf(anim_gap_str, "%d", gap);
+            //char anim_gap_str[32];
+            //sprintf(anim_gap_str, "%d", gap);
             // 팝업 숫자도 일체감 있게 폰트 크기 60 적용
-            ui_draw_text_a(s, dx, dy, anim_gap_str, 60, COLOR_WHITE, BOLD);
+            //ui_draw_text_a(s, dx, dy, anim_gap_str, 60, COLOR_WHITE, BOLD);
         }
         gap_last = gap;
 
