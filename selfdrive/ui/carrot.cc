@@ -2348,16 +2348,15 @@ public:
         sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
         
         int center_x = s->fb_w / 2;
-        int top_y = 180; 
+        int top_y = 140; // 단위를 아래에 넣기 위해 숫자 위치를 위로 살짝 올림 (기존 180 -> 140)
         
-        // 배경 이미지(ui_draw_image) 코드는 지우고, 글자만 깔끔하게 출력!
+        // 1. 현재 속도 숫자 출력 (크기 140, 두꺼운 BOLD)
         ui_draw_text(s, center_x, top_y, speed, 140, COLOR_WHITE, BOLD, 0.0f, 0.0f);
-        // draw cruise speed
-        char cruise_speed[32];
-        int cruise_x = bx;       // 이동하신 x좌표
-        int cruise_y = by + 50;  // 이동하신 y좌표   
-        // 👇 이 줄을 추가해 주세요! (기존 현재속도 뒤에 깔리던 배경 박스 좌표 그대로입니다)
-        ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
+
+        // 2. 속도 단위(km/h) 출력
+        // 약간 투명한 흰색(ALPHA 200) 적용, 위치는 숫자 바로 아래(top_y + 55)
+        const char* speed_unit = s->scene.is_metric ? "km/h" : "mph";
+        ui_draw_text(s, center_x, top_y + 55, speed_unit, 45, COLOR_WHITE_ALPHA(200), "sans-regular", 0.0f, 0.0f);
 
         // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
@@ -3233,7 +3232,7 @@ void ui_nvg_init(UIState *s) {
 
   // init fonts
   std::pair<const char *, const char *> fonts[] = {
-      //{"sans-regular", "../assets/fonts/opensans_regular.ttf"},
+      {"sans-regular", "../assets/fonts/opensans_regular.ttf"},
       //{"sans-semibold", "../assets/fonts/opensans_semibold.ttf"},
       //{"sans-bold", "../assets/fonts/opensans_bold.ttf"},
       //{"KaiGenGothicKR-Normal", "../assets/addon/font/KaiGenGothicKR-Normal.ttf"},
