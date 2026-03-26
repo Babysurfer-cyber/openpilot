@@ -2466,7 +2466,7 @@ public:
         // --- 위치 및 너비 계산 ---
         // 우측 고정점 계산: 기존 ▩ 글자 중심(dx)에서 1칸짜리 너비(60px)의 절반만큼 오른쪽으로 이동
         float box_width = 60.0f;  // 네모박스 1칸의 기준 너비
-        float fixed_right_x = dx + (box_width / 2.0f); // 우측 끝 좌표 고정
+        float fixed_right_x = dx + (box_width / 2.0f) + 5.0f; // 우측 끝 좌표 고정
 
         // 너비 계산: 0%=60px(1칸) ~ 100%=180px(3칸) 스케일링
         float current_width = box_width + (box_width * 2.0f * model_prob_ratio);
