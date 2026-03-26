@@ -2344,26 +2344,25 @@ public:
         if (red_light) ui_draw_image(s, { x - icon_red / 2, y - icon_red / 2 + 270, icon_red, icon_red }, "ic_traffic_red", 1.0f);
         else if (green_light) ui_draw_image(s, { x - icon_green / 2, y - icon_green / 2 + 270, icon_green, icon_green }, "ic_traffic_green", 1.0f);
 
-        // draw speed
+        // =====================================
+        // 1. 현재속도 (상단 중앙)
+        // =====================================
         char speed[32];
         sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
         
         int center_x = s->fb_w / 2;
-        int top_y = 140; // 단위를 아래에 넣기 위해 숫자 위치를 위로 살짝 올림 (기존 180 -> 140)
+        int top_y = 140; 
         
-        // 1. 현재 속도 숫자 출력 (크기 140, 두꺼운 BOLD)
+        // 속도 숫자 (크기 140, 두껍게)
         ui_draw_text(s, center_x, top_y, speed, 140, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
-        // 2. 속도 단위(km/h) 출력
-        // 약간 투명한 흰색(ALPHA 200) 적용, 위치는 숫자 바로 아래(top_y + 55)
+        // 속도 단위 (얇은 폰트)
         const char* speed_unit = s->scene.is_metric ? "km/h" : "mph";
         ui_draw_text(s, center_x, top_y + 55, speed_unit, 45, COLOR_WHITE_ALPHA(200), "sans-regular", 0.0f, 0.0f);
 
-        // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
-        static int cruise_pump_timer = 0; 
-        
+
         // =====================================
-        // 크루즈 설정속도 (좌측 하단 배치 및 펌핑 애니메이션)
+        // 2. 크루즈 설정속도 (좌측 하단 배치 및 펌핑 애니메이션)
         // =====================================
         char cruise_speed[32];
         int cruise_x = bx;       // 기존 설정하신 좌측 하단 x좌표
@@ -2372,7 +2371,7 @@ public:
         // 글자 뒤에 배경 박스 이미지 깔기
         ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
 
-        // 펌핑 애니메이션을 위한 타이머
+        // 펌핑 애니메이션을 위한 타이머 (딱 한 번만 선언!)
         static int cruise_pump_timer = 0; 
         
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
