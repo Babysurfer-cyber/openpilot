@@ -2321,16 +2321,16 @@ public:
 
         // draw cruise speed
         char cruise_speed[32];
-        int cruise_x = bx + 170;
-        int cruise_y = by + 15;
+        int cruise_x = bx;
+        int cruise_y = by + 50;
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
 		    else sprintf(cruise_speed, "--");
         if (strcmp(cruise_speed_last, cruise_speed) != 0) {
 			    strcpy(cruise_speed_last, cruise_speed);
           if(strcmp(cruise_speed, "--"))
-            ui_draw_text_a(s, cruise_x, cruise_y, cruise_speed, 60, COLOR_GREEN, BOLD);
+            ui_draw_text_a(s, cruise_x, cruise_y, cruise_speed, 100, COLOR_GREEN, BOLD);
 		    }
-        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, 60, COLOR_GREEN, BOLD, 1.0, 5.0, COLOR_BLACK, COLOR_BLACK);
+        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, 100, COLOR_GREEN, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
