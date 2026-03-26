@@ -2360,8 +2360,15 @@ public:
 
         // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
+        
+        // 추가: cruise_speed 문자열 버퍼 및 좌표 변수 선언
+        char cruise_speed[32] = ""; 
+        int cruise_x = center_x;         // 현재 속도 텍스트와 같은 X축 중앙 정렬
+        int cruise_y = top_y + 160;      // 속도 단위(km/h) 표시 아래쪽으로 Y축 배치 (원하는 위치로 픽셀값 조정 가능)
+
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
         else sprintf(cruise_speed, "--");        
+        
         if (strcmp(cruise_speed_last, cruise_speed) != 0) {
             strcpy(cruise_speed_last, cruise_speed);
             if(strcmp(cruise_speed, "--") != 0) {
@@ -2369,12 +2376,14 @@ public:
                 cruise_pump_timer = 5; 
             }
         }        
+        
         // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 120까지 펌핑)
         float current_size = 100.0f;
         if (cruise_pump_timer > 0) {
             current_size += (cruise_pump_timer * 5.0f); // 타이머 * 2 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
+        
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
         ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_GREEN, BOLD, 0.0f, 0.0f);
 
