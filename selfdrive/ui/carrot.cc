@@ -2341,13 +2341,13 @@ public:
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
-            textColor = COLOR_ORENGE;    // apply speed가 작동되면... 색을 바꾸자.
+            textColor = COLOR_ORANGE;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
             ui_draw_text(s, apply_x, apply_y - 50, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
 		    else if(abs(cruiseTarget - v_cruise) > 0.5) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?cruiseTarget: cruiseTarget * KM_TO_MILE + 0.5));
-			      ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+			ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
             ui_draw_text(s, apply_x, apply_y - 50, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 		    }
         const SubMaster& sm = *(s->sm);
