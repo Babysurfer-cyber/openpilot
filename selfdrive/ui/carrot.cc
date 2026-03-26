@@ -2322,7 +2322,10 @@ public:
         // draw cruise speed
         char cruise_speed[32];
         int cruise_x = bx;       // 이동하신 x좌표
-        int cruise_y = by + 50;  // 이동하신 y좌표        
+        int cruise_y = by + 50;  // 이동하신 y좌표   
+        // 👇 이 줄을 추가해 주세요! (기존 현재속도 뒤에 깔리던 배경 박스 좌표 그대로입니다)
+        ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
+
         // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
