@@ -2335,10 +2335,10 @@ public:
                 cruise_pump_timer = 5; 
             }
         }        
-        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 125까지 펌핑)
-        float current_size = 100.0f;
+        // 펌핑 크기 계산 (기본 110, 타이머가 켜지면 최대 125까지 펌핑)
+        float current_size = 110.0f;
         if (cruise_pump_timer > 0) {
-            current_size += (cruise_pump_timer * 5.0f); // 타이머 * 5 만큼 커짐
+            current_size += (cruise_pump_timer * 6.0f); // 타이머 * 6 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
@@ -2355,12 +2355,12 @@ public:
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_ORANGE;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 60, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 60, apply_source.toStdString().c_str(), 30, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
 		    else if(abs(cruiseTarget - v_cruise) > 0.5) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?cruiseTarget: cruiseTarget * KM_TO_MILE + 0.5));
-			ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 60, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+			ui_draw_text(s, apply_x, apply_y, apply_speed_str, 0, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 60, "eco", 0, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 		    }
         const SubMaster& sm = *(s->sm);
 
@@ -2518,7 +2518,7 @@ public:
             
             if (xSpdLimit > 0 && xSignType != 22) {
                 disp_speed = (int)(xSpdLimit * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5);
-                limit_color = (blink_timer <= 8) ? COLOR_RED_ALPHA(210) : COLOR_YELLOW_ALPHA(210);
+                limit_color = (blink_timer <= 8) ? COLOR_RED_ALPHA(210) : COLOR_RED_ALPHA(209);
                 ui_draw_text(s, dx, dy-45, "CAM", 30, COLOR_WHITE, BOLD);
             }
             else {
