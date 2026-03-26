@@ -2397,43 +2397,56 @@ public:
         dy = by + 77;
 
         // =======================================================
-        // 2. 진짜 모델 신뢰도(차선 인식률) 기반 그라데이션 (안전장치 추가)
+        // 2. 모델 신뢰도(차선 인식률) 연속 막대 게이지 (우측 고정, 좌측 채움)
         // =======================================================
         auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
         
-        NVGcolor status_color = COLOR_WHITE_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
-        const char* status_icon = "□";                  // 부팅 중 기본 기호 (하이픈)
-
+        float model_prob = 0.0f;
         // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
         if (lane_probs.size() > 2) {
-            // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
-            float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
-            status_icon = "▩"; // 데이터가 들어오면 네모 기호로 변경
-
-            int r, g, b;
-            if (model_prob >= 0.85f) {
-                // 85% 이상은 완전한 흰색 (길 아주 잘 파악함)
-                r = 255; g = 255; b = 255; 
-            } else if (model_prob >= 0.5f) {
-                // 50% ~ 85%: 노랑(218,202,37)에서 흰색(255,255,255)으로 서서히 변환
-                float ratio = (model_prob - 0.5f) / 0.35f; 
-                r = 218 + (int)((255 - 218) * ratio);
-                g = 202 + (int)((255 - 202) * ratio);
-                b = 37  + (int)((255 -  37) * ratio);
-            } else {
-                // 0% ~ 50%: 완전한 빨강(255,59,59)에서 노랑(218,202,37)으로 서서히 변환
-                float ratio = model_prob / 0.5f; 
-                if (ratio < 0.0f) ratio = 0.0f; // 음수 방지 안전장치
-                r = 255 + (int)((218 - 255) * ratio);
-                g = 59  + (int)((202 -  59) * ratio);
-                b = 59  + (int)((37  -  59) * ratio);
-            }
-            status_color = nvgRGBA(r, g, b, 255);
+            model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
+            model_prob = std::clamp(model_prob, 0.0f, 1.0f); // 0 ~ 1 사이로 보정
         }
 
-        // 정중앙 기호 그리기 (데이터 없으면 '□', 있으면 '▩')
-        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx, dy, status_icon, 50, status_color, BOLD);
+        // 색상 연속 변환 (0% 빨강 -> 50% 노랑 -> 100% 하양)
+        int r, g, b;
+        if (model_prob >= 0.5f) {
+            // 50% ~ 100%: 노랑(218,202,37) -> 흰색(255,255,255)
+            float ratio = (model_prob - 0.5f) * 2.0f; 
+            r = 218 + (int)((255 - 218) * ratio);
+            g = 202 + (int)((255 - 202) * ratio);
+            b = 37  + (int)((255 -  37) * ratio);
+        } else {
+            // 0% ~ 50%: 빨강(255,59,59) -> 노랑(218,202,37)
+            float ratio = model_prob * 2.0f; 
+            r = 255 + (int)((218 - 255) * ratio);
+            g = 59  + (int)((202 -  59) * ratio);
+            b = 59  + (int)((37  -  59) * ratio);
+        }
+        
+        // 💡 요청하신 투명도 120 적용 (0: 완전 투명 ~ 255: 완전 불투명)
+        NVGcolor prob_color = nvgRGBA(r, g, b, 120);
+
+        // 게이지 크기 및 위치 계산
+        float single_box_w = 40.0f;           // 기존 네모박스 하나의 대략적인 너비
+        float max_w = single_box_w * 3.0f;    // 신뢰도 100%: 박스 3개 너비
+        float min_w = single_box_w / 10.0f;   // 신뢰도 0%: 박스의 1/10 너비
+        
+        // 현재 신뢰도에 따른 너비 (min_w ~ max_w)
+        float current_w = min_w + (max_w - min_w) * model_prob;
+        
+        // 오른쪽 모서리를 기준으로 고정하여 x 좌표 역산
+        float rect_right = dx + 20.0f;         // 기존 중앙(dx)에서 박스 반쪽(20)만큼 우측으로 간 위치
+        float rect_x = rect_right - current_w; // 왼쪽으로 뻗어나가도록 x 시작점 계산
+        float rect_y = dy - 35.0f;             // 기존 텍스트 높이에 맞춘 세로 위치
+        float rect_h = 16.0f;                  // 막대 게이지의 두께 (높이)
+
+        // 배경 게이지 (최대 너비를 연하게 그려주어 채워지는 느낌을 강조)
+        NVGcolor bg_color = COLOR_BLACK_ALPHA(80);
+        ui_fill_rect(s->vg, { (int)(rect_right - max_w), (int)rect_y, (int)max_w, (int)rect_h }, bg_color, 8);
+        
+        // 실제 채워지는 신뢰도 게이지 (투명도 120 적용됨)
+        ui_fill_rect(s->vg, { (int)rect_x, (int)rect_y, (int)current_w, (int)rect_h }, prob_color, 8);
 
         // =======================================================
         // 3. 차간거리 조절 애니메이션 타이머 상태 업데이트
