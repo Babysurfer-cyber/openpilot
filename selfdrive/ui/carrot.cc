@@ -2430,56 +2430,85 @@ public:
         dy = by + 77;
 
         // =======================================================
-        // 2. 모델 신뢰도(차선 인식률) 연속 막대 게이지 (우측 고정, 좌측 채움)
+        // 2. [가로 게이지+우측 마커로 변경] 진짜 모델 신뢰도(차선 인식률) 게이지
         // =======================================================
+        // 신뢰도 데이터 확인
         auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
         
-        float model_prob = 0.0f;
-        // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
+        // 부팅 중 또는 데이터 없을 때 기본값 (0%)
+        float model_prob_ratio = 0.0f;
+        int alpha = 120; // 요청하신 투명도 120 설정
+        NVGcolor gauge_color = COLOR_RED_ALPHA(alpha); // 기본 빨강
+
+        // 데이터가 들어왔을 때만 계산
         if (lane_probs.size() > 2) {
-            model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
-            model_prob = std::clamp(model_prob, 0.0f, 1.0f); // 0 ~ 1 사이로 보정
+            // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
+            model_prob_ratio = (lane_probs[1] + lane_probs[2]) / 2.0f;
+
+            // --- 연속적인 색상 그라데이션 (빨강 -> 노랑 -> 흰색) ---
+            int r, g, b;
+            if (model_prob_ratio >= 0.5f) {
+                // 50% ~ 100%: 노랑(218,202,37) -> 흰색(255,255,255)
+                float ratio = (model_prob_ratio - 0.5f) / 0.5f; 
+                r = 218 + (int)((255 - 218) * ratio);
+                g = 202 + (int)((255 - 202) * ratio);
+                b = 37  + (int)((255 - 37)  * ratio);
+            } else {
+                // 0% ~ 50%: 빨강(255,59,59) -> 노랑(218,202,37)
+                float ratio = model_prob_ratio / 0.5f; 
+                r = 255 + (int)((218 - 255) * ratio);
+                g = 59  + (int)((202 - 59)  * ratio);
+                b = 59  + (int)((37  - 59)  * ratio);
+            }
+            gauge_color = nvgRGBA(r, g, b, alpha); // 연속적으로 변하는 색상 (투명도 적용)
         }
 
-        // 색상 연속 변환 (0% 빨강 -> 50% 노랑 -> 100% 하양)
-        int r, g, b;
-        if (model_prob >= 0.5f) {
-            // 50% ~ 100%: 노랑(218,202,37) -> 흰색(255,255,255)
-            float ratio = (model_prob - 0.5f) * 2.0f; 
-            r = 218 + (int)((255 - 218) * ratio);
-            g = 202 + (int)((255 - 202) * ratio);
-            b = 37  + (int)((255 -  37) * ratio);
-        } else {
-            // 0% ~ 50%: 빨강(255,59,59) -> 노랑(218,202,37)
-            float ratio = model_prob * 2.0f; 
-            r = 255 + (int)((218 - 255) * ratio);
-            g = 59  + (int)((202 -  59) * ratio);
-            b = 59  + (int)((37  -  59) * ratio);
-        }
-        
-        // 💡 요청하신 투명도 120 적용 (0: 완전 투명 ~ 255: 완전 불투명)
-        NVGcolor prob_color = nvgRGBA(r, g, b, 120);
+        // --- 위치 및 너비 계산 ---
+        // 우측 고정점 계산: 기존 ▩ 글자 중심(dx)에서 1칸짜리 너비(60px)의 절반만큼 오른쪽으로 이동
+        float box_width = 60.0f;  // 네모박스 1칸의 기준 너비
+        float fixed_right_x = dx + (box_width / 2.0f); // 우측 끝 좌표 고정
 
-        // 게이지 크기 및 위치 계산
-        float single_box_w = 40.0f;           // 기존 네모박스 하나의 대략적인 너비
-        float max_w = single_box_w * 3.0f;    // 신뢰도 100%: 박스 3개 너비
-        float min_w = single_box_w / 10.0f;   // 신뢰도 0%: 박스의 1/10 너비
+        // 너비 계산: 0%=60px(1칸) ~ 100%=180px(3칸) 스케일링
+        float current_width = box_width + (box_width * 2.0f * model_prob_ratio);
         
-        // 현재 신뢰도에 따른 너비 (min_w ~ max_w)
-        float current_w = min_w + (max_w - min_w) * model_prob;
-        
-        // 오른쪽 모서리를 기준으로 고정하여 x 좌표 역산
-        float rect_right = dx + 20.0f;         // 기존 중앙(dx)에서 박스 반쪽(20)만큼 우측으로 간 위치
-        float rect_x = rect_right - current_w; // 왼쪽으로 뻗어나가도록 x 시작점 계산
-        float rect_y = dy - 35.0f;             // 기존 텍스트 높이에 맞춘 세로 위치
-        float rect_h = 16.0f;                  // 막대 게이지의 두께 (높이)
+        // --- 그리기 좌표 계산 (우측 고정, 좌측 확장) ---
+        float gauge_thickness = 30.0f; // 게이지 두께
+        // 현재 X 좌표: 고정된 우측 끝(fixed_right_x)에서 현재 너비를 뺍니다.
+        float current_gauge_x = fixed_right_x - current_width;
 
-        // 배경 게이지 (최대 너비를 연하게 그려주어 채워지는 느낌을 강조)
-        NVGcolor bg_color = COLOR_BLACK_ALPHA(80);
-        ui_fill_rect(s->vg, { (int)(rect_right - max_w), (int)rect_y, (int)max_w, (int)rect_h }, bg_color, 8);
+        // Y 좌표 정렬 (기존 BOTTOM 정렬에 맞춥니다)
+        // 기존 text가 BOTTOM 정렬이었으므로, y좌표 dy에서 두께만큼 뺍니다.
+        float current_gauge_top_y = dy - gauge_thickness; 
+
+        // 테두리 색상 (투명도 적용된 흰색)
+        NVGcolor border_color = COLOR_WHITE_ALPHA(alpha);
+
+        // --- 1. 신뢰도 게이지 막대 채우기 그리기 ---
+        // 기존 status_icon 문자 그리기 코드는 삭제하고, 아래 막대 그리기 코드를 넣습니다.
+        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         
-        // 실제 채워지는 신뢰도 게이지 (투명도 120 적용됨)
-        ui_fill_rect(s->vg, { (int)rect_x, (int)rect_y, (int)current_w, (int)rect_h }, prob_color, 8);
+        ui_fill_rect(s->vg, 
+            { (int)current_gauge_x, (int)current_gauge_top_y, (int)current_width, (int)gauge_thickness }, 
+            gauge_color, 8, 2.0f, &border_color); // 둥글기 8, 테두리 2.0
+
+
+        // --- 2. 우측 마커 선 그리기 (게이지 위 5px, 아래 5px 더 길게) ---
+        float line_thickness = 3.0f;
+        float line_extra_height = 10.0f; // 총 10px 더 길게 (위 5px + 아래 5px)
+
+        // X 좌표: 고정된 우측 끝 fixed_right_x에 정렬
+        float line_x = fixed_right_x - (line_thickness / 2.0f);
+        
+        // Y 좌표: 게이지 top y보다 5px 위에서 시작
+        float line_top_y = current_gauge_top_y - (line_extra_height / 2.0f);
+        
+        // 높이: 게이지 두께 + 추가 높이
+        float line_height = gauge_thickness + line_extra_height;
+
+        // 마커 선 그리기
+        ui_fill_rect(s->vg, 
+            { (int)line_x, (int)line_top_y, (int)line_thickness, (int)line_height }, 
+            border_color, 0.0f); // 둥글기 없음, solid white(알파) 선
 
         // =======================================================
         // 3. 차간거리 조절 애니메이션 타이머 상태 업데이트
