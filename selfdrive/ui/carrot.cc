@@ -2317,12 +2317,13 @@ public:
         int center_x = s->fb_w / 2;
         int top_y = 180; // 높이가 마음에 안 들면 이 숫자를 조절하세요 (작아지면 위로, 커지면 아래로)
         // 2. 폰트크기 130, 테두리 0.0f, 그림자 0.0f 적용
-        ui_draw_text(s, center_x, top_y, speed, 130, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        ui_draw_text(s, center_x, top_y, speed, 140, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw cruise speed
         char cruise_speed[32];
         int cruise_x = bx;       // 이동하신 x좌표
-        int cruise_y = by + 50;  // 이동하신 y좌표        
+        int cruise_y = by + 50;  // 이동하신 y좌표   
+		ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
         // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
@@ -2331,13 +2332,13 @@ public:
             strcpy(cruise_speed_last, cruise_speed);
             if(strcmp(cruise_speed, "--") != 0) {
                 // 속도가 바뀌면 중앙 팝업 대신 펌핑 타이머 시작 (15프레임 동안 커짐)
-                cruise_pump_timer = 15; 
+                cruise_pump_timer = 5; 
             }
         }        
         // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 115까지 펌핑)
         float current_size = 100.0f;
         if (cruise_pump_timer > 0) {
-            current_size += (cruise_pump_timer * 1.0f); // 타이머 * 2 만큼 커짐
+            current_size += (cruise_pump_timer * 4.0f); // 타이머 * 2 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
@@ -2348,18 +2349,18 @@ public:
         NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
         int apply_x = bx + 180;
-        int apply_y = by + 15;
+        int apply_y = by + 25;
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_ORANGE;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 50, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 60, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
 		    else if(abs(cruiseTarget - v_cruise) > 0.5) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?cruiseTarget: cruiseTarget * KM_TO_MILE + 0.5));
 			ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 50, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 60, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 		    }
         const SubMaster& sm = *(s->sm);
 
