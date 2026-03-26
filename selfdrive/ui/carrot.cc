@@ -2436,18 +2436,19 @@ public:
         ui_draw_text(s, dx, dy, status_icon, 50, status_color, BOLD);
 
         // =======================================================
-        // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
+        // 3. 차간거리 조절 애니메이션 타이머 상태 업데이트
         // =======================================================
+        static int gap_bar_anim_timer = 0; 
+        
         if (gap_last != gap) {
-            //char anim_gap_str[32];
-            //sprintf(anim_gap_str, "%d", gap);
-            // 팝업 숫자도 일체감 있게 폰트 크기 60 적용
-            //ui_draw_text_a(s, dx, dy, anim_gap_str, 60, COLOR_WHITE, BOLD);
+            if (gap_last != 0) { // 최초 부팅 시 튀는 현상 방지
+                gap_bar_anim_timer = 10; // 5프레임 확대 + 5프레임 축소 = 총 10프레임
+            }
         }
         gap_last = gap;
 
         // =======================================================
-        // 4. 우측 차간거리 1~4단계 녹색 막대 표시 (기존 유지)
+        // 4. 우측 차간거리 1~4단계 녹색 막대 표시 (팝핑 애니메이션 적용)
         // =======================================================
         dx = bx + 300 - 30;
         dy = by + 175 + 10;
@@ -2455,8 +2456,29 @@ public:
 #ifdef __UI_TEST
         gap = 3;
 #endif
+
+        // 타이머에 따른 픽셀 증가량 계산
+        int size_add = 0;
+        if (gap_bar_anim_timer > 0) {
+            if (gap_bar_anim_timer > 5) {
+                // 타이머 10 -> 6: 프레임당 2씩 커짐 (+2, +4, +6, +8, +10)
+                size_add = (11 - gap_bar_anim_timer) * 2; 
+            } else {
+                // 타이머 5 -> 1: 프레임당 2씩 작아짐 (+10, +8, +6, +4, +2)
+                size_add = gap_bar_anim_timer * 2;        
+            }
+            gap_bar_anim_timer--;
+        }
+
+        // 막대 그리기
         for (int i = 0; i < gap; i++) {
-            ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_GREEN_ALPHA(210), 4, 3, &white_color);
+            // 막대가 중앙을 유지하면서 커지도록 x, y 시작점을 옮기고 전체 너비/높이를 키워줍니다.
+            int rect_x = (int)(dx) - size_add / 2;
+            int rect_y = (int)(dy - ddy * (i + 1) + 2) - size_add / 2;
+            int rect_w = 70 + size_add;
+            int rect_h = (int)ddy - 2 + size_add;
+
+            ui_fill_rect(s->vg, { rect_x, rect_y, rect_w, rect_h }, COLOR_GREEN_ALPHA(210), 4, 3, &white_color);
         }
 
         char gear_str[32] = "R";
