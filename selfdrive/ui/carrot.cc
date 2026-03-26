@@ -2286,6 +2286,7 @@ public:
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
         NVGcolor stroke_color = COLOR_WHITE;
         NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_RED_ALPHA(90):COLOR_BLACK_ALPHA(90);
+		        ui_fill_rect(s->vg, {bx - 80, by - 100, 550, 350}, bg_color, 20, 2.0f, &stroke_color);
         if (show_device_state) {
             char str[128];
             
