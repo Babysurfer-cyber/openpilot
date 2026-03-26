@@ -2313,12 +2313,12 @@ public:
         // draw speed
         char speed[32];
         sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
-        // 1. 화면 정중앙 상단 좌표 설정
+        
         int center_x = s->fb_w / 2;
-        int top_y = 180; // 높이가 마음에 안 들면 이 숫자를 조절하세요 (작아지면 위로, 커지면 아래로)
-        // 2. 폰트크기 130, 테두리 0.0f, 그림자 0.0f 적용
-        ui_draw_text(s, center_x, top_y, speed, 130, COLOR_WHITE, BOLD, 0.0f, 0.0f);
-
+        int top_y = 180; 
+        
+        // 배경 이미지(ui_draw_image) 코드는 지우고, 글자만 깔끔하게 출력!
+        ui_draw_text(s, center_x, top_y, speed, 140, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         // draw cruise speed
         char cruise_speed[32];
         int cruise_x = bx;       // 이동하신 x좌표
