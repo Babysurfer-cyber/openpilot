@@ -2336,19 +2336,19 @@ public:
         NVGcolor textColor = COLOR_GREEN;
         NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
-        int apply_x = bx + 250;
-        int apply_y = by - 50;
+        int apply_x = bx;
+        int apply_y = by + 50;
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
-            textColor = COLOR_OCHRE;    // apply speed가 작동되면... 색을 바꾸자.
-            ui_draw_text(s, apply_x, apply_y, apply_speed_str, 50, textColor, BOLD, 1.0, 5.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 50, apply_source.toStdString().c_str(), 30, textColor, BOLD, 1.0, 5.0, COLOR_BLACK, COLOR_BLACK);
+            textColor = COLOR_ORENGE;    // apply speed가 작동되면... 색을 바꾸자.
+            ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 50, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
 		    else if(abs(cruiseTarget - v_cruise) > 0.5) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?cruiseTarget: cruiseTarget * KM_TO_MILE + 0.5));
-			      ui_draw_text(s, apply_x, apply_y, apply_speed_str, 50, textColor, BOLD, 1.0, 5.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 50, "eco", 30, textColor, BOLD, 1.0, 5.0, COLOR_BLACK, COLOR_BLACK);
+			      ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 50, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 		    }
         const SubMaster& sm = *(s->sm);
 
