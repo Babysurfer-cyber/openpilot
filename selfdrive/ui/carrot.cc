@@ -2301,29 +2301,29 @@ public:
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
 
             // 1. DISK (디스크 사용량)
-            ui_draw_text(s, dx, dy - label_y_offset, "DISK", 22, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy - label_y_offset, "DISK", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.0f%%", 100 - freeSpace);
-            ui_draw_text(s, dx, dy, str, 70, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
+            ui_draw_text(s, dx, dy, str, 55, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
 
             // 2. MEM (메모리 사용량)
             dy += step_y;
             NVGcolor mem_color = (memoryUsage > 85 && blink_timer <= 8) ? COLOR_RED : COLOR_WHITE;
-            ui_draw_text(s, dx, dy - label_y_offset, "MEM", 22, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
+            ui_draw_text(s, dx, dy - label_y_offset, "MEM", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
             sprintf(str, "%d%%", memoryUsage);
-            ui_draw_text(s, dx, dy, str, 70, mem_color, BOLD, 0.0f, 0.0f); // 숫자 깜빡임
+            ui_draw_text(s, dx, dy, str, 55, mem_color, BOLD, 0.0f, 0.0f); // 숫자 깜빡임
 
             // 3. CPU (온도)
             dy += step_y;
             NVGcolor cpu_color = (cpuTemp > 80 && blink_timer <= 8) ? COLOR_RED : COLOR_WHITE;
-            ui_draw_text(s, dx, dy - label_y_offset, "CPU", 22, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy - label_y_offset, "CPU", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.0f\u00B0C", cpuTemp);
-            ui_draw_text(s, dx, dy, str, 70, cpu_color, BOLD, 0.0f, 0.0f); // 숫자 깜빡임
+            ui_draw_text(s, dx, dy, str, 55, cpu_color, BOLD, 0.0f, 0.0f); // 숫자 깜빡임
 
             // 4. VOLT (차량 전압)
             dy += step_y;
-            ui_draw_text(s, dx, dy - label_y_offset, "VOLT", 22, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy - label_y_offset, "VOLT", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.1fV", voltage);
-            ui_draw_text(s, dx, dy, str, 70, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy, str, 55, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         }
 
         // draw traffic light
