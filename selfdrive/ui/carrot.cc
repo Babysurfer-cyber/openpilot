@@ -2548,8 +2548,8 @@ public:
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             
             // 레이아웃 위치 및 간격 설정 (문구 40, 숫자 80에 맞춰 널찍하게 조정)
-            int dx = s->fb_w - 90;   // 화면 오른쪽 끝에서 90px 떨어진 곳을 중심선으로 사용
-            int dy = 280;            // 가장 첫 번째 항목(DISK)의 숫자 Y 좌표 시작점 (글씨가 커져서 살짝 위로 올림)
+            dx = s->fb_w - 90;       // 👈 int 삭제! (기존 dx 변수 재사용)
+            dy = 280;                // 👈 int 삭제! (기존 dy 변수 재사용)
             int label_y_gap = 75;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격 (80 폰트에 맞춰 75로 늘림)
             int step_y = 170;        // 각 항목 그룹 사이의 간격 (답답하지 않게 170으로 시원하게 늘림)
 
