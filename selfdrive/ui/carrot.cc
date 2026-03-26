@@ -2286,12 +2286,52 @@ public:
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
         NVGcolor stroke_color = COLOR_WHITE;
         NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_RED_ALPHA(90):COLOR_BLACK_ALPHA(90);
-        if (show_device_state > 0) {
-          ui_fill_rect(s->vg, { bx - 120, by - 270, 475, 495 }, bg_color, 30, 2, &stroke_color);
+        if (show_device_state) {
+            char str[128];
+            
+            // 좌측 상단 기준 좌표 (원하시는 위치에 맞게 start_x, start_y 조절 가능)
+            int start_x = 100; // x 좌표
+            int start_y = 100; // y 좌표
+            int step_y = 110;  // 아래로 내려가는 간격
+            
+            // 1. 전체 투명 검은색 배경 그리기 (상하좌우 약간의 여백 포함)
+            // 너비: 130 + 양쪽여백 30 = 160, 높이: (박스 4개 + 간격) = 450
+            NVGcolor bg_color = COLOR_BLACK_ALPHA(100); // 배경 투명도 (0~255)
+            ui_fill_rect(s->vg, { start_x - 80, start_y - 53, 160, 450 }, bg_color, 20);
+
+            mode_color = COLOR_GREEN_ALPHA(190);
+            
+            // 현재 그릴 좌표 초기화
+            dx = start_x;
+            dy = start_y;
+
+            // 1. DISK (디스크 사용량)
+            ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, mode_color, 15, 2);
+            ui_draw_text(s, dx, dy - 5, "DISK", 25, COLOR_WHITE, BOLD);
+            sprintf(str, "%.0f%%", 100 - freeSpace);
+            ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
+
+            // 2. MEM (메모리 사용량)
+            dy += step_y;
+            ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, (memoryUsage > 85 && blink_timer <= 8) ? COLOR_RED : mode_color, 15, 2);
+            ui_draw_text(s, dx, dy - 5, "MEM", 25, COLOR_WHITE, BOLD);
+            sprintf(str, "%d%%", memoryUsage);
+            ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
+
+            // 3. CPU (온도)
+            dy += step_y;
+            ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, (cpuTemp > 80 && blink_timer <= 8) ? COLOR_RED : mode_color, 15, 2);
+            ui_draw_text(s, dx, dy - 5, "CPU", 25, COLOR_WHITE, BOLD);
+            sprintf(str, "%.0f\u00B0C", cpuTemp);
+            ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
+
+            // 4. VOLT (차량 전압)
+            dy += step_y;
+            ui_fill_rect(s->vg, { dx - 65, dy - 38, 130, 90 }, mode_color, 15, 2);
+            ui_draw_text(s, dx, dy - 5, "VOLT", 25, COLOR_WHITE, BOLD);
+            sprintf(str, "%.1fV", voltage);
+            ui_draw_text(s, dx, dy + 40, str, 40, COLOR_WHITE, BOLD);
         }
-        else {
-          ui_fill_rect(s->vg, { bx - 120, by - 270 + 140, 475, 495 - 140 }, bg_color, 30, 2, &stroke_color);
-		}
 
         // draw traffic light
         int icon_red = icon_size;
