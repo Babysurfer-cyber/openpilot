@@ -2286,46 +2286,12 @@ public:
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
         NVGcolor stroke_color = COLOR_WHITE;
         NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_RED_ALPHA(90):COLOR_BLACK_ALPHA(90);
-		        ui_fill_rect(s->vg, {bx - 80, by - 100, 550, 350}, bg_color, 20, 2.0f, &stroke_color);
-        if (show_device_state) {
-            char str[128];
-            
-            // 화면 우측 배치 기준점 설정
-            int dx = s->fb_w - 90; // 화면 오른쪽 끝에서 90픽셀 떨어진 위치
-            int dy = 280;          // 시작 y 좌표
-            
-            // 간격 세부 조절 변수
-            int label_y_offset = 60; // 같은 항목 내 문구와 숫자 사이의 간격 (작을수록 바짝 붙음)
-            int step_y = 130;        // 각 정보 그룹(DISK, MEM 등) 사이의 간격 (클수록 멀리 떨어짐)
-            
-            // 텍스트 정렬을 가로 중앙, 세로 아래로 설정
-            nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-
-            // 1. DISK (디스크 사용량)
-            ui_draw_text(s, dx, dy - label_y_offset, "DISK", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
-            sprintf(str, "%.0f%%", 100 - freeSpace);
-            ui_draw_text(s, dx, dy, str, 55, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
-
-            // 2. MEM (메모리 사용량)
-            dy += step_y;
-            NVGcolor mem_color = (memoryUsage > 85 && blink_timer <= 8) ? COLOR_RED : COLOR_WHITE;
-            ui_draw_text(s, dx, dy - label_y_offset, "MEM", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
-            sprintf(str, "%d%%", memoryUsage);
-            ui_draw_text(s, dx, dy, str, 55, mem_color, BOLD, 0.0f, 0.0f); // 숫자 깜빡임
-
-            // 3. CPU (온도)
-            dy += step_y;
-            NVGcolor cpu_color = (cpuTemp > 80 && blink_timer <= 8) ? COLOR_RED : COLOR_WHITE;
-            ui_draw_text(s, dx, dy - label_y_offset, "CPU", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
-            sprintf(str, "%.0f\u00B0C", cpuTemp);
-            ui_draw_text(s, dx, dy, str, 55, cpu_color, BOLD, 0.0f, 0.0f); // 숫자 깜빡임
-
-            // 4. VOLT (차량 전압)
-            dy += step_y;
-            ui_draw_text(s, dx, dy - label_y_offset, "VOLT", 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
-            sprintf(str, "%.1fV", voltage);
-            ui_draw_text(s, dx, dy, str, 55, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        if (show_device_state > 0) {
+          ui_fill_rect(s->vg, { bx - 120, by - 270, 475, 495 }, bg_color, 30, 2, &stroke_color);
         }
+        else {
+          ui_fill_rect(s->vg, { bx - 120, by - 270 + 140, 475, 495 - 140 }, bg_color, 30, 2, &stroke_color);
+		}
 
         // draw traffic light
         int icon_red = icon_size;
@@ -2344,55 +2310,37 @@ public:
         if (red_light) ui_draw_image(s, { x - icon_red / 2, y - icon_red / 2 + 270, icon_red, icon_red }, "ic_traffic_red", 1.0f);
         else if (green_light) ui_draw_image(s, { x - icon_green / 2, y - icon_green / 2 + 270, icon_green, icon_green }, "ic_traffic_green", 1.0f);
 
-        // =====================================
-        // 1. 현재속도 (상단 중앙)
-        // =====================================
+        // draw speed
         char speed[32];
         sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
-        
+        // 1. 화면 정중앙 상단 좌표 설정
         int center_x = s->fb_w / 2;
-        int top_y = 140; 
-        
-        // 속도 숫자 (크기 140, 두껍게)
-        ui_draw_text(s, center_x, top_y, speed, 140, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        int top_y = 180; // 높이가 마음에 안 들면 이 숫자를 조절하세요 (작아지면 위로, 커지면 아래로)
+        // 2. 폰트크기 130, 테두리 0.0f, 그림자 0.0f 적용
+        ui_draw_text(s, center_x, top_y, speed, 130, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
-        // 속도 단위 (얇은 폰트)
-        const char* speed_unit = s->scene.is_metric ? "km/h" : "mph";
-        ui_draw_text(s, center_x, top_y + 55, speed_unit, 45, COLOR_WHITE_ALPHA(200), "sans-regular", 0.0f, 0.0f);
-
-
-        // =====================================
-        // 2. 크루즈 설정속도 (좌측 하단 배치 및 펌핑 애니메이션)
-        // =====================================
+        // draw cruise speed
         char cruise_speed[32];
-        int cruise_x = bx;       // 기존 설정하신 좌측 하단 x좌표
-        int cruise_y = by + 50;  // 기존 설정하신 좌측 하단 y좌표   
-        
-        // 글자 뒤에 배경 박스 이미지 깔기
-        ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
-
-        // 펌핑 애니메이션을 위한 타이머 (딱 한 번만 선언!)
+        int cruise_x = bx;       // 이동하신 x좌표
+        int cruise_y = by + 50;  // 이동하신 y좌표        
+        // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
-        
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
         else sprintf(cruise_speed, "--");        
-        
         if (strcmp(cruise_speed_last, cruise_speed) != 0) {
             strcpy(cruise_speed_last, cruise_speed);
             if(strcmp(cruise_speed, "--") != 0) {
-                // 속도가 바뀌면 펌핑 타이머 시작
-                cruise_pump_timer = 5; 
+                // 속도가 바뀌면 중앙 팝업 대신 펌핑 타이머 시작 (15프레임 동안 커짐)
+                cruise_pump_timer = 15; 
             }
         }        
-        
-        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 125까지 펌핑)
+        // 펌핑 크기 계산 (기본 100, 타이머가 켜지면 최대 115까지 펌핑)
         float current_size = 100.0f;
         if (cruise_pump_timer > 0) {
-            current_size += (cruise_pump_timer * 5.0f);
-            cruise_pump_timer--;
+            current_size += (cruise_pump_timer * 1.0f); // 타이머 * 2 만큼 커짐
+            cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
-        
-        // 테두리와 그림자(0.0f) 없이 그리기
+        // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
         ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_GREEN, BOLD, 0.0f, 0.0f);
 
         // draw apply speed
@@ -2400,18 +2348,18 @@ public:
         NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
         int apply_x = bx + 180;
-        int apply_y = by + 20;
+        int apply_y = by + 15;
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_ORANGE;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 60, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 50, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
 		    else if(abs(cruiseTarget - v_cruise) > 0.5) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?cruiseTarget: cruiseTarget * KM_TO_MILE + 0.5));
 			ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 60, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 50, "eco", 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 		    }
         const SubMaster& sm = *(s->sm);
 
@@ -2446,100 +2394,57 @@ public:
         dy = by + 77;
 
         // =======================================================
-        // 2. [가로 게이지+우측 마커로 변경] 진짜 모델 신뢰도(차선 인식률) 게이지
+        // 2. 진짜 모델 신뢰도(차선 인식률) 기반 그라데이션 (안전장치 추가)
         // =======================================================
-        // 신뢰도 데이터 확인
         auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
         
-        // 부팅 중 또는 데이터 없을 때 기본값 (0%)
-        float model_prob_ratio = 0.0f;
-        int alpha = 120; // 요청하신 투명도 120 설정
-        NVGcolor gauge_color = COLOR_RED_ALPHA(alpha); // 기본 빨강
+        NVGcolor status_color = COLOR_WHITE_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
+        const char* status_icon = "□";                  // 부팅 중 기본 기호 (하이픈)
 
-        // 데이터가 들어왔을 때만 계산
+        // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
         if (lane_probs.size() > 2) {
             // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
-            model_prob_ratio = (lane_probs[1] + lane_probs[2]) / 2.0f;
+            float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
+            status_icon = "▩"; // 데이터가 들어오면 네모 기호로 변경
 
-            // --- 연속적인 색상 그라데이션 (빨강 -> 노랑 -> 흰색) ---
             int r, g, b;
-            if (model_prob_ratio >= 0.5f) {
-                // 50% ~ 100%: 노랑(218,202,37) -> 흰색(255,255,255)
-                float ratio = (model_prob_ratio - 0.5f) / 0.5f; 
+            if (model_prob >= 0.85f) {
+                // 85% 이상은 완전한 흰색 (길 아주 잘 파악함)
+                r = 255; g = 255; b = 255; 
+            } else if (model_prob >= 0.5f) {
+                // 50% ~ 85%: 노랑(218,202,37)에서 흰색(255,255,255)으로 서서히 변환
+                float ratio = (model_prob - 0.5f) / 0.35f; 
                 r = 218 + (int)((255 - 218) * ratio);
                 g = 202 + (int)((255 - 202) * ratio);
-                b = 37  + (int)((255 - 37)  * ratio);
+                b = 37  + (int)((255 -  37) * ratio);
             } else {
-                // 0% ~ 50%: 빨강(255,59,59) -> 노랑(218,202,37)
-                float ratio = model_prob_ratio / 0.5f; 
+                // 0% ~ 50%: 완전한 빨강(255,59,59)에서 노랑(218,202,37)으로 서서히 변환
+                float ratio = model_prob / 0.5f; 
+                if (ratio < 0.0f) ratio = 0.0f; // 음수 방지 안전장치
                 r = 255 + (int)((218 - 255) * ratio);
-                g = 59  + (int)((202 - 59)  * ratio);
-                b = 59  + (int)((37  - 59)  * ratio);
+                g = 59  + (int)((202 -  59) * ratio);
+                b = 59  + (int)((37  -  59) * ratio);
             }
-            gauge_color = nvgRGBA(r, g, b, alpha); // 연속적으로 변하는 색상 (투명도 적용)
+            status_color = nvgRGBA(r, g, b, 255);
         }
 
-        // --- 위치 및 너비 계산 ---
-        // 우측 고정점 계산: 기존 ▩ 글자 중심(dx)에서 1칸짜리 너비(60px)의 절반만큼 오른쪽으로 이동
-        float box_width = 60.0f;  // 네모박스 1칸의 기준 너비
-        float fixed_right_x = dx + (box_width / 2.0f) + 5.0f; // 우측 끝 좌표 고정
-
-        // 너비 계산: 0%=60px(1칸) ~ 100%=180px(3칸) 스케일링
-        float current_width = box_width + (box_width * 2.0f * model_prob_ratio);
-        
-        // --- 그리기 좌표 계산 (우측 고정, 좌측 확장) ---
-        float gauge_thickness = 30.0f; // 게이지 두께
-        // 현재 X 좌표: 고정된 우측 끝(fixed_right_x)에서 현재 너비를 뺍니다.
-        float current_gauge_x = fixed_right_x - current_width;
-
-        // Y 좌표 정렬 (기존 BOTTOM 정렬에 맞춥니다)
-        // 기존 text가 BOTTOM 정렬이었으므로, y좌표 dy에서 두께만큼 뺍니다.
-        float current_gauge_top_y = dy - gauge_thickness; 
-
-        // 테두리 색상 (투명도 적용된 흰색)
-        NVGcolor border_color = COLOR_WHITE_ALPHA(alpha);
-
-        // --- 1. 신뢰도 게이지 막대 채우기 그리기 ---
-        // 기존 status_icon 문자 그리기 코드는 삭제하고, 아래 막대 그리기 코드를 넣습니다.
+        // 정중앙 기호 그리기 (데이터 없으면 '□', 있으면 '▩')
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        
-        ui_fill_rect(s->vg, 
-            { (int)current_gauge_x, (int)current_gauge_top_y, (int)current_width, (int)gauge_thickness }, 
-            gauge_color, 8, 2.0f, &border_color); // 둥글기 8, 테두리 2.0
-
-
-        // --- 2. 우측 마커 선 그리기 (게이지 위 5px, 아래 5px 더 길게) ---
-        float line_thickness = 3.0f;
-        float line_extra_height = 10.0f; // 총 10px 더 길게 (위 5px + 아래 5px)
-
-        // X 좌표: 고정된 우측 끝 fixed_right_x에 정렬
-        float line_x = fixed_right_x - (line_thickness / 2.0f);
-        
-        // Y 좌표: 게이지 top y보다 5px 위에서 시작
-        float line_top_y = current_gauge_top_y - (line_extra_height / 2.0f);
-        
-        // 높이: 게이지 두께 + 추가 높이
-        float line_height = gauge_thickness + line_extra_height;
-
-        // 마커 선 그리기
-        ui_fill_rect(s->vg, 
-            { (int)line_x, (int)line_top_y, (int)line_thickness, (int)line_height }, 
-            border_color, 0.0f); // 둥글기 없음, solid white(알파) 선
+        ui_draw_text(s, dx, dy, status_icon, 50, status_color, BOLD);
 
         // =======================================================
-        // 3. 차간거리 조절 애니메이션 타이머 상태 업데이트
+        // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
         // =======================================================
-        static int gap_bar_anim_timer = 0; 
-        
         if (gap_last != gap) {
-            if (gap_last != 0) { // 최초 부팅 시 튀는 현상 방지
-                gap_bar_anim_timer = 10; // 5프레임 확대 + 5프레임 축소 = 총 10프레임
-            }
+            //char anim_gap_str[32];
+            //sprintf(anim_gap_str, "%d", gap);
+            // 팝업 숫자도 일체감 있게 폰트 크기 60 적용
+            //ui_draw_text_a(s, dx, dy, anim_gap_str, 60, COLOR_WHITE, BOLD);
         }
         gap_last = gap;
 
         // =======================================================
-        // 4. 우측 차간거리 1~4단계 녹색 막대 표시 (팝핑 애니메이션 적용)
+        // 4. 우측 차간거리 1~4단계 녹색 막대 표시 (기존 유지)
         // =======================================================
         dx = bx + 300 - 30;
         dy = by + 175 + 10;
@@ -2547,29 +2452,8 @@ public:
 #ifdef __UI_TEST
         gap = 3;
 #endif
-
-        // 타이머에 따른 픽셀 증가량 계산
-        int size_add = 0;
-        if (gap_bar_anim_timer > 0) {
-            if (gap_bar_anim_timer > 5) {
-                // 타이머 10 -> 6: 프레임당 2씩 커짐 (+2, +4, +6, +8, +10)
-                size_add = (11 - gap_bar_anim_timer) * 2; 
-            } else {
-                // 타이머 5 -> 1: 프레임당 2씩 작아짐 (+10, +8, +6, +4, +2)
-                size_add = gap_bar_anim_timer * 2;        
-            }
-            gap_bar_anim_timer--;
-        }
-
-        // 막대 그리기
         for (int i = 0; i < gap; i++) {
-            // 막대가 중앙을 유지하면서 커지도록 x, y 시작점을 옮기고 전체 너비/높이를 키워줍니다.
-            int rect_x = (int)(dx) - size_add / 2;
-            int rect_y = (int)(dy - ddy * (i + 1) + 2) - size_add / 2;
-            int rect_w = 70 + size_add;
-            int rect_h = (int)ddy - 2 + size_add;
-
-            ui_fill_rect(s->vg, { rect_x, rect_y, rect_w, rect_h }, COLOR_GREEN_ALPHA(210), 4, 3, &white_color);
+            ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_GREEN_ALPHA(210), 4, 3, &white_color);
         }
 
         char gear_str[32] = "R";
@@ -3249,7 +3133,7 @@ void ui_nvg_init(UIState *s) {
 
   // init fonts
   std::pair<const char *, const char *> fonts[] = {
-      {"sans-regular", "../assets/fonts/opensans_regular.ttf"},
+      //{"sans-regular", "../assets/fonts/opensans_regular.ttf"},
       //{"sans-semibold", "../assets/fonts/opensans_semibold.ttf"},
       //{"sans-bold", "../assets/fonts/opensans_bold.ttf"},
       //{"KaiGenGothicKR-Normal", "../assets/addon/font/KaiGenGothicKR-Normal.ttf"},
