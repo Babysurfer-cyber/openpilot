@@ -2023,13 +2023,15 @@ public:
                   float d = xy[2].toFloat();
                   int idx = get_path_length_idx(lane_lines[2], d);
 
-                  if (idx >= max_z) {
-                      idx = max_z - 1; // 👈 데이터 배열 크기를 넘어가지 못하게 묶음!
-                      z_offset -= 0.05;
+                  // 🚨 차선 데이터가 1개라도 있을 때만 그리도록 방어막 추가!
+                  if (max_z > 0) {
+                      if (idx >= max_z) {
+                          idx = max_z - 1; 
+                          z_offset -= 0.05;
+                      }
+                      nav_path_vertex_xy[nav_path_vertex_count] = QPointF(y, -x);
+                      _model->mapToScreen((x < 3.0) ? 5.0 : x, y, lane_lines[2].getZ()[idx] + z_offset, &nav_path_vertex[nav_path_vertex_count++]);
                   }
-                  nav_path_vertex_xy[nav_path_vertex_count] = QPointF(y, -x);
-
-                  _model->mapToScreen((x < 3.0) ? 5.0 : x, y, lane_lines[2].getZ()[idx] + z_offset, &nav_path_vertex[nav_path_vertex_count++]);
 
                   if (nav_path_vertex_count >= 150) break;
                 }
@@ -2742,21 +2744,35 @@ public:
       ui_draw_text(s, bx - dw, by + 70, get_tpms_text(rl), 40, get_tpms_color(rl), BOLD);
       ui_draw_text(s, bx + dw, by + 70, get_tpms_text(rr), 40, get_tpms_color(rr), BOLD);
     }
+
     void makeDeviceInfo(const UIState* s) {
+#ifdef WSL2
+        return;
+#endif
         SubMaster& sm = *(s->sm);
+        
+        // 1. deviceState가 없으면 그냥 종료 (안전장치)
+        if (!sm.alive("deviceState")) return;
+
         auto deviceState = sm["deviceState"].getDeviceState();
         freeSpace = deviceState.getFreeSpacePercent();
         memoryUsage = deviceState.getMemoryUsagePercent();
+        
         const auto cpuTempC = deviceState.getCpuTempC();
         const auto cpuUsagePercent = deviceState.getCpuUsagePercent();
-        int   size = sizeof(cpuTempC) / sizeof(cpuTempC[0]);
+        
+        // 2. sizeof 대신 .size() 사용 & 누적 변수 매번 0으로 초기화 필수!
+        int size = cpuTempC.size();
+        cpuTemp = 0.0f; // 초기화 안 하면 온도가 무한대로 더해집니다!
         if (size > 0) {
             for (int i = 0; i < size; i++) {
                 cpuTemp += cpuTempC[i];
             }
             cpuTemp /= static_cast<float>(size);
         }
-        size = sizeof(cpuUsagePercent) / sizeof(cpuUsagePercent[0]);
+        
+        size = cpuUsagePercent.size();
+        cpuUsage = 0.0f; // 초기화
         if (size > 0) {
             int cpu_size = 0;
             for (cpu_size = 0; cpu_size < size; cpu_size++) {
@@ -2766,9 +2782,13 @@ public:
             if (cpu_size > 0) cpuUsage /= cpu_size;
         }
 
-        auto peripheralState = sm["peripheralState"].getPeripheralState();
-        voltage = peripheralState.getVoltage() / 1000.0;
+        // 3. peripheralState 안전장치
+        if (sm.alive("peripheralState")) {
+            auto peripheralState = sm["peripheralState"].getPeripheralState();
+            voltage = peripheralState.getVoltage() / 1000.0;
+        }
     }
+
     void drawDeviceInfo(const UIState* s) {
 #ifdef WSL2
         return;
