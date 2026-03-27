@@ -1339,7 +1339,7 @@ protected:
                 x[3] = vd[index - i - 2].x();
                 y[3] = vd[index - i - 2].y();
             }
-            ui_draw_line2(s, x, y, 4, color, nullptr, 3.0f);
+            ui_draw_line2(s, x, y, 4, color, nullptr, 0.0f);
         }
     }
     bool make_data(const UIState* s) {
