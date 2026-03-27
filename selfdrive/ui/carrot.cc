@@ -2286,12 +2286,9 @@ public:
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
         NVGcolor stroke_color = COLOR_WHITE;
         NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_RED_ALPHA(90):COLOR_BLACK_ALPHA(90);
-        if (show_device_state > 0) {
-          ui_fill_rect(s->vg, { bx - 120, by - 270, 475, 495 }, bg_color, 30, 2, &stroke_color);
-        }
-        else {
-          ui_fill_rect(s->vg, { bx - 120, by - 270 + 140, 475, 495 - 140 }, bg_color, 30, 2, &stroke_color);
-		}
+        
+        // 👇 디바이스 상태 표시 여부와 상관없이, 좌측 하단 HUD 배경 크기를 항상 기본 사이즈로 고정!
+        ui_fill_rect(s->vg, { bx - 120, by - 130, 475, 355 }, bg_color, 30, 2, &stroke_color);
 
         // draw traffic light
         int icon_red = icon_size;
