@@ -2005,10 +2005,7 @@ public:
                   float d = xy[2].toFloat();
                   int idx = get_path_length_idx(lane_lines[2], d);
 
-                  if (idx >= max_z) {
-                      idx = max_z - 1;   // 👈 핵심 해결책: 메모리(배열)를 초과하지 않도록 최대값으로 꽉 묶어버림!
-                      z_offset -= 0.05;
-                  }
+                  if (idx >= max_z) z_offset -= 0.05;
                   nav_path_vertex_xy[nav_path_vertex_count] = QPointF(y, -x);
                   _model->mapToScreen((x < 3.0) ? 5.0 : x, y, lane_lines[2].getZ()[idx] + z_offset, &nav_path_vertex[nav_path_vertex_count++]);
 
