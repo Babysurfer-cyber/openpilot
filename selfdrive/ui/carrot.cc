@@ -1357,8 +1357,8 @@ public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
 
-        NVGcolor color = nvgRGBA(255, 59, 59, 150);
-        NVGcolor color2 = nvgRGBA(255, 149, 0, 150);
+        NVGcolor color = nvgRGBA(255, 59, 59, 90);
+        NVGcolor color2 = nvgRGBA(255, 149, 0, 90);
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
@@ -1666,7 +1666,7 @@ public:
             use_lane_line_speed_apply = temp;
         }
         static bool forward = true;
-        int alpha = 120;
+        int alpha = 90;
         NVGcolor colors[10] = {
             COLOR_RED_ALPHA(alpha),           nvgRGBA(255, 153, 0, alpha),
             COLOR_YELLOW_ALPHA(alpha),        COLOR_GREEN_ALPHA(alpha),
