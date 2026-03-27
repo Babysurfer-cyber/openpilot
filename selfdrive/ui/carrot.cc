@@ -2459,7 +2459,7 @@ public:
         gap = 3;
 #endif
         for (int i = 0; i < gap; i++) {
-            ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_GREEN_ALPHA(210), 4, 3, &white_color);
+            ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_GREEN_ALPHA(190), 4, 3, 0);
         }
 
         char gear_str[32] = "R";
