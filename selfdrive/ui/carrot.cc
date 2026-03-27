@@ -2309,12 +2309,20 @@ public:
 
         // draw speed
         char speed[32];
-        sprintf(speed, "%.0f", (s->scene.is_metric)? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH);
-        // 1. 화면 정중앙 상단 좌표 설정
+        // 1. 현재 속도 계산 (0 미만으로 내려가면 0으로 고정)
+        float display_speed = s->scene.is_metric ? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH;
+        if (display_speed < 0.0f) display_speed = 0.0f; // 후진이나 노이즈로 인한 마이너스 방지
+        sprintf(speed, "%.0f", display_speed);
+        // 2. 화면 정중앙 상단 좌표 설정
         int center_x = s->fb_w / 2;
-        int top_y = 180; // 높이가 마음에 안 들면 이 숫자를 조절하세요 (작아지면 위로, 커지면 아래로)
-        // 2. 폰트크기 160, 테두리 0.0f, 그림자 0.0f 적용
+        int top_y = 180; // 숫자의 기준 Y 좌표 (높이가 마음에 안 들면 이 숫자를 조절하세요)
+        // 3. 속도 숫자 그리기 (폰트크기 160)
         ui_draw_text(s, center_x, top_y, speed, 160, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        // 4. 속도 단위 (km/h 또는 mph) 추가 그리기
+        // 차량 설정이 미터법(km/h)인지 확인하여 자동으로 단위를 맞춰줍니다.
+        const char* speed_unit = s->scene.is_metric ? "km/h" : "mph";
+        // 숫자(top_y)보다 45픽셀 아래에 25폰트 크기로 단위를 그립니다.
+        ui_draw_text(s, center_x, top_y + 45, speed_unit, 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw cruise speed
         char cruise_speed[32];
