@@ -487,13 +487,20 @@ class CarrotPlanner:
     if lead_detected:
       current_lead_dist = radarstate.leadOne.dRel
       
-      # 1. 끼어들기 감지: 앞차가 연속으로 있는데 거리가 5미터 이상 훅 줄어들었다면?
+      # =========================================================
+      # ▼ [수정됨] 1. 끼어들기 감지: 거리가 5미터 이상 훅 줄어들었을 때
+      # =========================================================
       if self.prev_lead_status and (self.prev_lead_dist - current_lead_dist) > 5.0:
-        # 완전히 새로운 앞차가 나타난 것으로 간주하고 타이머와 도장(알림 상태)을 싹 초기화!
-        self.lead_alerted = False
-        self.lead_detect_count = 0
+        
+        # [NEW] 단, 운전자가 브레이크를 밟고 있거나, 이미 급감속(a_ego < -1.5) 중일 때는 
+        # 노즈다이브로 인한 센서 오류이거나 운전자가 이미 인지한 상황이므로 알림 리셋 생략!
+        if not carstate.brakePressed and a_ego > -1.5:
+          # 완전히 새로운 앞차가 나타난 것으로 간주하고 타이머와 도장(알림 상태)을 싹 초기화!
+          self.lead_alerted = False
+          self.lead_detect_count = 0
+      # =========================================================
 
-      # 다음 프레임 비교를 위해 저장
+      # 다음 프레임 비교를 위해 저장 (이 부분은 딱 한 번만 있어야 합니다!)
       self.prev_lead_dist = current_lead_dist
       self.prev_lead_status = True
 
