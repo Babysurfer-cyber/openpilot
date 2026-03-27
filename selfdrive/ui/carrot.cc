@@ -686,8 +686,14 @@ protected:
         float _path_width = rex - lex;
         float _path_x = (lex + rex) / 2;
         float _path_y = (ley + rey) / 2;
-        _path_x = (int)std::clamp(_path_x, 350.f, s->fb_w - 350.f);
+        
+        // 👇 화면이 좁아져도 에러가 나지 않도록 안전장치 추가!
+        float max_path_x = s->fb_w - 350.f;
+        if (max_path_x < 350.f) max_path_x = 350.f;
+        
+        _path_x = (int)std::clamp(_path_x, 350.f, max_path_x);
         _path_y = (int)std::clamp(_path_y, 200.f, s->fb_h - 80.f);
+
         if (isnan(_path_x) || isnan(_path_y) || isnan(_path_width));
         else {
             path_fx = path_fx * alpha + _path_x * (1. - alpha);
@@ -2005,8 +2011,12 @@ public:
                   float d = xy[2].toFloat();
                   int idx = get_path_length_idx(lane_lines[2], d);
 
-                  if (idx >= max_z) z_offset -= 0.05;
+                  if (idx >= max_z) {
+                      idx = max_z - 1; // 👈 데이터 배열 크기를 넘어가지 못하게 묶음!
+                      z_offset -= 0.05;
+                  }
                   nav_path_vertex_xy[nav_path_vertex_count] = QPointF(y, -x);
+
                   _model->mapToScreen((x < 3.0) ? 5.0 : x, y, lane_lines[2].getZ()[idx] + z_offset, &nav_path_vertex[nav_path_vertex_count++]);
 
                   if (nav_path_vertex_count >= 150) break;
