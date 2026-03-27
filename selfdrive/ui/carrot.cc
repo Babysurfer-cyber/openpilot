@@ -1375,8 +1375,8 @@ public:
     void draw(const UIState* s) {
         if (!make_data(s)) return;
 
-        NVGcolor color = nvgRGBA(255, 59, 59, 90);
-        NVGcolor color2 = nvgRGBA(255, 149, 0, 90);
+        NVGcolor color = nvgRGBA(255, 59, 59, 120);
+        NVGcolor color2 = nvgRGBA(255, 149, 0, 120);
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
