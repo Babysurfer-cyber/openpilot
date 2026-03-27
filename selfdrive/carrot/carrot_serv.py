@@ -923,8 +923,33 @@ class CarrotServ:
 
     sdi_speed = 250
     hda_active = False
+
+    # =========================================================
+    # ▼ [추가] 제한속도 하락 감지 및 안내음 발생 로직
+    # =========================================================
+    if CS is not None:
+      # 1. 초기 변수 세팅 (처음 1회만 실행)
+      if not hasattr(self, 'prev_speed_limit'):
+        self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+      
+      # 2. 현재 제한속도 계산 (m/s -> km/h 변환)
+      current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+      
+      # 3. 속도가 떨어졌을 때만 띠링~ 안내음 파일 생성
+      if current_limit > 0 and self.prev_speed_limit > 0:
+        if current_limit < self.prev_speed_limit:
+          try:
+            open("/dev/shm/carrot_prompt", "w").close()
+          except Exception:
+            pass
+            
+      # 4. 다음 비교를 위해 현재 속도를 기억
+      self.prev_speed_limit = current_limit
+    # =========================================================
+
     ### 과속카메라, 사고방지턱
     if (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0:
+
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
       sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
