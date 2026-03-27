@@ -2368,7 +2368,7 @@ public:
         // 펌핑 크기 계산 (기본 110, 타이머가 켜지면 최대 125까지 펌핑)
         float current_size = 110.0f;
         if (cruise_pump_timer > 0) {
-            current_size += (cruise_pump_timer * 6.0f); // 타이머 * 6 만큼 커짐
+            current_size += (cruise_pump_timer * 7.0f); // 타이머 * 6 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
@@ -2383,7 +2383,7 @@ public:
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
-            textColor = COLOR_ORANGE;    // apply speed가 작동되면... 색을 바꾸자.
+            textColor = COLOR_RED;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
             ui_draw_text(s, apply_x, apply_y - 60, apply_source.toStdString().c_str(), 30, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
