@@ -2351,7 +2351,7 @@ public:
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
-        NVGcolor white_color = COLOR_WHITE;
+        //NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
         int apply_x = bx + 195;
         int apply_y = by + 25;
