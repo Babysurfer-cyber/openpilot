@@ -925,7 +925,7 @@ class CarrotServ:
     hda_active = False
 
     # =========================================================
-    # ▼ [추가] 제한속도 하락 감지 및 안내음 발생 로직
+    # ▼ [추가] 제한속도 하락 감지 (순정 내비 0km/h 튕김 완벽 방어!)
     # =========================================================
     if CS is not None:
       # 1. 초기 변수 세팅 (처음 1회만 실행)
@@ -937,6 +937,7 @@ class CarrotServ:
       
       # 3. 속도가 떨어졌을 때만 띠링~ 안내음 파일 생성
       if current_limit > 0 and self.prev_speed_limit > 0:
+        # (예: 100 -> 80으로 정상적으로 떨어질 때만 발동)
         if current_limit < self.prev_speed_limit:
           try:
             open("/dev/shm/carrot_prompt", "w").close()
@@ -944,7 +945,9 @@ class CarrotServ:
             pass
             
       # 4. 다음 비교를 위해 현재 속도를 기억
-      self.prev_speed_limit = current_limit
+      # (💡 핵심 방어막: 신호가 잠깐 끊겨서 0이 들어올 때는 과거 속도를 잊지 않고 유지!)
+      if current_limit > 0:
+        self.prev_speed_limit = current_limit
     # =========================================================
 
     ### 과속카메라, 사고방지턱
