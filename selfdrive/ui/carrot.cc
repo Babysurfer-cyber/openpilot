@@ -2544,11 +2544,11 @@ public:
             // 텍스트 정렬을 가로 중앙, 세로 아래로 설정 (우측 열 맞춤)
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             
-            // 레이아웃 위치 및 간격 설정 (문구 40, 숫자 80에 맞춰 널찍하게 조정)
+            // 레이아웃 위치 및 간격 설정
             dx = s->fb_w - 100;       // 👈 int 삭제! (기존 dx 변수 재사용)
-            dy = 280;                // 👈 int 삭제! (기존 dy 변수 재사용)
-            int label_y_gap = 75;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격 (80 폰트에 맞춰 75로 늘림)
-            int step_y = 170;        // 각 항목 그룹 사이의 간격 (답답하지 않게 170으로 시원하게 늘림)
+            dy = 300;                // 👈 int 삭제! (기존 dy 변수 재사용)
+            int label_y_gap = 55;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격
+            int step_y = 130;        // 각 항목 그룹 사이의 간격
 
             // 1. DISK (디스크 사용량)
             ui_draw_text(s, dx, dy - label_y_gap, "DISK", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
