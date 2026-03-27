@@ -965,6 +965,15 @@ class CarrotServ:
                                                    self.autoNaviSpeedDecelRate))
       #self.active_carrot = 6
       hda_active = True
+      
+      # =========================================================
+      # ▼ [추가] 순정 내비 카메라 감지 시 화면 깜빡임 연동 스위치!
+      # =========================================================
+      self.xSpdLimit = CS.speedLimit
+      self.xSpdDist = CS.speedLimitDistance
+      self.xSpdType = 1  # 1: 고정식 과속카메라 (UI에서 CAM으로 인식하게 만듦)
+      self.active_carrot = max(self.active_carrot, 2)  # 강제로 UI를 깨움
+      # =========================================================
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
