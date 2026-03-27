@@ -2578,8 +2578,8 @@ public:
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             
             // 레이아웃 위치 및 간격 설정
-            dx = s->fb_w - 100;       // 👈 int 삭제! (기존 dx 변수 재사용)
-            dy = 300;                // 👈 int 삭제! (기존 dy 변수 재사용)
+            dx = s->fb_w - 100;       
+            dy = 300;                
             int label_y_gap = 55;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격
             int step_y = 130;        // 각 항목 그룹 사이의 간격
 
@@ -2607,6 +2607,34 @@ public:
             ui_draw_text(s, dx, dy - label_y_gap, "VOLT", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.1fV", voltage);
             ui_draw_text(s, dx, dy, str, 60, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+
+            // 5. TIRE (타이어 공기압)
+            dy += step_y;
+            // 숫자가 2줄이 들어가야 하므로, "TIRE" 문구를 기존(55)보다 살짝 더 위(-75)로 올림
+            ui_draw_text(s, dx, dy - 75, "TIRE", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+
+            // 차량 상태에서 TPMS 정보 가져오기
+            auto tpms = (*(s->sm))["carState"].getCarState().getTpms();
+            char fl_str[16], fr_str[16], rl_str[16], rr_str[16];
+            
+            // 공기압이 정상 범위(5~60)를 벗어나면 "-" 로 예쁘게 표시해주는 함수
+            auto format_tpms = [](float val, char* buf) {
+                if (val < 5.0f || val > 60.0f) sprintf(buf, "-");
+                else sprintf(buf, "%.0f", round(val));
+            };
+            
+            format_tpms(tpms.getFl(), fl_str); // 앞좌측
+            format_tpms(tpms.getFr(), fr_str); // 앞우측
+            format_tpms(tpms.getRl(), rl_str); // 뒤좌측
+            format_tpms(tpms.getRr(), rr_str); // 뒤우측
+
+            char line1[64], line2[64];
+            sprintf(line1, "%s / %s", fl_str, fr_str); // 윗줄 조합
+            sprintf(line2, "%s / %s", rl_str, rr_str); // 아랫줄 조합
+
+            // 숫자를 35 폰트 크기로 작게 설정하여 위/아래 2줄로 출력
+            ui_draw_text(s, dx, dy - 35, line1, 35, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy, line2, 35, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         }
     }
     void drawDateTime(const UIState* s) {
