@@ -686,23 +686,35 @@ protected:
         float _path_width = rex - lex;
         float _path_x = (lex + rex) / 2;
         float _path_y = (ley + rey) / 2;
-        
-        // 👇 화면이 좁아져도 에러가 나지 않도록 안전장치 추가!
-        float max_path_x = s->fb_w - 350.f;
-        if (max_path_x < 350.f) max_path_x = 350.f;
-        
-        _path_x = (int)std::clamp(_path_x, 350.f, max_path_x);
-        _path_y = (int)std::clamp(_path_y, 200.f, s->fb_h - 80.f);
 
-        if (isnan(_path_x) || isnan(_path_y) || isnan(_path_width));
-        else {
+        // 🚨 1. 값이 꼬였을 때를 가장 먼저 확인 (NaN 에러 방지)
+        if (isnan(_path_x) || isnan(_path_y) || isnan(_path_width)) {
+            // 값이 없으면 아무것도 하지 않고 부드럽게 넘어감
+        } else {
+            // 🚨 2. 화면이 미친듯이 좁아져도 에러를 뿜지 않는 강철 방어 로직 (std::clamp 삭제)
+            float min_x = 350.f;
+            float max_x = s->fb_w - 350.f;
+            if (max_x < min_x) max_x = min_x; // 화면 축소 시 최대/최소 모순 해결!
+
+            float min_y = 200.f;
+            float max_y = s->fb_h - 80.f;
+            if (max_y < min_y) max_y = min_y;
+
+            if (_path_x < min_x) _path_x = min_x;
+            else if (_path_x > max_x) _path_x = max_x;
+
+            if (_path_y < min_y) _path_y = min_y;
+            else if (_path_y > max_y) _path_y = max_y;
+
+            // 정상적으로 좌표 부드럽게 이동 (Alpha 적용)
             path_fx = path_fx * alpha + _path_x * (1. - alpha);
             path_fy = path_fy * alpha + _path_y * (1. - alpha);
 
-            if (_path_width < 120.) _path_width = 120.;
-            else if (_path_width > 800.) _path_width = 800.;
+            if (_path_width < 120.f) _path_width = 120.f;
+            else if (_path_width > 800.f) _path_width = 800.f;
             path_fwidth = path_fwidth * alpha + _path_width * (1. - alpha);
         }
+        
         path_x = (int)path_fx;
         path_y = (int)path_fy;
         path_width = (int)path_fwidth;
