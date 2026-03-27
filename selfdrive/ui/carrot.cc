@@ -2483,7 +2483,7 @@ public:
         else if (carState.getGearShifter() == cereal::CarState::GearShifter::ECO) strcpy(gear_str, "E");
 		else strcpy(gear_str, "M");
 
-        ui_fill_rect(s->vg, { dx - 35, dy - 70, 70, 80 }, COLOR_GREEN_ALPHA(210), 15, 3, &white_color);
+        ui_fill_rect(s->vg, { dx - 35, dy - 70, 70, 80 }, COLOR_GREEN_ALPHA(210), 15, 3, 0); //&white_color에서 0으로 변경하여 테두리를 검은색으로
         ui_draw_text(s, dx, dy, gear_str, 70, COLOR_WHITE, BOLD);
 
         if (strcmp(gear_str, gear_str_last)) {
