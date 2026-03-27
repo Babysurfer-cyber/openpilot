@@ -2578,35 +2578,35 @@ public:
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             
             // 레이아웃 위치 및 간격 설정
-            dx = s->fb_w - 100;       
+            dx = s->fb_w - 120;       
             dy = 300;                
-            int label_y_gap = 55;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격
-            int step_y = 130;        // 각 항목 그룹 사이의 간격
+            int label_y_gap = 70;    // 항목 이름(DISK)과 숫자(50%) 사이의 상하 간격
+            int step_y = 110;        // 각 항목 그룹 사이의 간격
 
             // 1. DISK (디스크 사용량)
-            ui_draw_text(s, dx, dy - label_y_gap, "DISK", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy - label_y_gap, "DISK", 50, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.0f%%", 100 - freeSpace);
-            ui_draw_text(s, dx, dy, str, 60, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
+            ui_draw_text(s, dx, dy, str, 70, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
 
             // 2. MEM (메모리 사용량)
             dy += step_y;
             NVGcolor mem_color = (memoryUsage > 85) ? COLOR_RED : COLOR_WHITE; // 위험 시 깜빡임 없이 빨간색 고정
-            ui_draw_text(s, dx, dy - label_y_gap, "MEM", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
+            ui_draw_text(s, dx, dy - label_y_gap, "MEM", 50, COLOR_WHITE, BOLD, 0.0f, 0.0f); 
             sprintf(str, "%d%%", memoryUsage);
-            ui_draw_text(s, dx, dy, str, 60, mem_color, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy, str, 70, mem_color, BOLD, 0.0f, 0.0f);
 
             // 3. CPU (온도)
             dy += step_y;
             NVGcolor cpu_color = (cpuTemp > 80) ? COLOR_RED : COLOR_WHITE; // 위험 시 깜빡임 없이 빨간색 고정
-            ui_draw_text(s, dx, dy - label_y_gap, "CPU", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy - label_y_gap, "CPU", 50, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.0f\u00B0C", cpuTemp);
-            ui_draw_text(s, dx, dy, str, 60, cpu_color, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy, str, 70, cpu_color, BOLD, 0.0f, 0.0f);
 
             // 4. VOLT (차량 전압)
             dy += step_y;
-            ui_draw_text(s, dx, dy - label_y_gap, "VOLT", 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy - label_y_gap, "VOLT", 50, COLOR_WHITE, BOLD, 0.0f, 0.0f);
             sprintf(str, "%.1fV", voltage);
-            ui_draw_text(s, dx, dy, str, 60, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+            ui_draw_text(s, dx, dy, str, 70, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         }
     }
     void drawDateTime(const UIState* s) {
