@@ -2321,8 +2321,8 @@ public:
         // 4. 속도 단위 (km/h 또는 mph) 추가 그리기
         // 차량 설정이 미터법(km/h)인지 확인하여 자동으로 단위를 맞춰줍니다.
         const char* speed_unit = s->scene.is_metric ? "km/h" : "mph";
-        // 숫자(top_y)보다 45픽셀 아래에 25폰트 크기로 단위를 그립니다.
-        ui_draw_text(s, center_x, top_y + 45, speed_unit, 25, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        // 숫자(top_y)보다 45픽셀 아래에 40폰트 크기로 단위를 그립니다.
+        ui_draw_text(s, center_x, top_y + 45, speed_unit, 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw cruise speed
         char cruise_speed[32];
