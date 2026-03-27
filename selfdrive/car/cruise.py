@@ -630,6 +630,12 @@ class VCruiseCarrot:
     return v_cruise_kph
 
   def _auto_speed_up(self, v_cruise_kph):
+    # =========================================================
+    # ▼ [추가] 당근크루즈(타력주행/감속) 작동 중에는 제멋대로 가속하는 오지랖 완벽 차단!
+    if self.carrot_cruise_active:
+      return v_cruise_kph
+    # =========================================================
+
     #if self._pause_auto_speed_up:
     #  return v_cruise_kph
     if not self._pause_auto_speed_up and self.applyModelSpeed != 0.0:
