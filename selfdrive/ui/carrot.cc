@@ -2372,7 +2372,7 @@ public:
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
-        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_GREEN, BOLD, 0.0f, 0.0f);
+        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
