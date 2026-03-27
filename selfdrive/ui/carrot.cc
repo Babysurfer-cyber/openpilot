@@ -2340,7 +2340,7 @@ public:
         sprintf(speed, "%.0f", display_speed);
         // 2. 화면 정중앙 상단 좌표 설정
         int center_x = s->fb_w / 2;
-        int top_y = 180; // 숫자의 기준 Y 좌표 (높이가 마음에 안 들면 이 숫자를 조절하세요)
+        int top_y = 200; // 숫자의 기준 Y 좌표 (높이가 마음에 안 들면 이 숫자를 조절하세요)
         // 3. 속도 숫자 그리기 (폰트크기 160)
         ui_draw_text(s, center_x, top_y, speed, 160, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         // 4. 속도 단위 (km/h 또는 mph) 추가 그리기
