@@ -2318,7 +2318,7 @@ public:
         
         // 1. 기본 배경색 설정 (앞차가 있으면 녹색 투명도 90, 없으면 검은색 투명도 90)
         if (has_lead) {
-            bg_color = COLOR_GREEN_ALPHA(90);
+            bg_color = COLOR_GREEN_ALPHA(50);
         } else {
             bg_color = COLOR_BLACK_ALPHA(90);
         }
