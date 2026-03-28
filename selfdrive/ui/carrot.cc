@@ -2516,9 +2516,9 @@ public:
         int tl_y_green = by + 130; // 🟢 녹색불 Y 좌표 (상하)
 
         if (red_light || green_light) {
-            // 켜진 불은 100%(1.0f), 꺼진 불은 20%(0.2f) 투명도 적용
-            float red_alpha = red_light ? 1.0f : 0.2f;
-            float green_alpha = green_light ? 1.0f : 0.2f;
+            // 켜진 불은 100%(1.0f), 꺼진 불은 10%(0.1f) 투명도 적용
+            float red_alpha = red_light ? 1.0f : 0.1f;
+            float green_alpha = green_light ? 1.0f : 0.1f;
 
             ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
             ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
