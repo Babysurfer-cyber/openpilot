@@ -1009,11 +1009,11 @@ class CarrotServ:
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
-      (sdi_speed, "hda" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "cam"),
+      (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
       (limit_speed, "road"),
     ]
     if self.turnSpeedControlMode in [1,2]:
-      speed_n_sources.append((max(abs(vturn_speed), self.autoCurveSpeedLowerLimit), "vturn"))
+      speed_n_sources.append((max(abs(vturn_speed), self.autoCurveSpeedLowerLimit), "VTRUN"))
 
     route_speed = max(route_speed * self.mapTurnSpeedFactor, self.autoCurveSpeedLowerLimit)
     if self.turnSpeedControlMode == 2:
@@ -1025,7 +1025,7 @@ class CarrotServ:
 
     model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit)
     if model_turn_speed < 200 and abs(vturn_speed) < 120:
-      speed_n_sources.append((model_turn_speed, "model"))
+      speed_n_sources.append((model_turn_speed, "MODEL"))
 
     desired_speed, source = min(speed_n_sources, key=lambda x: x[0])
 
