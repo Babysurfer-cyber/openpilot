@@ -2510,13 +2510,14 @@ public:
         int tl_y_red = by - 15;   // 빨간불 위치 (기어박스 위쪽)
         int tl_y_green = by + 85; // 녹색불 위치 (기어박스 아래쪽)
 
-        // ▼ [추가/수정] 켜진 불은 100%(1.0f), 꺼진 불은 20%(0.2f) 투명도 적용
-        float red_alpha = red_light ? 1.0f : 0.2f;
-        float green_alpha = green_light ? 1.0f : 0.2f;
+        // ▼ [수정] 신호등이 '하나라도 인식되었을 때'만 작동하도록 방어막(if) 괄호 추가!
+        if (red_light || green_light) {
+            float red_alpha = red_light ? 1.0f : 0.2f;
+            float green_alpha = green_light ? 1.0f : 0.2f;
 
-        // 조건문(if) 없이 항상 두 아이콘을 그리되, 위에서 정한 투명도로 그리기!
-        ui_draw_image(s, { tl_x - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
-        ui_draw_image(s, { tl_x - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
+            ui_draw_image(s, { tl_x - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
+            ui_draw_image(s, { tl_x - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
+        } // <-- 이 닫는 괄호가 핵심입니다!
 
         dx = bx + 200;
         dy = by + 175;
