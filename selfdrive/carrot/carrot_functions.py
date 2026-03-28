@@ -465,28 +465,7 @@ class CarrotPlanner:
     self.drivingModeDetector.update_data(carstate, leadOne)
 
     v_cruise_kph = self.cruise_eco_control(v_ego_cluster_kph, v_cruise_kph)
-    
-    # ==============================================================
-    # ▼ [추가할 코드] 5번 모드일 때만, 제한속도가 '바뀌면' 1번만 덮어쓰기!
-    # ==============================================================
-    if self.myDrivingMode.value == 5:
-      if sm.alive['carrotMan']:
-        limit_speed = sm['carrotMan'].nRoadLimitSpeed
-        
-        if not hasattr(self, 'prev_limit_speed_for_auto'):
-          self.prev_limit_speed_for_auto = limit_speed
-          
-        if limit_speed > 0 and limit_speed != self.prev_limit_speed_for_auto:
-          v_cruise_kph = limit_speed + 10.0
-          
-        self.prev_limit_speed_for_auto = limit_speed
-    else:
-      if sm.alive['carrotMan']:
-        self.prev_limit_speed_for_auto = sm['carrotMan'].nRoadLimitSpeed
-    # ==============================================================
-
     v_cruise_kph, atc_active = self._update_carrot_man(sm, v_ego_kph, v_cruise_kph)
-    # ... (기존 코드 계속) ...
     
     #if atc_active and not self.atc_active and self.xState not in [XState.e2eStop, XState.e2eStopped, XState.lead]:
     #  if self.atcType in ["turn left", "turn right", "atc left", "atc right"]:
