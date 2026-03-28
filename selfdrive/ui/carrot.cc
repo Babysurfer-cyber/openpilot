@@ -2313,7 +2313,7 @@ public:
         // ▼ [추가] 앞차 인식(Lead Vehicle) 여부를 시스템에서 가져옴
         bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
 
-        NVGcolor stroke_color = COLOR_WHITE;
+        NVGcolor stroke_color = COLOR_GREY;
         NVGcolor bg_color;
         
         // 1. 기본 배경색 설정 (앞차가 있고 & 크루즈가 켜져있을 때만 녹색 투명도 90)
