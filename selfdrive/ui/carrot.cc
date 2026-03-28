@@ -2508,18 +2508,20 @@ public:
             tl_size_green *= 1.4;
         }
 
-        // ▼ [크기 확대에 맞춘 좌표 재조정] 박스 안 오른쪽에 큼지막하게 쏙 들어가도록!
-        int tl_x = bx + 300;       // (기존 305) 테두리 선 안쪽으로 살짝 당김
-        int tl_y_red = by + 20;     // (기존 -15) 위쪽 테두리 아래로 확 내림
-        int tl_y_green = by + 120; // (기존 +85) 빨간불과 안 겹치게 아래로 넉넉하게 내림
+        // ▼ [수정] X 좌표(좌우)와 Y 좌표(상하)를 빨강/녹색 각각 독립적으로 조절!
+        int tl_x_red   = bx + 330; // 🔴 빨간불 X 좌표 (좌우)
+        int tl_y_red   = by + 60;  // 🔴 빨간불 Y 좌표 (상하)
+
+        int tl_x_green = bx + 270; // 🟢 녹색불 X 좌표 (좌우)
+        int tl_y_green = by + 140; // 🟢 녹색불 Y 좌표 (상하)
 
         if (red_light || green_light) {
             // 켜진 불은 100%(1.0f), 꺼진 불은 20%(0.2f) 투명도 적용
             float red_alpha = red_light ? 1.0f : 0.2f;
             float green_alpha = green_light ? 1.0f : 0.2f;
 
-            ui_draw_image(s, { tl_x - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
-            ui_draw_image(s, { tl_x - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
+            ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
+            ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
         } // <-- 이 닫는 괄호가 핵심입니다!
 
         dx = bx + 200;
