@@ -29,6 +29,7 @@ class DrivingMode(Enum):
   Safe = 2
   Normal = 3
   High = 4
+  Auto = 5  # ▼ [추가] 5번 자동 모드 정의
 
   def __str__(self):
     return self.name
