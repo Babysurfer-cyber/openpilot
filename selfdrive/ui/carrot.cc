@@ -2309,10 +2309,26 @@ public:
 #endif
         bool cam_detected = false;
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
-        NVGcolor stroke_color = COLOR_WHITE;
-        NVGcolor bg_color = (cam_detected && blink_timer > 8)?COLOR_RED_ALPHA(90):COLOR_BLACK_ALPHA(90);
         
-        // 👇 디바이스 상태 표시 여부와 상관없이, 좌측 하단 HUD 배경 크기를 항상 기본 사이즈로 고정!
+        // ▼ [추가] 앞차 인식(Lead Vehicle) 여부를 시스템에서 가져옴
+        bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
+
+        NVGcolor stroke_color = COLOR_WHITE;
+        NVGcolor bg_color;
+        
+        // 1. 기본 배경색 설정 (앞차가 있으면 녹색 투명도 90, 없으면 검은색 투명도 90)
+        if (has_lead) {
+            bg_color = COLOR_GREEN_ALPHA(90);
+        } else {
+            bg_color = COLOR_BLACK_ALPHA(90);
+        }
+        
+        // 2. 과속카메라 감지 시 타이머에 맞춰 빨간색(투명도 90)으로 덮어쓰기 (깜빡임 효과)
+        if (cam_detected && blink_timer > 8) {
+            bg_color = COLOR_RED_ALPHA(90);
+        }
+        
+        // 👇 좌측 하단 HUD 배경 그리기
         ui_fill_rect(s->vg, { bx - 120, by - 130, 475, 355 }, bg_color, 30, 2, &stroke_color);
 
         // draw traffic light
