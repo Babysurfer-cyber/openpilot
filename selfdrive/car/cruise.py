@@ -579,7 +579,11 @@ class VCruiseCarrot:
         v_cruise_kph = button_kph
         self._v_cruise_kph_at_brake = 0
       elif button_type == ButtonType.gapAdjustCruise:
-        self.params.put_int_nonblocking("MyDrivingMode", self.params.get_int("MyDrivingMode") % 4 + 1) # 1,2,3,4 (1:eco, 2:safe, 3:normal, 4:high speed)
+        # ▼ [수정] 차간거리 버튼 길게 누름: 3번(일반) ↔ 5번(자동) 스위칭
+        current_mode = self.params.get_int("MyDrivingMode")
+        new_mode = 5 if current_mode == 3 else 3
+        self.params.put_int_nonblocking("MyDrivingMode", new_mode)
+
       elif button_type == ButtonType.lfaButton:
         useLaneLineSpeed = max(1, self.useLaneLineSpeed)
         self.useLaneLineSpeedApply = useLaneLineSpeed if self.useLaneLineSpeedApply == 0 else 0
