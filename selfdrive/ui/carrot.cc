@@ -2434,8 +2434,8 @@ public:
         const char* status_icon = "▩▩"; // 기본적으로 채워진 네모 사용
 
         if (has_lead) {
-            // 앞차를 인식하고 있으면 확실한 주황색 (불투명)
-            status_color = nvgRGBA(255, 150, 0, 255); 
+            // 앞차를 인식하고 있으면 확실한 녹색 (불투명)
+            status_color = nvgRGBA(0, 255, 148, 255); 
         } else {
             // 앞차가 없으면 기본 색상 (살짝 투명한 흰색)
             status_color = nvgRGBA(255, 255, 255, 100); 
