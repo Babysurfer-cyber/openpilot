@@ -2445,7 +2445,7 @@ public:
         // =======================================================
         auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
         
-        NVGcolor status_color = COLOR_WHITE_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
+        NVGcolor status_color = COLOR_GREY_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
         const char* status_icon = "□□";                  // 부팅 중 기본 기호 (하이픈)
 
         // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
