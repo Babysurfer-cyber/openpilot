@@ -2407,7 +2407,7 @@ public:
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         // ▼ [추가] 5번 모드: 바탕은 녹색, 글자는 'AUTO'
-        case 5: strcpy(driving_mode_str, "AUTO"); mode_color = COLOR_GREEN_ALPHA(210); text_color = COLOR_WHITE; break; 
+        case 5: strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  text_color = COLOR_WHITE;  break; 
         default: strcpy(driving_mode_str, tr("ERRM").toStdString().c_str()); break;
         }
 
