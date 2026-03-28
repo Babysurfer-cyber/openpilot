@@ -630,17 +630,10 @@ class VCruiseCarrot:
     return v_cruise_kph
 
   def _auto_speed_up(self, v_cruise_kph):
-    # =========================================================
-    # ▼ [최종 철벽 방어] 크루즈 속도가 최저(5)이거나 당근크루즈 상태일 땐 AI 오지랖 완벽 차단!
-    if v_cruise_kph <= self._cruise_speed_min or self.carrot_cruise_active:
-      return v_cruise_kph
-    # =========================================================
-
     #if self._pause_auto_speed_up:
     #  return v_cruise_kph
     if not self._pause_auto_speed_up and self.applyModelSpeed != 0.0:
       model_kph = self.model_v_kph * abs(self.applyModelSpeed)
-
       apply_speed = min(model_kph, self.nRoadLimitSpeed * 1.1)
 
       if self.applyModelSpeed < 0.0:
@@ -669,7 +662,6 @@ class VCruiseCarrot:
     self.road_limit_kph = road_limit_kph
     self.nRoadLimitSpeed_last = self.nRoadLimitSpeed
     return v_cruise_kph
-
   def _cruise_control(self, enable, cancel_timer, reason):
     if self._cruise_cancel_state: # and self._soft_hold_active != 2:
       self._add_log(reason + " > Cancel state")
