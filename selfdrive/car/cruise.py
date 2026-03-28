@@ -316,7 +316,7 @@ class VCruiseCarrot:
     self.v_ego_kph_set = int(CS.vEgoCluster * CV.MS_TO_KPH + 0.5)
     self._activate_cruise = 0
     self._prepare_brake_gas(CS, CC)
-   if CC.enabled:
+    if CC.enabled:
       self._cruise_ready = False
       
     # 버튼 입력을 처리해서 v_cruise_kph를 가져오는 기존 코드
