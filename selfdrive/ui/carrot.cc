@@ -2494,24 +2494,27 @@ public:
         // =======================================================
         bool red_light = trafficState == 1;
         bool green_light = trafficState == 2;
+        
+        // ▼ [요청사항 수정] 기본 크기를 256으로 변경!
         int tl_size_red = 256;
         int tl_size_green = 256;
 
         if(trafficState_carrot == 1) {
             red_light = true;
-            tl_size_red *= 1.5; // 감지 시 아이콘 펌핑
+            tl_size_red *= 1.4; // 신호 감지 시 펌핑 (약 358 크기)
         }
         else if(trafficState_carrot == 2) {
             green_light = true;
-            tl_size_green *= 1.5;
+            tl_size_green *= 1.4;
         }
 
-        int tl_x = bx + 305;
-        int tl_y_red = by - 15;   // 빨간불 위치 (기어박스 위쪽)
-        int tl_y_green = by + 85; // 녹색불 위치 (기어박스 아래쪽)
+        // ▼ [크기 확대에 맞춘 좌표 재조정] 박스 안 오른쪽에 큼지막하게 쏙 들어가도록!
+        int tl_x = bx + 300;       // (기존 305) 테두리 선 안쪽으로 살짝 당김
+        int tl_y_red = by + 20;     // (기존 -15) 위쪽 테두리 아래로 확 내림
+        int tl_y_green = by + 120; // (기존 +85) 빨간불과 안 겹치게 아래로 넉넉하게 내림
 
-        // ▼ [수정] 신호등이 '하나라도 인식되었을 때'만 작동하도록 방어막(if) 괄호 추가!
         if (red_light || green_light) {
+            // 켜진 불은 100%(1.0f), 꺼진 불은 20%(0.2f) 투명도 적용
             float red_alpha = red_light ? 1.0f : 0.2f;
             float green_alpha = green_light ? 1.0f : 0.2f;
 
