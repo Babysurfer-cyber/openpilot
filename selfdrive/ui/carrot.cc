@@ -2494,16 +2494,16 @@ public:
         // =======================================================
         bool red_light = trafficState == 1;
         bool green_light = trafficState == 2;
-        int tl_size_red = 110;
-        int tl_size_green = 110;
+        int tl_size_red = 256;
+        int tl_size_green = 256;
 
         if(trafficState_carrot == 1) {
             red_light = true;
-            tl_size_red *= 1.4; // 감지 시 아이콘 펌핑
+            tl_size_red *= 1.5; // 감지 시 아이콘 펌핑
         }
         else if(trafficState_carrot == 2) {
             green_light = true;
-            tl_size_green *= 1.4;
+            tl_size_green *= 1.5;
         }
 
         int tl_x = bx + 305;
