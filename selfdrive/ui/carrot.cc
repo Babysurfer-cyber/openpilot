@@ -2438,12 +2438,12 @@ public:
             status_color = nvgRGBA(0, 255, 148, 255); 
         } else {
             // 앞차가 없으면 기본 색상 (살짝 투명한 흰색)
-            status_color = nvgRGBA(255, 255, 255, 100); 
+            status_color = nvgRGBA(255, 255, 255, 50); 
         }
 
         // 정중앙 기호 그리기 ('▩▩')
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx - 25, dy, status_icon, 50, status_color, BOLD);
+        ui_draw_text(s, dx - 25, dy + 5, status_icon, 60, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
