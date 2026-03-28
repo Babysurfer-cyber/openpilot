@@ -2509,11 +2509,11 @@ public:
         }
 
         // ▼ [수정] X 좌표(좌우)와 Y 좌표(상하)를 빨강/녹색 각각 독립적으로 조절!
-        int tl_x_red   = bx + 330; // 🔴 빨간불 X 좌표 (좌우)
+        int tl_x_red   = bx + 340; // 🔴 빨간불 X 좌표 (좌우)
         int tl_y_red   = by + 60;  // 🔴 빨간불 Y 좌표 (상하)
 
         int tl_x_green = bx + 270; // 🟢 녹색불 X 좌표 (좌우)
-        int tl_y_green = by + 140; // 🟢 녹색불 Y 좌표 (상하)
+        int tl_y_green = by + 130; // 🟢 녹색불 Y 좌표 (상하)
 
         if (red_light || green_light) {
             // 켜진 불은 100%(1.0f), 꺼진 불은 20%(0.2f) 투명도 적용
