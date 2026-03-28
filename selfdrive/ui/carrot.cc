@@ -2446,13 +2446,13 @@ public:
         auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
         
         NVGcolor status_color = COLOR_WHITE_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
-        const char* status_icon = "□";                  // 부팅 중 기본 기호 (하이픈)
+        const char* status_icon = "□□";                  // 부팅 중 기본 기호 (하이픈)
 
         // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
         if (lane_probs.size() > 2) {
             // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
             float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
-            status_icon = "▩"; // 데이터가 들어오면 네모 기호로 변경
+            status_icon = "▩▩"; // 데이터가 들어오면 네모 기호로 변경
 
             int r, g, b;
             if (model_prob >= 0.85f) {
@@ -2477,7 +2477,7 @@ public:
 
         // 정중앙 기호 그리기 (데이터 없으면 '□', 있으면 '▩')
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx, dy, status_icon, 50, status_color, BOLD);
+        ui_draw_text(s, dx - 25, dy + 5, status_icon, 60, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
