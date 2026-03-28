@@ -316,27 +316,42 @@ class VCruiseCarrot:
     self.v_ego_kph_set = int(CS.vEgoCluster * CV.MS_TO_KPH + 0.5)
     self._activate_cruise = 0
     self._prepare_brake_gas(CS, CC)
-    if CC.enabled:
+   if CC.enabled:
       self._cruise_ready = False
+      
+    # 버튼 입력을 처리해서 v_cruise_kph를 가져오는 기존 코드
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
     # ==============================================================
-    # ▼ [추가] 5번 모드일 때 화면(UI)의 크루즈 설정 속도 완벽 동기화!
+    # ▼ [수정] 5번 모드: 제한속도가 "변경될 때만" 크루즈 속도 +10 덮어쓰기
     # ==============================================================
     try:
       # CPU 과부하를 막기 위해 10프레임(0.1초)마다 한 번씩만 모드 읽어오기
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
         
-      # 5번(자동) 모드일 때
+      # 5번(AUTO) 모드일 때만 작동
       if getattr(self, 'current_driving_mode', 3) == 5:
-        if self.nRoadLimitSpeed > 0:
-          # 화면의 설정 속도도 제한속도 + 10으로 강제 덮어쓰기!
-          v_cruise_kph = self.nRoadLimitSpeed + 10.0
+        # 1. 최초 실행 시 '이전 제한속도'를 기억할 변수 생성
+        if not hasattr(self, 'prev_limit_speed_for_auto'):
+          self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+
+        # 2. 핵심 로직: 제한속도가 정상(0 초과)이고, "이전 제한속도와 달라졌을 때" 딱 1번만 발동!
+        if self.nRoadLimitSpeed > 0 and self.nRoadLimitSpeed != self.prev_limit_speed_for_auto:
+          v_cruise_kph = self.nRoadLimitSpeed + 10.0  # 속도 세팅
+          self._add_log(f"Auto Mode: Limit changed to {self.nRoadLimitSpeed}. Set {v_cruise_kph}")
+          
+        # 3. 변경이 끝났으면 현재 제한속도를 '이전 제한속도'로 업데이트해서 다음번엔 무시되게 함
+        self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+        
+      else:
+        # 5번 모드가 아닐 때는, 나중에 5번으로 바꿨을 때 갑자기 속도가 튀는 걸 막기 위해 값만 동기화
+        self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+        
     except Exception:
       pass
     # ==============================================================
-    
+
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
       self._cruise_ready = False
