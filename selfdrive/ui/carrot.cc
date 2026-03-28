@@ -2316,9 +2316,9 @@ public:
         NVGcolor stroke_color = COLOR_WHITE;
         NVGcolor bg_color;
         
-        // 1. 기본 배경색 설정 (앞차가 있으면 녹색 투명도 90, 없으면 검은색 투명도 90)
-        if (has_lead) {
-            bg_color = COLOR_GREEN_ALPHA(50);
+        // 1. 기본 배경색 설정 (앞차가 있고 & 크루즈가 켜져있을 때만 녹색 투명도 90)
+        if (has_lead && longActive) {
+            bg_color = COLOR_GREEN_ALPHA(90);
         } else {
             bg_color = COLOR_BLACK_ALPHA(90);
         }
