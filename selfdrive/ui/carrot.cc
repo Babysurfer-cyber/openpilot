@@ -2328,27 +2328,13 @@ public:
             bg_color = COLOR_RED_ALPHA(90);
         }
         
-        // 👇 좌측 하단 HUD 배경 그리기
-        ui_fill_rect(s->vg, { bx - 120, by - 130, 475, 355 }, bg_color, 30, 2, &stroke_color);
+        // 👇 좌측 하단 HUD 배경 그리기 (빈공간이 생겨서 윗부분을 40px 낮춤!)
+        ui_fill_rect(s->vg, { bx - 120, by - 90, 475, 315 }, bg_color, 30, 2, &stroke_color);
 
-        // draw traffic light
-        int icon_red = icon_size;
-        int icon_green = icon_size;
-        bool red_light = trafficState == 1;
-        bool green_light = trafficState == 2;
-
-        if(trafficState_carrot == 1) {
-			red_light = true;
-            icon_red *= 1.5;
-		}
-		else if(trafficState_carrot == 2) {
-			green_light = true;
-            icon_green *= 1.5;
-		}
-        if (red_light) ui_draw_image(s, { x - icon_red / 2, y - icon_red / 2 + 270, icon_red, icon_red }, "ic_traffic_red", 1.0f);
-        else if (green_light) ui_draw_image(s, { x - icon_green / 2, y - icon_green / 2 + 270, icon_green, icon_green }, "ic_traffic_green", 1.0f);
+        // (기존 왼쪽 신호등 표시 로직은 우측 기어박스 자리로 이동하기 위해 삭제됨)
 
         // draw speed
+
         char speed[32];
         // 1. 현재 속도 계산 (0 미만으로 내려가면 0으로 고정)
         float display_speed = s->scene.is_metric ? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH;
@@ -2503,37 +2489,37 @@ public:
             ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_WHITE_ALPHA(190), 4, 3, 0);
         }
 
-        char gear_str[32] = "R";
-        dx = bx + 305;
-        dy = by + 60;
-        //const SubMaster& sm = *(s->sm);
-        auto carState = sm["carState"].getCarState();
-        if (carState.getGearShifter() == cereal::CarState::GearShifter::UNKNOWN) strcpy(gear_str, "U");
-        else if (carState.getGearShifter() == cereal::CarState::GearShifter::PARK) strcpy(gear_str, "P");
-        else if (carState.getGearShifter() == cereal::CarState::GearShifter::DRIVE) {
-            if (carState.getGearStep() > 0)
-      				sprintf(gear_str, "%d", carState.getGearStep());
-		      	else
-				      strcpy(gear_str, "D");
+        // =======================================================
+        // 5. 기어박스 자리에 신호등 표시 (위: 빨강, 아래: 녹색)
+        // =======================================================
+        bool red_light = trafficState == 1;
+        bool green_light = trafficState == 2;
+        int tl_size_red = 110;
+        int tl_size_green = 110;
+
+        if(trafficState_carrot == 1) {
+            red_light = true;
+            tl_size_red *= 1.4; // 감지 시 아이콘 펌핑
         }
-        else if(carState.getGearShifter() == cereal::CarState::GearShifter::NEUTRAL) strcpy(gear_str, "N");
-        else if (carState.getGearShifter() == cereal::CarState::GearShifter::REVERSE) strcpy(gear_str, "R");
-        else if (carState.getGearShifter() == cereal::CarState::GearShifter::SPORT) strcpy(gear_str, "S");
-        else if(carState.getGearShifter() == cereal::CarState::GearShifter::LOW) strcpy(gear_str, "L");
-        else if (carState.getGearShifter() == cereal::CarState::GearShifter::BRAKE) strcpy(gear_str, "B");
-        else if (carState.getGearShifter() == cereal::CarState::GearShifter::ECO) strcpy(gear_str, "E");
-		else strcpy(gear_str, "M");
+        else if(trafficState_carrot == 2) {
+            green_light = true;
+            tl_size_green *= 1.4;
+        }
 
-        ui_fill_rect(s->vg, { dx - 35, dy - 70, 70, 80 }, COLOR_BLUE_ALPHA(190), 15, 3, 0); //&white_color에서 0으로 변경하여 테두리를 검은색으로
-        ui_draw_text(s, dx, dy, gear_str, 70, COLOR_WHITE, BOLD);
+        int tl_x = bx + 305;
+        int tl_y_red = by - 15;   // 빨간불 위치 (기어박스 위쪽)
+        int tl_y_green = by + 85; // 녹색불 위치 (기어박스 아래쪽)
 
-        if (strcmp(gear_str, gear_str_last)) {
-            ui_draw_text_a(s, dx, dy, gear_str, 70, COLOR_WHITE, BOLD);
-			strcpy(gear_str_last, gear_str);
+        if (red_light) {
+            ui_draw_image(s, { tl_x - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", 1.0f);
+        }
+        if (green_light) {
+            ui_draw_image(s, { tl_x - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", 1.0f);
         }
 
         dx = bx + 200;
         dy = by + 175;
+
 #ifdef __UI_TEST
         active_carrot = 2;
 #endif
