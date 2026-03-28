@@ -422,20 +422,20 @@ class VCruiseCarrot:
       self.long_pressed = True
       bt = self.button_prev
 
-      #if bt == ButtonType.cancel:
-      #  button_type = bt
-      #  self.button_cnt = 0
       if bt in [ButtonType.accelCruise, ButtonType.decelCruise]:
-        mod = button_kph % V_CRUISE_DELTA
-        if bt == ButtonType.accelCruise:
-          button_kph += V_CRUISE_DELTA - mod
-        else:
-          button_kph -= V_CRUISE_DELTA - (-mod % V_CRUISE_DELTA)
-        button_type = bt
-        self.button_cnt %= self.button_long_time
-      else: #if bt in [ButtonType.gapAdjustCruise, ButtonType.lfaButton]:
-        if self.button_cnt < self.button_long_time + 2:
+        # ▼ [추가/수정] 길게 누른 시점(long_time + 1)에 딱 '한 번'만 속도를 조절하도록 제한!
+        if self.button_cnt == self.button_long_time + 1:
+          mod = button_kph % V_CRUISE_DELTA
+          if bt == ButtonType.accelCruise:
+            button_kph += V_CRUISE_DELTA - mod
+          else:
+            button_kph -= V_CRUISE_DELTA - (-mod % V_CRUISE_DELTA)
           button_type = bt
+        # self.button_cnt %= self.button_long_time  <-- (반복 금지를 위해 삭제 또는 주석 처리)
+      else: 
+        if self.button_cnt == self.button_long_time + 1:
+          button_type = bt
+
         #self.button_cnt %= self.button_long_time
 
     return button_kph, button_type, self.long_pressed
