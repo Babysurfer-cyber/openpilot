@@ -2415,7 +2415,7 @@ public:
 
         auto gps = (s->ublox_avaliable) ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
         if (gps.getHasFix()) {
-          ui_draw_text(s, dx, dy - 45, "GPS", 30, COLOR_BLUE, BOLD);
+          ui_draw_text(s, dx, dy - 45, "GPS", 30, COLOR_WHITE, BOLD);
         }
 
         // 1. 기존 차간거리 팝업 애니메이션 처리 준비
@@ -2504,11 +2504,11 @@ public:
         active_carrot = 2;
 #endif
         if (active_carrot >= 2) {
-            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_BLUE, 15, 2);
+            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_WHITE_ALPHA(190), 15, 2);
             ui_draw_text(s, dx, dy, "APN", 40, COLOR_WHITE, BOLD);
         }
         else if (active_carrot >= 1) {
-            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_BLUE_ALPHA(210), 15, 2);
+            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_WHITE_ALPHA(190), 15, 2);
             ui_draw_text(s, dx, dy, "APM", 40, COLOR_WHITE, BOLD);
         }
         if (nav_path_vertex_count > 1) {
