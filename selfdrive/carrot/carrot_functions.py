@@ -492,9 +492,9 @@ class CarrotPlanner:
       # =========================================================
       if self.prev_lead_status and (self.prev_lead_dist - current_lead_dist) > 5.0:
         
-        # [NEW] 단, 운전자가 브레이크를 밟고 있거나, 이미 급감속(a_ego < -1.5) 중일 때는 
+        # [NEW] 단, 운전자가 브레이크를 밟고 있거나, 이미 급감속(a_ego < -3.0) 중일 때는 
         # 노즈다이브로 인한 센서 오류이거나 운전자가 이미 인지한 상황이므로 알림 리셋 생략!
-        if not carstate.brakePressed and a_ego > -1.5:
+        if not carstate.brakePressed and a_ego > -3.0:
           # 완전히 새로운 앞차가 나타난 것으로 간주하고 타이머와 도장(알림 상태)을 싹 초기화!
           self.lead_alerted = False
           self.lead_detect_count = 0
