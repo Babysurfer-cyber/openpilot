@@ -2415,7 +2415,7 @@ public:
 
         auto gps = (s->ublox_avaliable) ? sm["gpsLocationExternal"].getGpsLocationExternal() : sm["gpsLocation"].getGpsLocation();
         if (gps.getHasFix()) {
-          ui_draw_text(s, dx, dy - 45, "GPS", 30, COLOR_GREEN, BOLD);
+          ui_draw_text(s, dx, dy - 45, "GPS", 30, COLOR_BLUE, BOLD);
         }
 
         // 1. 기존 차간거리 팝업 애니메이션 처리 준비
@@ -2466,7 +2466,7 @@ public:
         gap = 3;
 #endif
         for (int i = 0; i < gap; i++) {
-            ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_GREEN_ALPHA(190), 4, 3, 0);
+            ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_BLUE_ALPHA(190), 4, 3, 0);
         }
 
         char gear_str[32] = "R";
