@@ -45,7 +45,7 @@
 #define COLOR_BLUE_ALPHA(x) nvgRGBA(0, 122, 255, x)
 #define COLOR_ORANGE nvgRGBA(255, 149, 0, 255)
 #define COLOR_ORANGE_ALPHA(x) nvgRGBA(255, 149, 0, x)
-#define COLOR_GREY nvgRGBA(191, 191, 191, 1)
+#define COLOR_GREY nvgRGBA(191, 191, 191, 255)
 #define COLOR_GREY_ALPHA(x) nvgRGBA(191, 191, 191, x)
 
 #define BOLD "KaiGenGothicKR-Bold"//"Inter-Bold"//"sans-bold"
