@@ -464,7 +464,25 @@ class CarrotPlanner:
     self.drivingModeDetector.update_data(carstate, leadOne)
 
     v_cruise_kph = self.cruise_eco_control(v_ego_cluster_kph, v_cruise_kph)
+    
+    # ==============================================================
+    # ▼ [추가] 5번 '자동' 주행 모드 엔진 (제한속도 + 10 실시간 추적)
+    # ==============================================================
+    if self.myDrivingMode.value == 5:  # 5번 자동 모드일 때만 작동!
+      try:
+        from openpilot.common.params import Params
+        # 현재 도로의 제한속도를 계속해서 실시간으로 읽어옴
+        limit_speed = float(Params().get("RoadLimitSpeed", encoding='utf8'))
+        
+        # 제한속도를 정상적으로(0보다 크게) 인식했을 때만 +10 세팅 적용!
+        if limit_speed > 0:
+          v_cruise_kph = limit_speed + 10.0
+      except Exception:
+        pass
+    # ==============================================================
+
     v_cruise_kph, atc_active = self._update_carrot_man(sm, v_ego_kph, v_cruise_kph)
+    # ... (기존 코드 계속) ...
     
     #if atc_active and not self.atc_active and self.xState not in [XState.e2eStop, XState.e2eStopped, XState.lead]:
     #  if self.atcType in ["turn left", "turn right", "atc left", "atc right"]:
