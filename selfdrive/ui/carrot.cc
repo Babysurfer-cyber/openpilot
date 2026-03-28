@@ -2397,7 +2397,7 @@ public:
         // draw gap info
         char driving_mode_str[32] = "연비";
         int driving_mode = myDrivingMode;// params.getInt("MyDrivingMode");
-        NVGcolor mode_color = COLOR_GREEN_ALPHA(210);
+        NVGcolor mode_color = COLOR_BLUE_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
         switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
@@ -2490,7 +2490,7 @@ public:
         else if (carState.getGearShifter() == cereal::CarState::GearShifter::ECO) strcpy(gear_str, "E");
 		else strcpy(gear_str, "M");
 
-        ui_fill_rect(s->vg, { dx - 35, dy - 70, 70, 80 }, COLOR_GREEN_ALPHA(190), 15, 3, 0); //&white_color에서 0으로 변경하여 테두리를 검은색으로
+        ui_fill_rect(s->vg, { dx - 35, dy - 70, 70, 80 }, COLOR_BLUE_ALPHA(190), 15, 3, 0); //&white_color에서 0으로 변경하여 테두리를 검은색으로
         ui_draw_text(s, dx, dy, gear_str, 70, COLOR_WHITE, BOLD);
 
         if (strcmp(gear_str, gear_str_last)) {
@@ -2504,7 +2504,7 @@ public:
         active_carrot = 2;
 #endif
         if (active_carrot >= 2) {
-            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_GREEN, 15, 2);
+            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_BLUE, 15, 2);
             ui_draw_text(s, dx, dy, "APN", 40, COLOR_WHITE, BOLD);
         }
         else if (active_carrot >= 1) {
