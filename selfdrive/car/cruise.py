@@ -320,6 +320,23 @@ class VCruiseCarrot:
       self._cruise_ready = False
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
+    # ==============================================================
+    # ▼ [추가] 5번 모드일 때 화면(UI)의 크루즈 설정 속도 완벽 동기화!
+    # ==============================================================
+    try:
+      # CPU 과부하를 막기 위해 10프레임(0.1초)마다 한 번씩만 모드 읽어오기
+      if self.frame % 10 == 0:
+        self.current_driving_mode = self.params.get_int("MyDrivingMode")
+        
+      # 5번(자동) 모드일 때
+      if getattr(self, 'current_driving_mode', 3) == 5:
+        if self.nRoadLimitSpeed > 0:
+          # 화면의 설정 속도도 제한속도 + 10으로 강제 덮어쓰기!
+          v_cruise_kph = self.nRoadLimitSpeed + 10.0
+    except Exception:
+      pass
+    # ==============================================================
+    
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
       self._cruise_ready = False
