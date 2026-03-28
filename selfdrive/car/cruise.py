@@ -791,6 +791,10 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
+    # ▼▼▼ [추가] 당근크루즈 작동 중에는 오토 스피드 업(자동 가속) 기능 정지 ▼▼▼
+    if self.carrot_cruise_active:
+      self._pause_auto_speed_up = True
+
     return self._auto_speed_up(v_cruise_kph)
 
   def _prepare_brake_gas(self, CS, CC):
