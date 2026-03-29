@@ -2401,8 +2401,8 @@ public:
         NVGcolor textColor = COLOR_GREEN;
         //NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
-        int apply_x = bx + 195;
-        int apply_y = by + 25;
+        int apply_x = bx + 190;
+        int apply_y = by + 30;
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
