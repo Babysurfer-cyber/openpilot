@@ -835,8 +835,11 @@ class VCruiseCarrot:
       self.carrot_cruise_active = False  # <--- 추가
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
       if self._brake_pressed_count == 1 and self.enabled_last:
-        self._v_cruise_kph_at_brake = self.v_cruise_kph
-        self._add_log(f"{self.v_cruise_kph} Cruise speed at brake")
+        # ▼▼▼ [수정] 금고가 비어있을 때만 백업! (당근크루즈가 넣어둔 80 보존) ▼▼▼
+        if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:
+          self._v_cruise_kph_at_brake = self.v_cruise_kph
+        self._add_log(f"{self._v_cruise_kph_at_brake} Cruise speed at brake")
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       self._soft_hold_count = self._soft_hold_count + 1 if CS.vEgo < 0.1 and CS.gearShifter == GearShifter.drive else 0
       if self.autoCruiseControl == 0 or self.CP.pcmCruise:
         self._soft_hold_active = 0
