@@ -2492,38 +2492,36 @@ public:
         }
 
         // =======================================================
-        // 5. 기어박스 자리에 신호등 표시 (위: 빨강, 아래: 녹색)
+        // 5. 기어박스 자리에 신호등 표시 (항상 표시, 미감지 시 투명)
         // =======================================================
         bool red_light = trafficState == 1;
         bool green_light = trafficState == 2;
         
-        // ▼ [요청사항 수정] 기본 크기를 256으로 변경!
-        int tl_size_red = 256;
-        int tl_size_green = 256;
+        int tl_size_red = 270;
+        int tl_size_green = 270;
 
         if(trafficState_carrot == 1) {
             red_light = true;
-            tl_size_red *= 1.4; // 신호 감지 시 펌핑 (약 358 크기)
+            tl_size_red *= 1.4; // 신호 감지 시 펌핑
         }
         else if(trafficState_carrot == 2) {
             green_light = true;
             tl_size_green *= 1.4;
         }
 
-        // ▼ [수정] X 좌표(좌우)와 Y 좌표(상하)를 빨강/녹색 각각 독립적으로 조절!
-        int tl_x_red   = bx + 340; // 🔴 빨간불 X 좌표 (좌우)
-        int tl_y_red   = by + 60;  // 🔴 빨간불 Y 좌표 (상하)
+        int tl_x_red   = bx + 335; 
+        int tl_y_red   = by + 65;  
 
-        int tl_x_green = bx + 270; // 🟢 녹색불 X 좌표 (좌우)
-        int tl_y_green = by + 130; // 🟢 녹색불 Y 좌표 (상하)
+        int tl_x_green = bx + 265; 
+        int tl_y_green = by + 140; 
 
-        if (red_light || green_light) {
-            // 켜진 불은 100%(1.0f), 꺼진 불은 10%(0.1f) 투명도 적용
-            float red_alpha = red_light ? 1.0f : 0.1f;
-            float green_alpha = green_light ? 1.0f : 0.1f;
+        // ▼ [수정] if 조건문을 삭제하여 신호등 아이콘이 '항상' 그려지도록 변경!
+        // 켜진 불은 1.0f(100%), 꺼지거나 감지 안 된 상태는 0.1f(10%) 투명도로 적용
+        float red_alpha = red_light ? 1.0f : 0.1f;
+        float green_alpha = green_light ? 1.0f : 0.1f;
 
-            ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
-            ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
+        ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
+        ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
         } // <-- 이 닫는 괄호가 핵심입니다!
 
         dx = bx + 200;
