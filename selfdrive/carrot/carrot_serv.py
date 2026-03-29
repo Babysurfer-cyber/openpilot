@@ -924,31 +924,42 @@ class CarrotServ:
     sdi_speed = 250
     hda_active = False
 
-    # =========================================================
-    # ▼ [추가] 제한속도 하락 감지 (순정 내비 0km/h 튕김 완벽 방어!)
-    # =========================================================
-    if CS is not None:
-      # 1. 초기 변수 세팅 (처음 1회만 실행)
-      if not hasattr(self, 'prev_speed_limit'):
-        self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
-      
-      # 2. 현재 제한속도 계산 (m/s -> km/h 변환)
-      current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
-      
-      # 3. 속도가 떨어졌을 때만 띠링~ 안내음 파일 생성
-      if current_limit > 0 and self.prev_speed_limit > 0:
-        # (예: 100 -> 80으로 정상적으로 떨어질 때만 발동)
-        if current_limit < self.prev_speed_limit:
-          try:
-            open("/dev/shm/carrot_prompt", "w").close()
-          except Exception:
-            pass
+      # =========================================================
+      # ▼ [수정] 5번 모드는 상승/하락 모두, 다른 모드는 하락 시에만 안내음!
+      # =========================================================
+      if CS is not None:
+        # 1. 현재 자동모드 설정값 읽기
+        auto_cruise_control = self.params.get_int("AutoCruiseControl")
+
+        # 2. 초기 변수 세팅 (처음 1회만 실행)
+        if not hasattr(self, 'prev_speed_limit'):
+          self.prev_speed_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+        
+        # 3. 현재 제한속도 계산
+        current_limit = CS.speedLimit * 3.6 if CS.speedLimit > 0 else 0
+        
+        # 4. 안내음 발생 조건 체크
+        if current_limit > 0 and self.prev_speed_limit > 0:
+          play_prompt = False
+          
+          if current_limit < self.prev_speed_limit:
+            # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음! (안전/단속 대비)
+            play_prompt = True
+          elif current_limit > self.prev_speed_limit and auto_cruise_control == 5:
+            # 조건 B: 제한속도가 '상승'할 때는 5번(자동) 모드일 때만 안내음!
+            play_prompt = True
             
-      # 4. 다음 비교를 위해 현재 속도를 기억
-      # (💡 핵심 방어막: 신호가 잠깐 끊겨서 0이 들어올 때는 과거 속도를 잊지 않고 유지!)
-      if current_limit > 0:
-        self.prev_speed_limit = current_limit
-    # =========================================================
+          # 위 조건에 맞아 play_prompt가 켜졌다면 소리 발생 파일 생성
+          if play_prompt:
+            try:
+              open("/dev/shm/carrot_prompt", "w").close()
+            except Exception:
+              pass
+              
+        # 5. 다음 비교를 위해 현재 속도를 기억
+        if current_limit > 0:
+          self.prev_speed_limit = current_limit
+      # =========================================================
 
     ### 과속카메라, 사고방지턱
     if (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0:
