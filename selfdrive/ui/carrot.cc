@@ -2348,7 +2348,7 @@ public:
         if (has_lead) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             // 박스의 가로 중앙(bx + 117), 세로 상단 바로 위(by - 100)에 배치
-            ui_draw_text(s, bx + 117, by - 110, "LOCK-ON", 60, COLOR_ORANGE, BOLD);
+            ui_draw_text(s, bx + 117, by - 100, "LOCK-ON", 55, COLOR_ORANGE, BOLD);
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
