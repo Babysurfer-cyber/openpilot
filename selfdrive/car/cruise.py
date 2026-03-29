@@ -602,7 +602,18 @@ class VCruiseCarrot:
     elif self._paddle_decel_active:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
+
+    # ▼▼▼ [추가 1] 당근크루즈 켜질 때 원래 설정 속도(예:80) 안전하게 백업! ▼▼▼
+    if not hasattr(self, 'prev_carrot_active'):
+      self.prev_carrot_active = False
+      
+    if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
+      if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:  # 금고가 비어있을 때만
+        self._v_cruise_kph_at_brake = v_cruise_kph         # 원래 속도 백업
         
+    self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
 
