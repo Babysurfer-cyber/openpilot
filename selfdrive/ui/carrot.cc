@@ -2381,18 +2381,18 @@ public:
         //NVGcolor white_color = COLOR_WHITE;
         char apply_speed_str[32];
         int apply_x = bx + 195;
-        int apply_y = by + 25;
+        int apply_y = by + 40;
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_ORANGE;    // apply speed가 작동되면... 색을 바꾸자.
-            ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 60, apply_source.toStdString().c_str(), 30, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y, apply_speed_str, 70, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 70, apply_source.toStdString().c_str(), 40, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
         }
 		    else if(abs(cruiseTarget - v_cruise) > 0.5) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?cruiseTarget: cruiseTarget * KM_TO_MILE + 0.5));
 			ui_draw_text(s, apply_x, apply_y, apply_speed_str, 0, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
-            ui_draw_text(s, apply_x, apply_y - 60, "eco", 0, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
+            ui_draw_text(s, apply_x, apply_y - 70, "eco", 0, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
 		    }
         const SubMaster& sm = *(s->sm);
 
@@ -2428,45 +2428,6 @@ public:
         int gap = params.getInt("LongitudinalPersonality") + 1;
         dx = bx + 220;
         dy = by + 77;
-
-        // =======================================================
-        // 2. 진짜 모델 신뢰도(차선 인식률) 기반 그라데이션 (안전장치 추가)
-        // =======================================================
-        auto lane_probs = sm["modelV2"].getModelV2().getLaneLineProbs();
-        
-        NVGcolor status_color = COLOR_GREY_ALPHA(100); // 부팅 중 기본 색상 (반투명 흰색)
-        const char* status_icon = "□□";                  // 부팅 중 기본 기호 (하이픈)
-
-        // 🚨 핵심 안전장치: 차선 데이터가 3개 이상 정상적으로 들어왔을 때만 계산!
-        if (lane_probs.size() > 2) {
-            // 왼쪽(인덱스 1)과 오른쪽(인덱스 2) 차선의 인식 확률 평균 (0.0 ~ 1.0)
-            float model_prob = (lane_probs[1] + lane_probs[2]) / 2.0f;
-            status_icon = "▩▩"; // 데이터가 들어오면 네모 기호로 변경
-
-            int r, g, b;
-            if (model_prob >= 0.85f) {
-                // 85% 이상은 완전한 흰색 (길 아주 잘 파악함)
-                r = 255; g = 255; b = 255; 
-            } else if (model_prob >= 0.5f) {
-                // 50% ~ 85%: 노랑(218,202,37)에서 흰색(255,255,255)으로 서서히 변환
-                float ratio = (model_prob - 0.5f) / 0.35f; 
-                r = 218 + (int)((255 - 218) * ratio);
-                g = 202 + (int)((255 - 202) * ratio);
-                b = 37  + (int)((255 -  37) * ratio);
-            } else {
-                // 0% ~ 50%: 완전한 빨강(255,59,59)에서 노랑(218,202,37)으로 서서히 변환
-                float ratio = model_prob / 0.5f; 
-                if (ratio < 0.0f) ratio = 0.0f; // 음수 방지 안전장치
-                r = 255 + (int)((218 - 255) * ratio);
-                g = 59  + (int)((202 -  59) * ratio);
-                b = 59  + (int)((37  -  59) * ratio);
-            }
-            status_color = nvgRGBA(r, g, b, 255);
-        }
-
-        // 정중앙 기호 그리기 (데이터 없으면 '□', 있으면 '▩')
-        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, dx - 25, dy + 5, status_icon, 60, status_color, BOLD);
 
         // =======================================================
         // 3. 차간거리 조절 시 팝업 애니메이션 (숫자 1~4)
