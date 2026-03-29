@@ -2344,6 +2344,14 @@ public:
         // 👇 좌측 하단 HUD 배경 그리기 (빈공간이 생겨서 윗부분을 40px 낮춤!)
         ui_fill_rect(s->vg, { bx - 120, by - 90, 475, 315 }, bg_color, 30, 2, &stroke_color);
 
+        // ▼▼▼ [추가] 앞차 인식(Lead Vehicle) 시 HUD 박스 상단에 'LOCK-ON' 출력! ▼▼▼
+        if (has_lead) {
+            nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            // 박스의 가로 중앙(bx + 117), 세로 상단 바로 위(by - 100)에 배치
+            ui_draw_text(s, bx + 117, by - 100, "LOCK-ON", 50, COLOR_ORANGE, BOLD);
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
         // (기존 왼쪽 신호등 표시 로직은 우측 기어박스 자리로 이동하기 위해 삭제됨)
 
         // draw speed
