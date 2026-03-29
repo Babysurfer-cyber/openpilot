@@ -639,6 +639,17 @@ class VCruiseCarrot:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
 
+    # ▼▼▼ [추가 1] 당근크루즈 켜질 때 원래 설정 속도(예:80) 안전하게 백업! ▼▼▼
+    if not hasattr(self, 'prev_carrot_active'):
+      self.prev_carrot_active = False
+      
+    if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
+      if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:  # 금고가 비어있을 때만
+        self._v_cruise_kph_at_brake = v_cruise_kph         # 원래 속도 백업
+        
+    self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
 
@@ -827,6 +838,14 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
+    # ▼▼▼ [추가 2] 당근크루즈 중 10~15km/h 재가속(울컥임) 완벽 차단! ▼▼▼
+    if getattr(self, 'carrot_cruise_active', False):
+      # 1. 속도 묶기: 목표 속도가 현재 내 차의 속도를 넘지 못하게 멱살 잡기
+      v_cruise_kph = min(v_cruise_kph, getattr(self, 'v_ego_kph_set', v_cruise_kph)) 
+      # 2. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
+      self._pause_auto_speed_up = True                     
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     return self._auto_speed_up(v_cruise_kph)
 
   def _prepare_brake_gas(self, CS, CC):
@@ -852,8 +871,11 @@ class VCruiseCarrot:
       self.carrot_cruise_active = False  # <--- 추가
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
       if self._brake_pressed_count == 1 and self.enabled_last:
-        self._v_cruise_kph_at_brake = self.v_cruise_kph
-        self._add_log(f"{self.v_cruise_kph} Cruise speed at brake")
+        # ▼▼▼ [수정] 금고가 비어있을 때만 백업! (당근크루즈가 넣어둔 80 보존) ▼▼▼
+        if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:
+          self._v_cruise_kph_at_brake = self.v_cruise_kph
+        self._add_log(f"{self._v_cruise_kph_at_brake} Cruise speed at brake")
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       self._soft_hold_count = self._soft_hold_count + 1 if CS.vEgo < 0.1 and CS.gearShifter == GearShifter.drive else 0
       if self.autoCruiseControl == 0 or self.CP.pcmCruise:
         self._soft_hold_active = 0
