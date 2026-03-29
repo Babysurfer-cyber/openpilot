@@ -2510,10 +2510,10 @@ public:
         }
 
         int tl_x_red   = bx + 335; 
-        int tl_y_red   = by + 60;  
+        int tl_y_red   = by + 65;  
 
-        int tl_x_green = bx + 265; 
-        int tl_y_green = by + 140; 
+        int tl_x_green = bx + 262; 
+        int tl_y_green = by + 145; 
 
         // ▼ [수정] if 조건문을 삭제하여 신호등 아이콘이 '항상' 그려지도록 변경!
         // 켜진 불은 1.0f(100%), 꺼지거나 감지 안 된 상태는 0.1f(10%) 투명도로 적용
