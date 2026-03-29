@@ -602,6 +602,11 @@ class VCruiseCarrot:
     elif self._paddle_decel_active:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
+    # --- [추가] 당근크루즈 활성화 중 속도 20 이하 시 전방 적색 신호등(xState=3)으로 인식 ---
+    if self.carrot_cruise_active and self.v_ego_kph_set <= 20:
+      self.xState = 3
+      self._add_log("Carrot Cruise: Fake Red Light (xState=3)")
+    # ------------------------------------------------------------------------------
 
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
