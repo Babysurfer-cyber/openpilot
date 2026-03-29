@@ -463,7 +463,7 @@ class VCruiseCarrot:
           v_cruise_kph = self._auto_speed_up(v_cruise_kph)
           self._add_log("Cruise speed up (carrot command)")
         elif self.carrot_arg == "DOWN":
-          if v_cruise_kph > 20: #이부분 20에서 10으로 수정
+          if v_cruise_kph > 10: #이부분 20에서 10으로 수정
             v_cruise_kph -= 10
             self._add_log("Cruise speed downup (carrot command)")
         else:
