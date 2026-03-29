@@ -603,12 +603,6 @@ class VCruiseCarrot:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
         
-    # --- [수정] 엑셀을 밟든 안 밟든, 당근크루즈 중 20 이하에서는 무조건 빨간불 ---
-    if self.carrot_cruise_active and self.v_ego_kph_set <= 20:
-      self.xState = 3
-      self._add_log("Carrot Cruise: Fake Red Light (xState=3)")
-    # ------------------------------------------------------------------------------
-    
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
 
