@@ -2491,6 +2491,30 @@ public:
             ui_fill_rect(s->vg, { (int)(dx), (int)(dy - ddy*(i+1) + 2), (int)70, (int)ddy-2}, COLOR_WHITE_ALPHA(190), 4, 3, 0);
         }
 
+        // =======================================================
+        // 5. 기어박스 자리에 신호등 표시 (항상 표시, 미감지 시 투명)
+        // =======================================================
+        bool red_light = trafficState == 1;
+        bool green_light = trafficState == 2;
+        
+        int tl_size_red = 256;
+        int tl_size_green = 256;
+
+        if(trafficState_carrot == 1) {
+            red_light = true;
+            tl_size_red *= 1.4; // 신호 감지 시 펌핑
+        }
+        else if(trafficState_carrot == 2) {
+            green_light = true;
+            tl_size_green *= 1.4;
+        }
+
+        int tl_x_red   = bx + 340; 
+        int tl_y_red   = by + 60;  
+
+        int tl_x_green = bx + 270; 
+        int tl_y_green = by + 130; 
+
         // ▼ [수정] if 조건문을 삭제하여 신호등 아이콘이 '항상' 그려지도록 변경!
         // 켜진 불은 1.0f(100%), 꺼지거나 감지 안 된 상태는 0.1f(10%) 투명도로 적용
         float red_alpha = red_light ? 1.0f : 0.1f;
@@ -2498,9 +2522,7 @@ public:
 
         ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
         ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
-
-        // (에러를 일으키던 닫는 괄호 삭제 완료!)
-
+	}
         dx = bx + 200;
         dy = by + 175;
 
