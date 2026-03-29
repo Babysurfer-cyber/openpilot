@@ -1958,6 +1958,8 @@ public:
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
+    int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
+    int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
@@ -2065,6 +2067,17 @@ public:
         trafficState = lp.getTrafficState();
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
+
+        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
+        if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
+            if (myDrivingMode == 5) {
+                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
+            }
+        }
+        if (nRoadLimitSpeed > 0) {
+            nRoadLimitSpeed_last = nRoadLimitSpeed;
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
             MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
@@ -2406,8 +2419,25 @@ public:
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
-        // ▼ [추가] 5번 모드: 바탕은 녹색, 글자는 'AUTO'
-        case 5: strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  text_color = COLOR_WHITE;  break; 
+        
+        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
+        case 5: 
+            strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
+            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
+            
+            if (auto_blink_timer > 0) {
+                auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
+                if (auto_blink_timer % 10 < 5) {
+                    text_color = COLOR_WHITE_ALPHA(0); // 글씨 투명도 0 (투명해짐 = 사라짐)
+                } else {
+                    text_color = COLOR_WHITE;          // 글씨 불투명 (다시 나타남)
+                }
+            } else {
+                text_color = COLOR_WHITE;  // 평상시 글씨
+            }
+            break; 
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            
         default: strcpy(driving_mode_str, tr("ERRM").toStdString().c_str()); break;
         }
 
