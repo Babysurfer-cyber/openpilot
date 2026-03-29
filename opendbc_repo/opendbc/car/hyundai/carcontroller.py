@@ -602,7 +602,8 @@ class HyundaiJerk:
     self.carrot_cruise = 0
     if CS.out.carrotCruise > 0 and not CC.cruiseControl.override:
       if CS.softHoldActive == 0 and not stopping:
-        if CS.out.vEgo > 10/3.6:
+        # 기존: if CS.out.vEgo > 10/3.6:
+        if CS.out.vEgo > 0:  # 0km/h로 수정!
           if carrot_cruise_decel < 0:
             if (a_target > -0.1 or accel > -0.1):
               self.carrot_cruise = 1
