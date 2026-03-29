@@ -2497,8 +2497,8 @@ public:
         bool red_light = trafficState == 1;
         bool green_light = trafficState == 2;
         
-        int tl_size_red = 256;
-        int tl_size_green = 256;
+        int tl_size_red = 270;
+        int tl_size_green = 270;
 
         if(trafficState_carrot == 1) {
             red_light = true;
@@ -2509,11 +2509,11 @@ public:
             tl_size_green *= 1.4;
         }
 
-        int tl_x_red   = bx + 340; 
+        int tl_x_red   = bx + 335; 
         int tl_y_red   = by + 60;  
 
-        int tl_x_green = bx + 270; 
-        int tl_y_green = by + 130; 
+        int tl_x_green = bx + 265; 
+        int tl_y_green = by + 140; 
 
         // ▼ [수정] if 조건문을 삭제하여 신호등 아이콘이 '항상' 그려지도록 변경!
         // 켜진 불은 1.0f(100%), 꺼지거나 감지 안 된 상태는 0.1f(10%) 투명도로 적용
@@ -2522,7 +2522,7 @@ public:
 
         ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
         ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
-	}
+	
         dx = bx + 200;
         dy = by + 175;
 
