@@ -924,41 +924,41 @@ class CarrotServ:
     sdi_speed = 250
     hda_active = False
 
-      # =========================================================
-      # ▼ [수정] 5번 모드(AUTO)는 상승/하락 모두, 다른 모드는 하락 시에만 안내음!
-      # =========================================================
-      # 1. 현재 주행 모드(MyDrivingMode) 설정값 읽기 (5번이 AUTO 모드!)
-      my_driving_mode = self.params.get_int("MyDrivingMode")
+    # =========================================================
+    # ▼ [수정] 5번 모드(AUTO)는 상승/하락 모두, 다른 모드는 하락 시에만 안내음!
+    # =========================================================
+    # 1. 현재 주행 모드(MyDrivingMode) 설정값 읽기 (5번이 AUTO 모드!)
+    my_driving_mode = self.params.get_int("MyDrivingMode")
 
-      # 2. 초기 변수 세팅 (처음 1회만 실행)
-      if not hasattr(self, 'prev_speed_limit'):
-        self.prev_speed_limit = self.nRoadLimitSpeed
+    # 2. 초기 변수 세팅 (처음 1회만 실행)
+    if not hasattr(self, 'prev_speed_limit'):
+      self.prev_speed_limit = self.nRoadLimitSpeed
+    
+    # 3. 현재 제한속도
+    current_limit = self.nRoadLimitSpeed
+    
+    # 4. 안내음 발생 조건 체크
+    if current_limit > 0 and self.prev_speed_limit > 0:
+      play_prompt = False
       
-      # 3. 현재 제한속도
-      current_limit = self.nRoadLimitSpeed
-      
-      # 4. 안내음 발생 조건 체크
-      if current_limit > 0 and self.prev_speed_limit > 0:
-        play_prompt = False
+      if current_limit < self.prev_speed_limit:
+        # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음!
+        play_prompt = True
+      elif current_limit > self.prev_speed_limit and my_driving_mode == 5:
+        # 조건 B: 제한속도가 '상승'할 때는 5번(AUTO) 모드일 때만 안내음!
+        play_prompt = True
         
-        if current_limit < self.prev_speed_limit:
-          # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음!
-          play_prompt = True
-        elif current_limit > self.prev_speed_limit and my_driving_mode == 5:
-          # 조건 B: 제한속도가 '상승'할 때는 5번(AUTO) 모드일 때만 안내음!
-          play_prompt = True
+      # 위 조건에 맞아 play_prompt가 켜졌다면 소리 발생 파일 생성
+      if play_prompt:
+        try:
+          open("/dev/shm/carrot_prompt", "w").close()
+        except Exception:
+          pass
           
-        # 위 조건에 맞아 play_prompt가 켜졌다면 소리 발생 파일 생성
-        if play_prompt:
-          try:
-            open("/dev/shm/carrot_prompt", "w").close()
-          except Exception:
-            pass
-            
-      # 5. 다음 비교를 위해 현재 속도를 기억
-      if current_limit > 0:
-        self.prev_speed_limit = current_limit
-      # =========================================================
+    # 5. 다음 비교를 위해 현재 속도를 기억
+    if current_limit > 0:
+      self.prev_speed_limit = current_limit
+    # =========================================================
 
     ### 과속카메라, 사고방지턱
 
