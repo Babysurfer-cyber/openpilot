@@ -1223,9 +1223,9 @@ bool _left_blinker = false;
 
 class DesireDrawer : ModelDrawer {
 protected:
-    int icon_size = 400; // 모든 아이콘 400으로 큼직하게 통일
+    int icon_size = 400; 
     int blinker_timer = 0;
-    int lc_blinker_timer = 0; // 차선 변경 깜빡임 & 슬라이딩 타이머
+    int lc_blinker_timer = 0; 
 public:
     void draw(const UIState* s, int x, int y) {
         blinker_timer = (blinker_timer + 1) % 13;
@@ -1235,33 +1235,29 @@ public:
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         SubMaster& sm = *(s->sm);
         
-        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState") || !sm.alive("radarState")) return;
+        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState")) return;
         
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
+        
+        // [수정 1] 가장 안정적인 오픈파일럿 순정 판단 로직 부활
+        const bool lane_change_inhibited = meta.getLaneChangeInhibited();
 
         const auto car_state = sm["carState"].getCarState();
         bool left_blindspot = car_state.getLeftBlindspot();
         bool right_blindspot = car_state.getRightBlindspot();
         
-        auto lead_left = sm["radarState"].getRadarState().getLeadLeft();
-        auto lead_right = sm["radarState"].getRadarState().getLeadRight();
+        // [수정 2] 너무 예민해서 자꾸 X를 띄우던 조건(레이더 3배속, 불안정한 실선인식)을 제거하고,
+        // 확실한 BSD 센서와 오픈파일럿 코어의 Inhibit 신호만 사용합니다.
+        bool left_unsafe = left_blindspot || lane_change_inhibited;
+        bool right_unsafe = right_blindspot || lane_change_inhibited;
 
-        int left_lane_line = car_state.getLeftLaneLine();
-        int right_lane_line = car_state.getRightLaneLine();
-        
-        // 위험 감지: BSD 센서 OR 3배속 거리 이내 전방 차량 OR 주황색 실선(20 이상)
-        bool left_unsafe = left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0) || (left_lane_line >= 20);
-        bool right_unsafe = right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0) || (right_lane_line >= 20);
-
-        // 화면 정중앙 좌표
         int cx = s->fb_w / 2;
         int cy = s->fb_h / 2;
 
-        // 슬라이딩 애니메이션 시작/끝 오프셋 (400에서 완벽하게 딱 붙음)
         int offset_ready = 400; 
-        int offset_moving = 550;
+        int offset_moving = 500;
 
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
         bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING || 
@@ -1270,27 +1266,44 @@ public:
         if (is_pre_lc || is_in_lc) {
             int current_offset = offset_ready;
             
-            // 핸들 토크 줘서 넘어가는 중일 때만 스무스한 슬라이딩 적용!
             if (is_in_lc && lc_blink_state) {
                 float progress = (float)lc_blinker_timer / 5.0f;
                 current_offset = offset_ready + (int)((offset_moving - offset_ready) * progress);
             }
 
+            // [왼쪽 차선 변경]
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                if (left_unsafe) {
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                } else {
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                // [수정 3] 대기 중(PRE_LANE_CHANGE)일 때만 Inhibit, Steer 아이콘 표시
+                if (is_pre_lc) {
+                    if (left_unsafe) {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    } else {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) {
+                            ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                        }
+                    }
+                } 
+                // [수정 4] 차선 변경 진행 중(IN_LC)일 때는 Steer, Inhibit 다 빼고 오직 화살표만 표시!
+                else if (is_in_lc) {
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
                     }
                 }
             }
+            // [오른쪽 차선 변경]
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
-                if (right_unsafe) {
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                } else {
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                if (is_pre_lc) {
+                    if (right_unsafe) {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    } else {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) {
+                            ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                        }
+                    }
+                } 
+                else if (is_in_lc) {
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
                     }
@@ -1319,7 +1332,6 @@ public:
         }
     }
 };
-
 
 class BlindSpotDrawer : ModelDrawer{
 protected:
