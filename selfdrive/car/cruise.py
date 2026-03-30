@@ -536,8 +536,19 @@ class VCruiseCarrot:
           v_cruise_kph = self._v_cruise_kph_at_brake
           self._v_cruise_kph_at_brake = 0
         elif self._cruise_ready or not CC.enabled or CS.cruiseState.standstill or self.carrot_cruise_active:
+          
+          # ▼▼▼ [추가] 시동 후 최초로 + 버튼 눌러서 켤 때의 로직 ▼▼▼
+          if not CC.enabled and getattr(self, 'is_first_activation', True):
+            self.is_first_activation = False  # 이제 최초 실행이 아님을 도장 찍음!
+            if self.nRoadLimitSpeed > 0:
+              v_cruise_kph = self.nRoadLimitSpeed
+            else:
+              v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          
           if False: #self._cruise_button_mode in [2, 3]:
             road_limit_kph = self.nRoadLimitSpeed * self.autoSpeedUptoRoadSpeedLimit
+
             if road_limit_kph > 1.0:
               v_cruise_kph = max(v_cruise_kph, road_limit_kph)
 
@@ -566,7 +577,9 @@ class VCruiseCarrot:
             pass
           elif not CC.enabled:
             v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
+            self.is_first_activation = False  # ▼ [추가] SET(-)으로 켜도 최초 상태 해제!
           elif self.v_ego_kph_set > v_cruise_kph + 2 and self._cruise_button_mode in [2, 3]:
+
             v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
           elif self._cruise_button_mode in [0, 1]:
             v_cruise_kph = button_kph
