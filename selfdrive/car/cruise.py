@@ -697,8 +697,8 @@ class VCruiseCarrot:
     if road_limit_kph < 1.0:
       return v_cruise_kph
 
-    if self.autoRoadSpeedLimitOffset > 0:
-      self._v_cruise_kph_at_brake = self.nRoadLimitSpeed + self.autoRoadSpeedLimitOffset
+    #if self.autoRoadSpeedLimitOffset > 0:
+      #self._v_cruise_kph_at_brake = self.nRoadLimitSpeed + self.autoRoadSpeedLimitOffset
 
     if not self._pause_auto_speed_up and self.v_lead_kph + 5 > v_cruise_kph and v_cruise_kph < road_limit_kph and self.d_rel < 60:
       v_cruise_kph = min(v_cruise_kph + 5, road_limit_kph)
