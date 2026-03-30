@@ -2563,8 +2563,8 @@ public:
                 disp_speed = nRoadLimitSpeed;
 		            disp_speed = (int)(disp_speed * ((s->scene.is_metric)?1.0:KM_TO_MILE) + 0.5);
                 
-                // 🎯 제한속도가 0보다 클 때만 과속 검사 작동! (0일 땐 하얀색 테두리 유지)
-                limit_color = (disp_speed > 0 && v_ego * 3.6 > disp_speed + 2) ? COLOR_RED_ALPHA(210) : COLOR_WHITE_ALPHA(210);
+                
+                limit_color = (disp_speed > 0 && v_ego * 3.6 > disp_speed + 2) ? COLOR_WHITE_ALPHA(210) : COLOR_WHITE_ALPHA(210);
                 
                 ui_draw_text(s, dx, dy - 45, "LIMIT", 30, COLOR_WHITE, BOLD);
             }
