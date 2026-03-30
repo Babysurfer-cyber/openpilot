@@ -1306,7 +1306,7 @@ public:
 
             _right_blinker = false;
             _left_blinker = false;
-            if (blinker_timer <= 6) {
+            if (blinker_timer < 6) {
                 if (right_blinker) {
                     _right_blinker = true;
                     ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
