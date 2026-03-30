@@ -1228,7 +1228,7 @@ protected:
     int lc_blinker_timer = 0; // 차선 변경 깜빡임 & 슬라이딩 타이머
 public:
     void draw(const UIState* s, int x, int y) {
-        blinker_timer = (blinker_timer + 1) % 16;
+        blinker_timer = (blinker_timer + 1) % 13;
         lc_blinker_timer = (lc_blinker_timer + 1) % 13;
         bool lc_blink_state = (lc_blinker_timer < 6);
 
@@ -1306,7 +1306,7 @@ public:
 
             _right_blinker = false;
             _left_blinker = false;
-            if (blinker_timer <= 8) {
+            if (blinker_timer <= 6) {
                 if (right_blinker) {
                     _right_blinker = true;
                     ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
