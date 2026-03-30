@@ -341,6 +341,11 @@ class VCruiseCarrot:
           v_cruise_kph = self.nRoadLimitSpeed + 10.0  # 속도 세팅
           self._add_log(f"Auto Mode: Limit changed to {self.nRoadLimitSpeed}. Set {v_cruise_kph}")
           
+          # ▼▼▼ [추가] 당근크루즈 금고 속도 업데이트 로직 ▼▼▼
+          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+              self._v_cruise_kph_at_brake = v_cruise_kph
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          
         # 3. 변경이 끝났으면 현재 제한속도를 '이전 제한속도'로 업데이트해서 다음번엔 무시되게 함
         self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
         
