@@ -1970,6 +1970,13 @@ public:
     float   cruiseTarget = 0.0;
     int     myDrivingMode = 1;
 
+    // ▼▼▼ [추가] 속도 감지 및 화살표 타이머 변수 ▼▼▼
+    int     nRoadLimitSpeed_last = 0;  // 이전 도로 속도
+    int     xSpdLimit_last = 0;        // 이전 카메라 속도
+    int     auto_blink_timer = 0;      // 3초 깜빡임 타이머
+    int     auto_blink_type = 0;       // 1: 상승, 2: 하락
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
@@ -2081,6 +2088,38 @@ public:
         trafficState = lp.getTrafficState();
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
+
+        // ▼▼▼ [추가] 수동조절 무시! 시스템 속도변경 완벽 감지 ▼▼▼
+        bool speed_dropped = false;
+        bool speed_raised = false;
+
+        // 1. 과속 카메라 등장 감지 (카메라는 뜨면 무조건 감속)
+        if (xSpdLimit > 0 && xSpdLimit != xSpdLimit_last) {
+            speed_dropped = true; 
+        }
+        // 2. 과속 카메라 통과 후 (오토모드면 원래 속도로 올라가므로 상승)
+        else if (xSpdLimit == 0 && xSpdLimit_last > 0) {
+            if (myDrivingMode == 5) speed_raised = true;
+        }
+        // 3. 도로 제한속도 변경 감지 (오토모드 전용)
+        else if (myDrivingMode == 5 && nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
+            if (nRoadLimitSpeed < nRoadLimitSpeed_last) speed_dropped = true;
+            else speed_raised = true;
+        }
+
+        // 4. 타이머 장전 (3초)
+        if (speed_dropped) {
+            auto_blink_timer = 60;
+            auto_blink_type = 2; // DOWN 화살표
+        } else if (speed_raised) {
+            auto_blink_timer = 60;
+            auto_blink_type = 1; // UP 화살표
+        }
+
+        // 현재 상태 기억
+        if (nRoadLimitSpeed > 0) nRoadLimitSpeed_last = nRoadLimitSpeed;
+        xSpdLimit_last = xSpdLimit;
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
@@ -2417,6 +2456,26 @@ public:
         char apply_speed_str[32];
         int apply_x = bx + 190;
         int apply_y = by + 30;
+
+        // ▼▼▼ [추가] 깜빡임 애니메이션 출력 ▼▼▼
+        if (auto_blink_timer > 0) {
+            auto_blink_timer--; // 매 프레임 1씩 깎음 (3초 카운트다운)
+
+            if (auto_blink_timer % 20 > 10) { 
+                int arrow_w = 250;
+                int arrow_h = 192;
+                // apply speed 글씨가 뜨는 바로 그 자리 중앙!
+                int arrow_x = apply_x - (arrow_w / 2);
+                int arrow_y_pos = apply_y - 60 - (arrow_h / 2) + 20; 
+
+                if (auto_blink_type == 1) {
+                    ui_draw_image(s, { arrow_x, arrow_y_pos, arrow_w, arrow_h }, "ic_arrow_up", 1.0f);
+                } else if (auto_blink_type == 2) {
+                    ui_draw_image(s, { arrow_x, arrow_y_pos, arrow_w, arrow_h }, "ic_arrow_down", 1.0f);
+                }
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
@@ -3249,9 +3308,14 @@ void ui_nvg_init(UIState *s) {
   {"ic_apm", "../assets/images/img_apm.png"},
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
-  {"ic_navi_point", "../assets/images/navi_point.png"}
-
+  {"ic_navi_point", "../assets/images/navi_point.png"}, // ⬅️ 쉼표(,) 꼭 찍어주세요!
+  
+  // ▼▼ [추가] 화살표 이미지 등록 ▼▼
+  {"ic_arrow_up", "../assets/images/img_arrow_up.png"},
+  {"ic_arrow_down", "../assets/images/img_arrow_down.png"}
+  
   };
+
   for (auto [name, file] : images) {
     s->images[name] = nvgCreateImage(s->vg, file, 1);
     assert(s->images[name] != 0);
