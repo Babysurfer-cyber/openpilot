@@ -1961,42 +1961,10 @@ public:
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
-        // ▼▼▼ [수정] 도로 속도 & 과속 카메라 변경 감지 완벽 로직 ▼▼▼
-        bool speed_dropped = false;
-        bool speed_raised = false;
-
-        // A. 도로 제한속도(nRoadLimitSpeed) 변경 감지
-        if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            if (nRoadLimitSpeed < nRoadLimitSpeed_last) {
-                speed_dropped = true; 
-            } else if (nRoadLimitSpeed > nRoadLimitSpeed_last && myDrivingMode == 5) {
-                speed_raised = true; // 가속 화살표는 오토(5번) 모드일 때만
-            }
-        }
-        
-        // B. 과속카메라(xSpdLimit) 감지
-        // 카메라 속도가 새롭게 나타나거나 기존과 달라졌을 때 (단, 유효한 속도일 때)
-        if (xSpdLimit > 0 && xSpdLimit != xSpdLimit_last) {
-            // 현재 도로 속도보다 카메라 속도가 낮다면 "감속 상황"으로 판단!
-            if (xSpdLimit < nRoadLimitSpeed) {
-                speed_dropped = true;
-            }
-        }
-
-        // C. 다음 프레임 비교를 위해 상태 업데이트
-        if (nRoadLimitSpeed > 0) nRoadLimitSpeed_last = nRoadLimitSpeed;
-        xSpdLimit_last = xSpdLimit;
-
-        // D. 애니메이션 트리거 작동
-        if (speed_dropped) {
-            auto_blink_timer = 60; // 3초간 깜빡임
-            auto_blink_type = 2;   // 하락 화살표(DOWN)
-        } else if (speed_raised) {
-            auto_blink_timer = 60;
-            auto_blink_type = 1;   // 상승 화살표(UP)
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+    int     nRoadLimitSpeed_last = 0;  // 이전 도로 속도 기억용
+    int     xSpdLimit_last = 0;        // ⬅️ [추가] 이전 카메라 속도 기억용
+    int     auto_blink_timer = 0;      // 3초 깜빡임 타이머
+    int     auto_blink_type = 0;       // 1: 상승(UP), 2: 하락(DOWN)
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
