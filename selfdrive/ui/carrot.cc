@@ -1972,10 +1972,8 @@ public:
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
-    int     nRoadLimitSpeed_last = 0;  // 이전 도로 속도 기억용
-    int     xSpdLimit_last = 0;        // ⬅️ [추가] 이전 카메라 속도 기억용
-    int     auto_blink_timer = 0;      // 3초 깜빡임 타이머
-    int     auto_blink_type = 0;       // 1: 상승(UP), 2: 하락(DOWN)
+    int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
+    int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
@@ -2084,21 +2082,16 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [추가] 속도 변경 감지 센서 ▼▼▼
+        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            if (nRoadLimitSpeed < nRoadLimitSpeed_last || myDrivingMode == 5) {
-                auto_blink_timer = 60; 
-                auto_blink_type = (nRoadLimitSpeed > nRoadLimitSpeed_last) ? 1 : 2; 
+            if (myDrivingMode == 5) {
+                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
             }
-        } 
-        else if (xSpdLimit > 0 && xSpdLimit != xSpdLimit_last && xSpdLimit < nRoadLimitSpeed) {
-            auto_blink_timer = 60;
-            auto_blink_type = 2; // 카메라는 무조건 하락!
         }
-        
-        if (nRoadLimitSpeed > 0) nRoadLimitSpeed_last = nRoadLimitSpeed;
-        xSpdLimit_last = xSpdLimit;
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        if (nRoadLimitSpeed > 0) {
+            nRoadLimitSpeed_last = nRoadLimitSpeed;
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
             MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
@@ -2425,27 +2418,7 @@ public:
         int apply_x = bx + 190;
         int apply_y = by + 30;
 
-        // ▼▼▼ [추가] 깜빡임 애니메이션 출력 ▼▼▼
-        if (auto_blink_timer > 0) {
-            auto_blink_timer--; // ⬅️ [필수 추가] 여기서 타이머를 1씩 깎아야 합니다!
-
-            if (auto_blink_timer % 20 > 10) { 
-                int arrow_w = 250;
-                int arrow_h = 192;
-                int arrow_x = apply_x - (arrow_w / 2);
-                int arrow_y_pos = apply_y - 60 - (arrow_h / 2) + 20; 
-
-                if (auto_blink_type == 1) {
-                    ui_draw_image(s, { arrow_x, arrow_y_pos, arrow_w, arrow_h }, "ic_arrow_up", 1.0f);
-                } else if (auto_blink_type == 2) {
-                    ui_draw_image(s, { arrow_x, arrow_y_pos, arrow_w, arrow_h }, "ic_arrow_down", 1.0f);
-                }
-            }
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
         if (apply_source.length()) {
-
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_GREY;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
@@ -2475,7 +2448,7 @@ public:
             mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
             
             if (auto_blink_timer > 0) {
-                // ⬅️ (auto_blink_timer--; 한 줄을 싹 지우세요!)
+                auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
                 if (auto_blink_timer % 10 < 5) {
                     text_color = COLOR_WHITE_ALPHA(0); // 글씨 투명도 0 (투명해짐 = 사라짐)
                 } else {
@@ -3276,10 +3249,8 @@ void ui_nvg_init(UIState *s) {
   {"ic_apm", "../assets/images/img_apm.png"},
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
-  {"ic_navi_point", "../assets/images/navi_point.png"},
-  // ▼▼ [추가] 화살표 이미지 등록 ▼▼
-  {"ic_arrow_up", "../assets/images/img_arrow_up.png"},
-  {"ic_arrow_down", "../assets/images/img_arrow_down.png"}
+  {"ic_navi_point", "../assets/images/navi_point.png"}
+
   };
   for (auto [name, file] : images) {
     s->images[name] = nvgCreateImage(s->vg, file, 1);
