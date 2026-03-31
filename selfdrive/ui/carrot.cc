@@ -1228,8 +1228,8 @@ protected:
     int lc_blinker_timer = 0; 
 public:
     void draw(const UIState* s, int x, int y) {
-        blinker_timer = (blinker_timer + 1) % 13;
-        lc_blinker_timer = (lc_blinker_timer + 1) % 13;
+        blinker_timer = (blinker_timer + 1) % 14;
+        lc_blinker_timer = (lc_blinker_timer + 1) % 14;
         bool lc_blink_state = (lc_blinker_timer < 6);
 
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
