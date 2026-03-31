@@ -1979,7 +1979,6 @@ public:
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
-    int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
     int     xSpdLimit = 0;
     int     xSignType = -1;
     QPointF nav_path_vertex[150];
