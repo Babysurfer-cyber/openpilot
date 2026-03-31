@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import os  # ▼ [추가] 당근파일럿 전통 방식의 시스템 명령어 모듈
 
 from cereal import car
 from openpilot.common.conversions import Conversions as CV
@@ -657,15 +658,29 @@ class VCruiseCarrot:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
 
-    # ▼▼▼ [추가 1] 당근크루즈 켜질 때 원래 설정 속도(예:80) 안전하게 백업! ▼▼▼
+    # ▼▼▼ [추가/수정] 당근크루즈 상태 변화 감지 & 당근 스타일 안내음 재생! ▼▼▼
     if not hasattr(self, 'prev_carrot_active'):
       self.prev_carrot_active = False
       
-    if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
+    current_carrot_active = getattr(self, 'carrot_cruise_active', False)
+
+    # 1. 당근크루즈가 방금 [켜졌을] 때 (False -> True)
+    if current_carrot_active and not self.prev_carrot_active:
       if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:  # 금고가 비어있을 때만
         self._v_cruise_kph_at_brake = v_cruise_kph         # 원래 속도 백업
         
-    self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
+      # 켜짐 소리 재생 (백그라운드 실행 & 로그 숨김)
+      os.system("aplay /data/openpilot/selfdrive/assets/sounds/carrot_on.wav > /dev/null 2>&1 &")
+
+    # 2. 당근크루즈가 방금 [꺼졌을] 때 (True -> False, 일반 크루즈 복귀)
+    elif not current_carrot_active and self.prev_carrot_active:
+      # ▼ [추가] 크루즈 자체가 완전히 꺼진 게 아니라, 아직 켜져 있을(일반 크루즈 상태) 때만 재생!
+      if CC.enabled:
+        os.system("aplay /data/openpilot/selfdrive/assets/sounds/carrot_off.wav > /dev/null 2>&1 &")
+      # 꺼짐 소리 재생
+      os.system("aplay /data/openpilot/selfdrive/assets/sounds/carrot_off.wav > /dev/null 2>&1 &")
+        
+    self.prev_carrot_active = current_carrot_active
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
