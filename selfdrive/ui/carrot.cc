@@ -1226,6 +1226,11 @@ protected:
     int icon_size = 400; 
     int blinker_timer = 0;
     int lc_blinker_timer = 0; 
+
+    // ▼▼ [추가] 차선 변경 애니메이션 3초 컷 타이머 변수 ▼▼
+    int lane_change_timer = 0; 
+    int prev_lc_state = 0;     
+
 public:
     void draw(const UIState* s, int x, int y) {
         blinker_timer = (blinker_timer + 1) % 14;
@@ -1240,16 +1245,10 @@ public:
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
-        
-        // [에러 해결!] 존재하지 않던 가짜 함수(getLaneChangeInhibited)를 완전히 삭제했습니다.
 
         const auto car_state = sm["carState"].getCarState();
-        bool left_blindspot = car_state.getLeftBlindspot();
-        bool right_blindspot = car_state.getRightBlindspot();
-        
-        // 확실한 차량 순정 사각지대(BSD) 센서만 사용하여 Inhibit(위험)을 띄웁니다!
-        bool left_unsafe = left_blindspot;
-        bool right_unsafe = right_blindspot;
+        bool left_unsafe = car_state.getLeftBlindspot();
+        bool right_unsafe = car_state.getRightBlindspot();
 
         int cx = s->fb_w / 2;
         int cy = s->fb_h / 2;
@@ -1258,13 +1257,25 @@ public:
         int offset_moving = 500;
 
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
-        // ▼ [수정] FINISHING(마무리) 단계를 빼서 차선 넘어가면 애니메이션 즉시 종료!
         bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
 
-        if (is_pre_lc || is_in_lc) {
+        // ▼▼▼ [추가/수정] 차선 변경 시작 시 딱 3초(60프레임)만 세팅! ▼▼▼
+        if (is_in_lc && prev_lc_state != cereal::LaneChangeState::LANE_CHANGE_STARTING) {
+            lane_change_timer = 60; // 3초 (20fps * 3 = 60)
+        }
+        if (lane_change_timer > 0) {
+            lane_change_timer--;    // 매 프레임 1씩 깎음
+        }
+        prev_lc_state = laneChangeState; // 현재 상태 기억
+
+        // 타이머가 살아있을 때만(3초 이내) 애니메이션 활성화
+        bool active_in_lc = (is_in_lc && lane_change_timer > 0);
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        if (is_pre_lc || active_in_lc) {
             int current_offset = offset_ready;
             
-            if (is_in_lc && lc_blink_state) {
+            if (active_in_lc && lc_blink_state) {
                 float progress = (float)lc_blinker_timer / 5.0f;
                 current_offset = offset_ready + (int)((offset_moving - offset_ready) * progress);
             }
@@ -1281,7 +1292,7 @@ public:
                         }
                     }
                 } 
-                else if (is_in_lc) {
+                else if (active_in_lc) {
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
                     }
@@ -1299,7 +1310,7 @@ public:
                         }
                     }
                 } 
-                else if (is_in_lc) {
+                else if (active_in_lc) {
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
                     }
