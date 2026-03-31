@@ -2076,6 +2076,8 @@ public:
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
             if (myDrivingMode == 5) {
                 auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
+                // ▼ [추가] 현재 속도가 더 크면 1(상승), 아니면 2(하락)
+                auto_blink_type = (nRoadLimitSpeed > nRoadLimitSpeed_last) ? 1 : 2; 
             }
         }
         if (nRoadLimitSpeed > 0) {
