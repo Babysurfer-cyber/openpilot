@@ -677,8 +677,6 @@ class VCruiseCarrot:
       # ▼ [추가] 크루즈 자체가 완전히 꺼진 게 아니라, 아직 켜져 있을(일반 크루즈 상태) 때만 재생!
       if CC.enabled:
         os.system("aplay /data/openpilot/selfdrive/assets/sounds/carrot_off.wav > /dev/null 2>&1 &")
-      # 꺼짐 소리 재생
-      os.system("aplay /data/openpilot/selfdrive/assets/sounds/carrot_off.wav > /dev/null 2>&1 &")
         
     self.prev_carrot_active = current_carrot_active
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
