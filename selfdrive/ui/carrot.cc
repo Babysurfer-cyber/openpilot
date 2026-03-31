@@ -3239,7 +3239,9 @@ void ui_nvg_init(UIState *s) {
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
   {"ic_navi_point", "../assets/images/navi_point.png"}
-
+  // ▼▼ [추가] 화살표 이미지 등록 ▼▼
+  {"ic_arrow_up", "../assets/images/img_arrow_up.png"},
+  {"ic_arrow_down", "../assets/images/img_arrow_down.png"}
   };
   for (auto [name, file] : images) {
     s->images[name] = nvgCreateImage(s->vg, file, 1);
