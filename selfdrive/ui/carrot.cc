@@ -3260,7 +3260,7 @@ void ui_nvg_init(UIState *s) {
   {"ic_apm", "../assets/images/img_apm.png"},
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
-  {"ic_navi_point", "../assets/images/navi_point.png"}
+  {"ic_navi_point", "../assets/images/navi_point.png"},
   // ▼▼ [추가] 화살표 이미지 등록 ▼▼
   {"ic_arrow_up", "../assets/images/img_arrow_up.png"},
   {"ic_arrow_down", "../assets/images/img_arrow_down.png"}
