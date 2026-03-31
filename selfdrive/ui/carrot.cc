@@ -1980,8 +1980,6 @@ public:
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
-    int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
-    int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
     QPointF nav_path_vertex[150];
@@ -2120,17 +2118,6 @@ public:
         if (nRoadLimitSpeed > 0) nRoadLimitSpeed_last = nRoadLimitSpeed;
         xSpdLimit_last = xSpdLimit;
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
-        if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            if (myDrivingMode == 5) {
-                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
-            }
-        }
-        if (nRoadLimitSpeed > 0) {
-            nRoadLimitSpeed_last = nRoadLimitSpeed;
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
             MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
