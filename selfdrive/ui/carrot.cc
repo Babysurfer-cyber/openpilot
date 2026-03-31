@@ -1241,17 +1241,15 @@ public:
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
         
-        // [수정 1] 가장 안정적인 오픈파일럿 순정 판단 로직 부활
-        const bool lane_change_inhibited = meta.getLaneChangeInhibited();
+        // [에러 해결!] 존재하지 않던 가짜 함수(getLaneChangeInhibited)를 완전히 삭제했습니다.
 
         const auto car_state = sm["carState"].getCarState();
         bool left_blindspot = car_state.getLeftBlindspot();
         bool right_blindspot = car_state.getRightBlindspot();
         
-        // [수정 2] 너무 예민해서 자꾸 X를 띄우던 조건(레이더 3배속, 불안정한 실선인식)을 제거하고,
-        // 확실한 BSD 센서와 오픈파일럿 코어의 Inhibit 신호만 사용합니다.
-        bool left_unsafe = left_blindspot || lane_change_inhibited;
-        bool right_unsafe = right_blindspot || lane_change_inhibited;
+        // 확실한 차량 순정 사각지대(BSD) 센서만 사용하여 Inhibit(위험)을 띄웁니다!
+        bool left_unsafe = left_blindspot;
+        bool right_unsafe = right_blindspot;
 
         int cx = s->fb_w / 2;
         int cy = s->fb_h / 2;
@@ -1273,7 +1271,6 @@ public:
 
             // [왼쪽 차선 변경]
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                // [수정 3] 대기 중(PRE_LANE_CHANGE)일 때만 Inhibit, Steer 아이콘 표시
                 if (is_pre_lc) {
                     if (left_unsafe) {
                         ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
@@ -1284,7 +1281,6 @@ public:
                         }
                     }
                 } 
-                // [수정 4] 차선 변경 진행 중(IN_LC)일 때는 Steer, Inhibit 다 빼고 오직 화살표만 표시!
                 else if (is_in_lc) {
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
@@ -1319,7 +1315,7 @@ public:
 
             _right_blinker = false;
             _left_blinker = false;
-            if (blinker_timer <= 6) {
+            if (blinker_timer < 6) {
                 if (right_blinker) {
                     _right_blinker = true;
                     ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
