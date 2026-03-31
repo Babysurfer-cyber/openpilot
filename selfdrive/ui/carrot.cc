@@ -2410,6 +2410,25 @@ public:
         int apply_x = bx + 190;
         int apply_y = by + 30;
 
+        // ▼▼▼ [추가] 제한속도 변경 시 3회 깜빡이는 화살표 ▼▼▼
+        if (auto_blink_timer > 0) {
+            // 60프레임(3초) 동안 3번 켜졌다 꺼지려면 (20프레임 주기, 10프레임 켜짐)
+            if (auto_blink_timer % 20 > 10) { 
+                int arrow_w = 250;
+                int arrow_h = 192;
+                // apply speed 글씨가 뜨는 바로 그 자리 중앙에 정렬
+                int arrow_x = apply_x - (arrow_w / 2);
+                int arrow_y_pos = apply_y - 60 - (arrow_h / 2) + 20; 
+
+                if (auto_blink_type == 1) {
+                    ui_draw_image(s, { arrow_x, arrow_y_pos, arrow_w, arrow_h }, "ic_arrow_up", 1.0f);
+                } else if (auto_blink_type == 2) {
+                    ui_draw_image(s, { arrow_x, arrow_y_pos, arrow_w, arrow_h }, "ic_arrow_down", 1.0f);
+                }
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
         if (apply_source.length()) {
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_GREY;    // apply speed가 작동되면... 색을 바꾸자.
