@@ -2073,18 +2073,21 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
+        // ▼▼▼ [추가] 속도 변경 감지 센서 ▼▼▼
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            if (myDrivingMode == 5) {
-                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
-                // ▼ [추가] 현재 속도가 더 크면 1(상승), 아니면 2(하락)
+            if (nRoadLimitSpeed < nRoadLimitSpeed_last || myDrivingMode == 5) {
+                auto_blink_timer = 60; 
                 auto_blink_type = (nRoadLimitSpeed > nRoadLimitSpeed_last) ? 1 : 2; 
             }
+        } 
+        else if (xSpdLimit > 0 && xSpdLimit != xSpdLimit_last && xSpdLimit < nRoadLimitSpeed) {
+            auto_blink_timer = 60;
+            auto_blink_type = 2; // 카메라는 무조건 하락!
         }
-        if (nRoadLimitSpeed > 0) {
-            nRoadLimitSpeed_last = nRoadLimitSpeed;
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        
+        if (nRoadLimitSpeed > 0) nRoadLimitSpeed_last = nRoadLimitSpeed;
+        xSpdLimit_last = xSpdLimit;
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
             MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
@@ -2411,13 +2414,13 @@ public:
         int apply_x = bx + 190;
         int apply_y = by + 30;
 
-        // ▼▼▼ [추가] 제한속도 변경 시 3회 깜빡이는 화살표 ▼▼▼
+        // ▼▼▼ [추가] 깜빡임 애니메이션 출력 ▼▼▼
         if (auto_blink_timer > 0) {
-            // 60프레임(3초) 동안 3번 켜졌다 꺼지려면 (20프레임 주기, 10프레임 켜짐)
+            auto_blink_timer--; // 매 프레임 1씩 깎음
+
             if (auto_blink_timer % 20 > 10) { 
                 int arrow_w = 250;
                 int arrow_h = 192;
-                // apply speed 글씨가 뜨는 바로 그 자리 중앙에 정렬
                 int arrow_x = apply_x - (arrow_w / 2);
                 int arrow_y_pos = apply_y - 60 - (arrow_h / 2) + 20; 
 
@@ -2428,9 +2431,10 @@ public:
                 }
             }
         }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if (apply_source.length()) {
+
             sprintf(apply_speed_str, "%d", (int)((s->scene.is_metric)?apply_speed:apply_speed * KM_TO_MILE + 0.5));
             textColor = COLOR_GREY;    // apply speed가 작동되면... 색을 바꾸자.
             ui_draw_text(s, apply_x, apply_y, apply_speed_str, 60, textColor, BOLD, 0.0, 0.0, COLOR_BLACK, COLOR_BLACK);
