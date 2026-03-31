@@ -1963,6 +1963,7 @@ public:
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
     int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
+    int     auto_blink_type = 0;       // ⬅️ [추가] 1: 상승, 2: 하락
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
