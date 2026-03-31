@@ -1226,6 +1226,11 @@ protected:
     int icon_size = 400; 
     int blinker_timer = 0;
     int lc_blinker_timer = 0; 
+
+    // ▼▼ 차선 변경 애니메이션 3초 컷 타이머 변수 ▼▼
+    int lane_change_timer = 0; 
+    int prev_lc_state = 0;     
+
 public:
     void draw(const UIState* s, int x, int y) {
         blinker_timer = (blinker_timer + 1) % 14;
@@ -1240,14 +1245,11 @@ public:
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
-        
-        // [에러 해결!] 존재하지 않던 가짜 함수(getLaneChangeInhibited)를 완전히 삭제했습니다.
 
         const auto car_state = sm["carState"].getCarState();
         bool left_blindspot = car_state.getLeftBlindspot();
         bool right_blindspot = car_state.getRightBlindspot();
         
-        // 확실한 차량 순정 사각지대(BSD) 센서만 사용하여 Inhibit(위험)을 띄웁니다!
         bool left_unsafe = left_blindspot;
         bool right_unsafe = right_blindspot;
 
@@ -1258,30 +1260,39 @@ public:
         int offset_moving = 500;
 
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
-        // ▼ [수정] FINISHING(마무리) 단계를 빼서 차선 넘어가면 애니메이션 즉시 종료!
         bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
 
-        if (is_pre_lc || is_in_lc) {
+        // ▼▼▼ 차선 변경(PRE_LANE_CHANGE) 진입 순간 3초(60프레임) 타이머 시작 ▼▼▼
+        bool is_lc_active = (is_pre_lc || is_in_lc);
+        bool was_lc_active = (prev_lc_state == cereal::LaneChangeState::PRE_LANE_CHANGE || prev_lc_state == cereal::LaneChangeState::LANE_CHANGE_STARTING);
+        
+        if (is_lc_active && !was_lc_active) {
+            lane_change_timer = 60; // 3초 (20fps * 3 = 60)
+        }
+        if (lane_change_timer > 0) {
+            lane_change_timer--;
+        }
+        prev_lc_state = laneChangeState;
+
+        // 타이머가 살아있을 때만(3초 이내) 애니메이션 활성화
+        bool draw_anim = is_lc_active && (lane_change_timer > 0);
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        if (draw_anim) {
             int current_offset = offset_ready;
             
-            if (is_in_lc && lc_blink_state) {
+            // 3초 동안은 역동적인 슬라이딩 애니메이션 적용
+            if (lc_blink_state) {
                 float progress = (float)lc_blinker_timer / 5.0f;
                 current_offset = offset_ready + (int)((offset_moving - offset_ready) * progress);
             }
 
             // [왼쪽 차선 변경]
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                if (is_pre_lc) {
-                    if (left_unsafe) {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                    } else {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                        if (lc_blink_state) {
-                            ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-                        }
-                    }
-                } 
-                else if (is_in_lc) {
+                if (left_unsafe) {
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                } else {
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
                     }
@@ -1289,17 +1300,10 @@ public:
             }
             // [오른쪽 차선 변경]
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
-                if (is_pre_lc) {
-                    if (right_unsafe) {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                    } else {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                        if (lc_blink_state) {
-                            ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-                        }
-                    }
-                } 
-                else if (is_in_lc) {
+                if (right_unsafe) {
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                } else {
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
                     if (lc_blink_state) {
                         ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
                     }
@@ -1307,6 +1311,7 @@ public:
             }
         } 
         else {
+            // ▼▼ [수정] 일반 깜빡이를 화면 양쪽 끝(테두리 안쪽) 세로 중앙으로 이동 ▼▼
             const auto carrot_man = sm["carrotMan"].getCarrotMan();
             QString atc_type = QString::fromStdString(carrot_man.getAtcType());
 
@@ -1315,14 +1320,20 @@ public:
 
             _right_blinker = false;
             _left_blinker = false;
+
             if (blinker_timer < 6) {
+                int b_size = 256;      // 너무 크지 않게 256 사이즈로 설정
+                int b_margin = 60;     // 테두리와 겹치지 않게 여백 60px
+
                 if (right_blinker) {
                     _right_blinker = true;
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
+                    // 우측 테두리 안쪽, 세로 중앙
+                    ui_draw_image(s, { s->fb_w - b_size - b_margin, cy - b_size / 2, b_size, b_size }, "ic_blinker_r", 1.0f);
                 }
                 if (left_blinker) {
                     _left_blinker = true;
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
+                    // 좌측 테두리 안쪽, 세로 중앙
+                    ui_draw_image(s, { b_margin, cy - b_size / 2, b_size, b_size }, "ic_blinker_l", 1.0f);
                 }
             }
         }
