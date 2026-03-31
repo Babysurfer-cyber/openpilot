@@ -845,11 +845,11 @@ public:
                 s->vg,
                 { (int)(lead_two_xl - 10), (int)(lead_two_y - path_width2 * 0.8), (int)(path_width2 + 20), (int)(path_width2 * 0.8) },
                 (lead_two_status == 2) ? COLOR_RED_ALPHA(50) : COLOR_BLACK_ALPHA(20),
-                15, 8, &radar_stroke
+                30, 10, &radar_stroke
               );
             }
             radar_stroke = isRadarDetected() ? rcolor : COLOR_BLUE;
-            ui_fill_rect(s->vg, { (int)(path_x - path_width / 2 - 10), (int)(path_y - path_width * 0.8), (int)(path_width + 20), (int)(path_width * 0.8) }, COLOR_BLACK_ALPHA(20), 15, 8, &radar_stroke);
+            ui_fill_rect(s->vg, { (int)(path_x - path_width / 2 - 10), (int)(path_y - path_width * 0.8), (int)(path_width + 20), (int)(path_width * 0.8) }, COLOR_BLACK_ALPHA(20), 30, 10, &radar_stroke);
 #if 0
             px[0] = path_x - path_width / 2 - 10;
             px[1] = px[0] + path_width + 20;
@@ -923,7 +923,7 @@ protected:
         right_lane_line = sm["carState"].getCarState().getRightLaneLine();
         for (int i = 0; i < std::size(lane_line_vertices); i++) {
             lane_line_probs[i] = model_lane_line_probs[i];
-            float line_width = 0.05; 
+            float line_width = 0.08; 
             if (i == 1 && left_lane_line >= 20) line_width = 0.08;
             update_line_data(s, model_lane_lines[i], line_width, 0.0, 0.0, &lane_line_vertices[i], max_idx);
             if (i == 1) {
@@ -941,7 +941,7 @@ protected:
         int max_idx_road_edge = get_path_length_idx(model_lane_lines[0], 100);
         for (int i = 0; i < std::size(road_edge_vertices); i++) {
             road_edge_stds[i] = model_road_edge_stds[i];
-            update_line_data(s, model_road_edges[i], 0.08, 0.0, 0.0, &road_edge_vertices[i], max_idx_road_edge);
+            update_line_data(s, model_road_edges[i], 0.1, 0.0, 0.0, &road_edge_vertices[i], max_idx_road_edge);
         }
         return true;
     }
@@ -1223,108 +1223,111 @@ bool _left_blinker = false;
 
 class DesireDrawer : ModelDrawer {
 protected:
-    int icon_size = 256;
+    int icon_size = 400; 
     int blinker_timer = 0;
-    int lc_blinker_timer = 0; // 추가: 차선 변경 깜빡임 타이머
+    int lc_blinker_timer = 0; 
 public:
     void draw(const UIState* s, int x, int y) {
-        blinker_timer = (blinker_timer + 1) % 16;
-        
-        // 추가: 1분에 90번(1.5Hz) 깜빡이게 설정
-        // 20FPS 기준, 주기는 약 13프레임 (13프레임 = 약 92회/분)
-        lc_blinker_timer = (lc_blinker_timer + 1) % 13;
+        blinker_timer = (blinker_timer + 1) % 14;
+        lc_blinker_timer = (lc_blinker_timer + 1) % 14;
         bool lc_blink_state = (lc_blinker_timer < 6);
 
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         SubMaster& sm = *(s->sm);
         
-        // radarState가 추가로 필요하므로 alive 체크에 추가합니다.
-        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState") || !sm.alive("radarState")) return;
+        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState")) return;
         
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
-        float desireStateTurnLeft = meta.getDesireState()[1];
-        float desireStateTurnRight = meta.getDesireState()[2];
-        float desireStateLaneChangeLeft = meta.getDesireState()[3];
-        float desireStateLaneChangeRight = meta.getDesireState()[4];
+        
+        // [에러 해결!] 존재하지 않던 가짜 함수(getLaneChangeInhibited)를 완전히 삭제했습니다.
 
-        // --- 사각지대 위험 여부 판단 로직 (BlindSpotDrawer와 동일한 기준 적용) ---
         const auto car_state = sm["carState"].getCarState();
         bool left_blindspot = car_state.getLeftBlindspot();
         bool right_blindspot = car_state.getRightBlindspot();
         
-        auto lead_left = sm["radarState"].getRadarState().getLeadLeft();
-        auto lead_right = sm["radarState"].getRadarState().getLeadRight();
-        
-        // 내 속도의 3배 거리 이내에 옆차선 차량이 다가오거나 사각지대 센서가 켜졌을 때 위험(unsafe)으로 간주
-        bool left_unsafe = left_blindspot || (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0);
-        bool right_unsafe = right_blindspot || (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0);
-        // -------------------------------------------------------------------------
+        // 확실한 차량 순정 사각지대(BSD) 센서만 사용하여 Inhibit(위험)을 띄웁니다!
+        bool left_unsafe = left_blindspot;
+        bool right_unsafe = right_blindspot;
 
-        if (desireStateTurnLeft > 0.5) {
-            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_l", 1.0f);
-        } else if (desireStateTurnRight > 0.5) {
-            ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_turn_r", 1.0f);
-        } else if (desireStateLaneChangeLeft > 0.5) {
-            // 차선 변경 중에도 깜빡이도록 타이머(lc_blink_state) 적용
-            if (lc_blink_state) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-        } else if (desireStateLaneChangeRight > 0.5) {
-            // 차선 변경 중에도 깜빡이도록 타이머(lc_blink_state) 적용
-            if (lc_blink_state) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-        }
-        
-        // 차선 변경 준비(PRE_LANE_CHANGE) 상태일 때 아이콘 처리
-        if (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) {
+        int cx = s->fb_w / 2;
+        int cy = s->fb_h / 2;
+
+        int offset_ready = 400; 
+        int offset_moving = 500;
+
+        bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
+        // ▼ [수정] FINISHING(마무리) 단계를 빼서 차선 넘어가면 애니메이션 즉시 종료!
+        bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
+
+        if (is_pre_lc || is_in_lc) {
+            int current_offset = offset_ready;
+            
+            if (is_in_lc && lc_blink_state) {
+                float progress = (float)lc_blinker_timer / 5.0f;
+                current_offset = offset_ready + (int)((offset_moving - offset_ready) * progress);
+            }
+
+            // [왼쪽 차선 변경]
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
-                // 중앙 아이콘: 왼쪽이 위험하면 inhibit, 안전하면 steer
-                if (left_unsafe) {
-                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                } else {
-                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                }
-                
-                // 좌측 차선변경 아이콘: 중앙 아이콘 왼쪽에 배치 및 깜빡임 적용
-                if (lc_blink_state) {
-                    ui_draw_image(s, { x - icon_size / 2 - icon_size, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                if (is_pre_lc) {
+                    if (left_unsafe) {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    } else {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) {
+                            ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                        }
+                    }
+                } 
+                else if (is_in_lc) {
+                    if (lc_blink_state) {
+                        ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                    }
                 }
             }
+            // [오른쪽 차선 변경]
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
-                // 중앙 아이콘: 오른쪽이 위험하면 inhibit, 안전하면 steer
-                if (right_unsafe) {
-                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                } else {
-                    ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                }
-                
-                // 우측 차선변경 아이콘: 중앙 아이콘 오른쪽에 배치 및 깜빡임 적용
-                if (lc_blink_state) {
-                    ui_draw_image(s, { x + icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                if (is_pre_lc) {
+                    if (right_unsafe) {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    } else {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) {
+                            ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                        }
+                    }
+                } 
+                else if (is_in_lc) {
+                    if (lc_blink_state) {
+                        ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                    }
                 }
             }
-        }
+        } 
+        else {
+            const auto carrot_man = sm["carrotMan"].getCarrotMan();
+            QString atc_type = QString::fromStdString(carrot_man.getAtcType());
 
-        const auto carrot_man = sm["carrotMan"].getCarrotMan();
-        QString atc_type = QString::fromStdString(carrot_man.getAtcType());
+            bool left_blinker = car_state.getLeftBlinker() || atc_type=="fork left" || atc_type =="turn left" || atc_type == "atc left";
+            bool right_blinker = car_state.getRightBlinker() || atc_type=="fork right" || atc_type =="turn right" || atc_type == "atc right";
 
-        bool left_blinker = car_state.getLeftBlinker() || atc_type=="fork left" || atc_type =="turn left" || atc_type == "atc left";
-        bool right_blinker = car_state.getRightBlinker() || atc_type=="fork right" || atc_type =="turn right" || atc_type == "atc right";
-
-        _right_blinker = false;
-        _left_blinker = false;
-        if (blinker_timer <= 8) {
-            if (right_blinker) {
-                _right_blinker = true;
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
-            }
-            if (left_blinker) {
-                _left_blinker = true;
-                ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
+            _right_blinker = false;
+            _left_blinker = false;
+            if (blinker_timer < 6) {
+                if (right_blinker) {
+                    _right_blinker = true;
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
+                }
+                if (left_blinker) {
+                    _left_blinker = true;
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
+                }
             }
         }
     }
 };
-
 
 class BlindSpotDrawer : ModelDrawer{
 protected:
