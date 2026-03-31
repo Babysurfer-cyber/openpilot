@@ -2427,6 +2427,8 @@ public:
 
         // ▼▼▼ [추가] 깜빡임 애니메이션 출력 ▼▼▼
         if (auto_blink_timer > 0) {
+            auto_blink_timer--; // ⬅️ [필수 추가] 여기서 타이머를 1씩 깎아야 합니다!
+
             if (auto_blink_timer % 20 > 10) { 
                 int arrow_w = 250;
                 int arrow_h = 192;
@@ -2473,7 +2475,7 @@ public:
             mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
             
             if (auto_blink_timer > 0) {
-                auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
+                // ⬅️ (auto_blink_timer--; 한 줄을 싹 지우세요!)
                 if (auto_blink_timer % 10 < 5) {
                     text_color = COLOR_WHITE_ALPHA(0); // 글씨 투명도 0 (투명해짐 = 사라짐)
                 } else {
