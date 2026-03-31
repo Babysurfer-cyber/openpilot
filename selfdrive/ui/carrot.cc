@@ -2416,8 +2416,6 @@ public:
 
         // ▼▼▼ [추가] 깜빡임 애니메이션 출력 ▼▼▼
         if (auto_blink_timer > 0) {
-            auto_blink_timer--; // 매 프레임 1씩 깎음
-
             if (auto_blink_timer % 20 > 10) { 
                 int arrow_w = 250;
                 int arrow_h = 192;
