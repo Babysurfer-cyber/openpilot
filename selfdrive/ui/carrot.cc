@@ -1240,14 +1240,11 @@ public:
         auto meta = sm["modelV2"].getModelV2().getMeta();
         auto laneChangeDirection = meta.getLaneChangeDirection();
         auto laneChangeState = meta.getLaneChangeState();
-        
-        // [에러 해결!] 존재하지 않던 가짜 함수(getLaneChangeInhibited)를 완전히 삭제했습니다.
 
         const auto car_state = sm["carState"].getCarState();
         bool left_blindspot = car_state.getLeftBlindspot();
         bool right_blindspot = car_state.getRightBlindspot();
         
-        // 확실한 차량 순정 사각지대(BSD) 센서만 사용하여 Inhibit(위험)을 띄웁니다!
         bool left_unsafe = left_blindspot;
         bool right_unsafe = right_blindspot;
 
@@ -1258,8 +1255,25 @@ public:
         int offset_moving = 500;
 
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
-        // ▼ [수정] FINISHING(마무리) 단계를 빼서 차선 넘어가면 애니메이션 즉시 종료!
         bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
+
+        // ▼▼▼ [핵심 아이디어 추가!] 실제 차량의 깜빡이가 켜져 있는지 확인 ▼▼▼
+        bool actual_left_blinker = car_state.getLeftBlinker();
+        bool actual_right_blinker = car_state.getRightBlinker();
+        
+        bool is_blinker_on = false;
+        if (laneChangeDirection == cereal::LaneChangeDirection::LEFT && actual_left_blinker) {
+            is_blinker_on = true;
+        } else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT && actual_right_blinker) {
+            is_blinker_on = true;
+        }
+
+        // 만약 계기판 깜빡이가 꺼졌다면? -> 슬라이딩 애니메이션 강제 종료!
+        if (!is_blinker_on) {
+            is_pre_lc = false;
+            is_in_lc = false;
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if (is_pre_lc || is_in_lc) {
             int current_offset = offset_ready;
