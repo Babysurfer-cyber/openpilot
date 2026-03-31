@@ -845,11 +845,11 @@ public:
                 s->vg,
                 { (int)(lead_two_xl - 10), (int)(lead_two_y - path_width2 * 0.8), (int)(path_width2 + 20), (int)(path_width2 * 0.8) },
                 (lead_two_status == 2) ? COLOR_RED_ALPHA(50) : COLOR_BLACK_ALPHA(20),
-                15, 8, &radar_stroke
+                30, 10, &radar_stroke
               );
             }
             radar_stroke = isRadarDetected() ? rcolor : COLOR_BLUE;
-            ui_fill_rect(s->vg, { (int)(path_x - path_width / 2 - 10), (int)(path_y - path_width * 0.8), (int)(path_width + 20), (int)(path_width * 0.8) }, COLOR_BLACK_ALPHA(20), 15, 8, &radar_stroke);
+            ui_fill_rect(s->vg, { (int)(path_x - path_width / 2 - 10), (int)(path_y - path_width * 0.8), (int)(path_width + 20), (int)(path_width * 0.8) }, COLOR_BLACK_ALPHA(20), 30, 10, &radar_stroke);
 #if 0
             px[0] = path_x - path_width / 2 - 10;
             px[1] = px[0] + path_width + 20;
