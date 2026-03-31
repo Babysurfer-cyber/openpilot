@@ -1258,8 +1258,8 @@ public:
         int offset_moving = 500;
 
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
-        bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING || 
-                         laneChangeState == cereal::LaneChangeState::LANE_CHANGE_FINISHING);
+        // ▼ [수정] FINISHING(마무리) 단계를 빼서 차선 넘어가면 애니메이션 즉시 종료!
+        bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
 
         if (is_pre_lc || is_in_lc) {
             int current_offset = offset_ready;
