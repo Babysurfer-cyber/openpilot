@@ -1975,8 +1975,8 @@ public:
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
-    int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
-    int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
+    int     nRoadLimitSpeed_last = 0;  
+    int     cruise_blink_timer = 0;    // ⬅️ [수정] 크루즈 속도 3초 깜빡임 타이머
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
@@ -2085,10 +2085,10 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
+        // ▼▼▼ [수정] 제한속도 변경 감지 시 크루즈 속도 3초(60프레임) 타이머 세팅 ▼▼▼
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
             if (myDrivingMode == 5) {
-                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
+                cruise_blink_timer = 60; // 3초 (20fps * 3초)
             }
         }
         if (nRoadLimitSpeed > 0) {
@@ -2411,8 +2411,21 @@ public:
             current_size += (cruise_pump_timer * 7.0f); // 타이머 * 6 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
-        // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
-        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+
+        // ▼▼▼ [추가] 3초(60프레임) 동안 1초에 1번씩 깜빡임 ▼▼▼
+        NVGcolor cruise_color = COLOR_WHITE;
+        if (cruise_blink_timer > 0) {
+            cruise_blink_timer--; 
+            // 60프레임 / 3초 = 20프레임 주기 (1초)
+            // 20프레임 중 10프레임은 투명(0), 10프레임은 불투명 -> 초당 1회 깜빡임
+            if (cruise_blink_timer % 20 < 10) {
+                cruise_color = COLOR_WHITE_ALPHA(0); 
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        // 테두리와 그림자(0.0f) 없이, 계산된 current_size와 cruise_color를 적용해 그리기
+        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, cruise_color, BOLD, 0.0f, 0.0f);
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
