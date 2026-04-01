@@ -1227,7 +1227,7 @@ protected:
     int blinker_timer = 0;
     int lc_blinker_timer = 0; 
 public:
-    void draw(const UIState* s, int x, int y) {
+    void draw(const UIState* s, int x, int y) { // ⬅️ x, y 변수 사용!
         blinker_timer = (blinker_timer + 1) % 14;
         lc_blinker_timer = (lc_blinker_timer + 1) % 14;
         bool lc_blink_state = (lc_blinker_timer < 6);
@@ -1242,14 +1242,8 @@ public:
         auto laneChangeState = meta.getLaneChangeState();
 
         const auto car_state = sm["carState"].getCarState();
-        bool left_blindspot = car_state.getLeftBlindspot();
-        bool right_blindspot = car_state.getRightBlindspot();
-        
-        bool left_unsafe = left_blindspot;
-        bool right_unsafe = right_blindspot;
-
-        int cx = s->fb_w / 2;
-        int cy = s->fb_h / 2;
+        bool left_unsafe = car_state.getLeftBlindspot();
+        bool right_unsafe = car_state.getRightBlindspot();
 
         int offset_ready = 400; 
         int offset_moving = 500;
@@ -1257,23 +1251,19 @@ public:
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
         bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
 
-        // ▼▼▼ [핵심 아이디어 추가!] 실제 차량의 깜빡이가 켜져 있는지 확인 ▼▼▼
+        // 실제 차량의 깜빡이가 켜져 있는지 확인
         bool actual_left_blinker = car_state.getLeftBlinker();
         bool actual_right_blinker = car_state.getRightBlinker();
         
         bool is_blinker_on = false;
-        if (laneChangeDirection == cereal::LaneChangeDirection::LEFT && actual_left_blinker) {
-            is_blinker_on = true;
-        } else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT && actual_right_blinker) {
-            is_blinker_on = true;
-        }
+        if (laneChangeDirection == cereal::LaneChangeDirection::LEFT && actual_left_blinker) is_blinker_on = true;
+        else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT && actual_right_blinker) is_blinker_on = true;
 
-        // 만약 계기판 깜빡이가 꺼졌다면? -> 슬라이딩 애니메이션 강제 종료!
+        // 계기판 깜빡이가 꺼졌다면 슬라이딩 애니메이션 강제 종료
         if (!is_blinker_on) {
             is_pre_lc = false;
             is_in_lc = false;
         }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if (is_pre_lc || is_in_lc) {
             int current_offset = offset_ready;
@@ -1283,40 +1273,30 @@ public:
                 current_offset = offset_ready + (int)((offset_moving - offset_ready) * progress);
             }
 
-            // [왼쪽 차선 변경]
+            // [왼쪽 차선 변경] - cx, cy 대신 x, y 사용
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
                 if (is_pre_lc) {
-                    if (left_unsafe) {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                    } else {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                        if (lc_blink_state) {
-                            ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-                        }
+                    if (left_unsafe) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    else {
+                        ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) ui_draw_image(s, { x - current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
                     }
                 } 
                 else if (is_in_lc) {
-                    if (lc_blink_state) {
-                        ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
-                    }
+                    if (lc_blink_state) ui_draw_image(s, { x - current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
                 }
             }
-            // [오른쪽 차선 변경]
+            // [오른쪽 차선 변경] - cx, cy 대신 x, y 사용
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
                 if (is_pre_lc) {
-                    if (right_unsafe) {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                    } else {
-                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                        if (lc_blink_state) {
-                            ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-                        }
+                    if (right_unsafe) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    else {
+                        ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) ui_draw_image(s, { x + current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
                     }
                 } 
                 else if (is_in_lc) {
-                    if (lc_blink_state) {
-                        ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
-                    }
+                    if (lc_blink_state) ui_draw_image(s, { x + current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
                 }
             }
         } 
@@ -1332,11 +1312,12 @@ public:
             if (blinker_timer < 6) {
                 if (right_blinker) {
                     _right_blinker = true;
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
+                    // 일반 깜빡이는 화면 중앙 허공이 아니라 계기판 양옆에 뜨도록 변경 
+                    ui_draw_image(s, { s->fb_w / 2 + 300 - icon_size / 2, s->fb_h / 2 - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
                 }
                 if (left_blinker) {
                     _left_blinker = true;
-                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
+                    ui_draw_image(s, { s->fb_w / 2 - 300 - icon_size / 2, s->fb_h / 2 - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
                 }
             }
         }
