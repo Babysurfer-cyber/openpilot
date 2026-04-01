@@ -1227,7 +1227,7 @@ protected:
     int blinker_timer = 0;
     int lc_blinker_timer = 0; 
 public:
-    void draw(const UIState* s, int x, int y) { // ⬅️ x, y 변수 사용!
+    void draw(const UIState* s, int x, int y) {
         blinker_timer = (blinker_timer + 1) % 14;
         lc_blinker_timer = (lc_blinker_timer + 1) % 14;
         bool lc_blink_state = (lc_blinker_timer < 6);
@@ -1242,8 +1242,14 @@ public:
         auto laneChangeState = meta.getLaneChangeState();
 
         const auto car_state = sm["carState"].getCarState();
-        bool left_unsafe = car_state.getLeftBlindspot();
-        bool right_unsafe = car_state.getRightBlindspot();
+        bool left_blindspot = car_state.getLeftBlindspot();
+        bool right_blindspot = car_state.getRightBlindspot();
+        
+        bool left_unsafe = left_blindspot;
+        bool right_unsafe = right_blindspot;
+
+        int cx = s->fb_w / 2;
+        int cy = s->fb_h / 2;
 
         int offset_ready = 400; 
         int offset_moving = 500;
@@ -1251,19 +1257,23 @@ public:
         bool is_pre_lc = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE); 
         bool is_in_lc = (laneChangeState == cereal::LaneChangeState::LANE_CHANGE_STARTING); 
 
-        // 실제 차량의 깜빡이가 켜져 있는지 확인
+        // ▼▼▼ [핵심 아이디어 추가!] 실제 차량의 깜빡이가 켜져 있는지 확인 ▼▼▼
         bool actual_left_blinker = car_state.getLeftBlinker();
         bool actual_right_blinker = car_state.getRightBlinker();
         
         bool is_blinker_on = false;
-        if (laneChangeDirection == cereal::LaneChangeDirection::LEFT && actual_left_blinker) is_blinker_on = true;
-        else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT && actual_right_blinker) is_blinker_on = true;
+        if (laneChangeDirection == cereal::LaneChangeDirection::LEFT && actual_left_blinker) {
+            is_blinker_on = true;
+        } else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT && actual_right_blinker) {
+            is_blinker_on = true;
+        }
 
-        // 계기판 깜빡이가 꺼졌다면 슬라이딩 애니메이션 강제 종료
+        // 만약 계기판 깜빡이가 꺼졌다면? -> 슬라이딩 애니메이션 강제 종료!
         if (!is_blinker_on) {
             is_pre_lc = false;
             is_in_lc = false;
         }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if (is_pre_lc || is_in_lc) {
             int current_offset = offset_ready;
@@ -1273,30 +1283,40 @@ public:
                 current_offset = offset_ready + (int)((offset_moving - offset_ready) * progress);
             }
 
-            // [왼쪽 차선 변경] - cx, cy 대신 x, y 사용
+            // [왼쪽 차선 변경]
             if (laneChangeDirection == cereal::LaneChangeDirection::LEFT) {
                 if (is_pre_lc) {
-                    if (left_unsafe) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                    else {
-                        ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                        if (lc_blink_state) ui_draw_image(s, { x - current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                    if (left_unsafe) {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    } else {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) {
+                            ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                        }
                     }
                 } 
                 else if (is_in_lc) {
-                    if (lc_blink_state) ui_draw_image(s, { x - current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                    if (lc_blink_state) {
+                        ui_draw_image(s, { cx - current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f);
+                    }
                 }
             }
-            // [오른쪽 차선 변경] - cx, cy 대신 x, y 사용
+            // [오른쪽 차선 변경]
             else if (laneChangeDirection == cereal::LaneChangeDirection::RIGHT) {
                 if (is_pre_lc) {
-                    if (right_unsafe) ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
-                    else {
-                        ui_draw_image(s, { x - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
-                        if (lc_blink_state) ui_draw_image(s, { x + current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                    if (right_unsafe) {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_inhibit", 1.0f);
+                    } else {
+                        ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_steer", 1.0f);
+                        if (lc_blink_state) {
+                            ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                        }
                     }
                 } 
                 else if (is_in_lc) {
-                    if (lc_blink_state) ui_draw_image(s, { x + current_offset - icon_size / 2, y - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                    if (lc_blink_state) {
+                        ui_draw_image(s, { cx + current_offset - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f);
+                    }
                 }
             }
         } 
@@ -1312,12 +1332,11 @@ public:
             if (blinker_timer < 6) {
                 if (right_blinker) {
                     _right_blinker = true;
-                    // 일반 깜빡이는 화면 중앙 허공이 아니라 계기판 양옆에 뜨도록 변경 
-                    ui_draw_image(s, { s->fb_w / 2 + 300 - icon_size / 2, s->fb_h / 2 - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_r", 1.0f);
                 }
                 if (left_blinker) {
                     _left_blinker = true;
-                    ui_draw_image(s, { s->fb_w / 2 - 300 - icon_size / 2, s->fb_h / 2 - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
+                    ui_draw_image(s, { cx - icon_size / 2, cy - icon_size / 2, icon_size, icon_size }, "ic_blinker_l", 1.0f);
                 }
             }
         }
@@ -1954,15 +1973,6 @@ public:
     float   cruiseTarget = 0.0;
     int     myDrivingMode = 1;
 
-    // ▼▼▼ [시스템 설정 속도 변경 스마트 감지 변수] ▼▼▼
-    float   v_cruise_last = 0.0f;     
-    int     nRoadLimitSpeed_last = 0; 
-    int     xSpdLimit_last = 0;       
-    int     limit_change_grace = 0;   
-    int     speed_arrow_timer = 0;    
-    int     speed_arrow_type = 0; // 1: 상승, 2: 하락
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
@@ -2074,31 +2084,6 @@ public:
         trafficState = lp.getTrafficState();
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
-
-        // ▼▼▼ [과속카메라/도로제한속도 기반 스마트 감속/가속 감지] ▼▼▼
-        if (nRoadLimitSpeed_last == 0) nRoadLimitSpeed_last = nRoadLimitSpeed; // 초기화 방어
-        if (v_cruise_last == 0.0f) v_cruise_last = v_cruise;
-
-        // 원인: 과속카메라 속도 변경 OR 도로 제한속도 변경
-        if (xSpdLimit != xSpdLimit_last || nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            limit_change_grace = 60; // 3초(60프레임) 동안 크루즈 설정 속도가 변하는지 감시창 열기
-        }
-
-        if (limit_change_grace > 0) {
-            limit_change_grace--;
-            // 감시 기간 중 실제 크루즈 설정 속도(v_cruise)가 변했다면? 시스템 개입 확정!
-            if (v_cruise != v_cruise_last) {
-                speed_arrow_timer = 40; // 2초간 화살표 표시 (20fps * 2초)
-                speed_arrow_type = (v_cruise > v_cruise_last) ? 1 : 2; // UP(1) or DOWN(2)
-                limit_change_grace = 0; // 감지 완료, 감시 종료
-            }
-        }
-
-        // 현재 상태 저장
-        nRoadLimitSpeed_last = nRoadLimitSpeed;
-        xSpdLimit_last = xSpdLimit;
-        v_cruise_last = v_cruise;
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
@@ -2429,24 +2414,6 @@ public:
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
         ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
-        // ▼▼▼ [크루즈 속도 우측 상단 화살표 출력 (2초간 4회 깜빡임)] ▼▼▼
-        if (speed_arrow_timer > 0) {
-            speed_arrow_timer--; // 프레임마다 감소
-
-            if (speed_arrow_timer % 10 < 5) {
-                int arrow_size = 35; // 숫자 옆에 어울리게 작게 표시
-                int arrow_x = cruise_x + 55; // 크루즈 숫자(110 등) 우측
-                int arrow_y = cruise_y - 65; // MODEL 글씨 옆 상단
-
-                if (speed_arrow_type == 1) {
-                    ui_draw_image(s, { arrow_x, arrow_y, arrow_size, arrow_size }, "ic_arrow_up", 1.0f);
-                } else if (speed_arrow_type == 2) {
-                    ui_draw_image(s, { arrow_x, arrow_y, arrow_size, arrow_size }, "ic_arrow_down", 1.0f);
-                }
-            }
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
         //NVGcolor white_color = COLOR_WHITE;
@@ -2473,15 +2440,29 @@ public:
         NVGcolor mode_color = COLOR_BLUE_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
         switch (driving_mode) {
-        switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // ▼ [수정] 깜빡임 로직 완전 삭제! 항상 선명한 흰색 글씨로 고정 ▼
-        case 5: strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210); text_color = COLOR_WHITE; break; 
-        
+        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
+        case 5: 
+            strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
+            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
+            
+            if (auto_blink_timer > 0) {
+                auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
+                if (auto_blink_timer % 10 < 5) {
+                    text_color = COLOR_WHITE_ALPHA(0); // 글씨 투명도 0 (투명해짐 = 사라짐)
+                } else {
+                    text_color = COLOR_WHITE;          // 글씨 불투명 (다시 나타남)
+                }
+            } else {
+                text_color = COLOR_WHITE;  // 평상시 글씨
+            }
+            break; 
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            
         default: strcpy(driving_mode_str, tr("ERRM").toStdString().c_str()); break;
         }
 
@@ -3271,11 +3252,9 @@ void ui_nvg_init(UIState *s) {
   {"ic_apm", "../assets/images/img_apm.png"},
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
-  {"ic_navi_point", "../assets/images/navi_point.png"}, // ⬅️ 쉼표(,) 필수!
-  {"ic_arrow_up", "../assets/images/img_arrow_up.png"},
-  {"ic_arrow_down", "../assets/images/img_arrow_down.png"}
-  };
+  {"ic_navi_point", "../assets/images/navi_point.png"}
 
+  };
   for (auto [name, file] : images) {
     s->images[name] = nvgCreateImage(s->vg, file, 1);
     assert(s->images[name] != 0);
