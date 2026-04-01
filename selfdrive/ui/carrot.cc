@@ -1975,9 +1975,8 @@ public:
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
-    int     nRoadLimitSpeed_last = 0;  
-    int     xSpdLimit_last = 0;        // ⬅️ [추가] 과속카메라 속도 기억용
-    int     cruise_blink_timer = 0;    
+    int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
+    int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
@@ -2086,17 +2085,15 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [수정] 도로 제한속도 OR 과속카메라 속도 변경 감지 시 타이머 세팅 ▼▼▼
-        if (nRoadLimitSpeed_last == 0) nRoadLimitSpeed_last = nRoadLimitSpeed; // 초기화 방어
-
-        // 도로 제한속도가 바뀌었거나, 과속카메라 속도(xSpdLimit)가 새로 뜨거나 사라졌을 때!
-        if (nRoadLimitSpeed != nRoadLimitSpeed_last || xSpdLimit != xSpdLimit_last) {
-            cruise_blink_timer = 60; // 3초 (20fps * 3초) 깜빡임 시작!
+        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
+        if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
+            if (myDrivingMode == 5) {
+                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
+            }
         }
-
-        // 현재 상태 저장
-        nRoadLimitSpeed_last = nRoadLimitSpeed;
-        xSpdLimit_last = xSpdLimit;
+        if (nRoadLimitSpeed > 0) {
+            nRoadLimitSpeed_last = nRoadLimitSpeed;
+        }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
@@ -2414,21 +2411,8 @@ public:
             current_size += (cruise_pump_timer * 7.0f); // 타이머 * 6 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
-
-        // ▼▼▼ [추가] 3초(60프레임) 동안 1초에 1번씩 깜빡임 ▼▼▼
-        NVGcolor cruise_color = COLOR_WHITE;
-        if (cruise_blink_timer > 0) {
-            cruise_blink_timer--; 
-            // 60프레임 / 3초 = 20프레임 주기 (1초)
-            // 20프레임 중 10프레임은 투명(0), 10프레임은 불투명 -> 초당 1회 깜빡임
-            if (cruise_blink_timer % 20 < 10) {
-                cruise_color = COLOR_WHITE_ALPHA(0); 
-            }
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-        // 테두리와 그림자(0.0f) 없이, 계산된 current_size와 cruise_color를 적용해 그리기
-        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, cruise_color, BOLD, 0.0f, 0.0f);
+        // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
+        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_WHITE, BOLD, 0.0f, 0.0f);
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
@@ -2461,11 +2445,26 @@ public:
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // ▼ [수정] AUTO 깜빡임 제거, 항상 선명한 흰색으로 고정! ▼
-        case 5: strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210); text_color = COLOR_WHITE; break; 
-        
+        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
+        case 5: 
+            strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
+            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
+            
+            if (auto_blink_timer > 0) {
+                auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
+                if (auto_blink_timer % 10 < 5) {
+                    text_color = COLOR_WHITE_ALPHA(0); // 글씨 투명도 0 (투명해짐 = 사라짐)
+                } else {
+                    text_color = COLOR_WHITE;          // 글씨 불투명 (다시 나타남)
+                }
+            } else {
+                text_color = COLOR_WHITE;  // 평상시 글씨
+            }
+            break; 
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            
         default: strcpy(driving_mode_str, tr("ERRM").toStdString().c_str()); break;
-		}
+        }
 
         int dx = bx - 50;
         int dy = by + 175;
