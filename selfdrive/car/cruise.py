@@ -257,6 +257,7 @@ class VCruiseCarrot:
 
       self.speed_from_pcm = self.params.get_int("SpeedFromPCM")
       self._cruise_speed_unit = self.params.get_int("CruiseSpeedUnit")
+      self._cruise_button_long_delay = self.params.get_int("CruiseButtonLongDelay")
       self._cruise_speed_unit_basic = self.params.get_int("CruiseSpeedUnitBasic")
       self._paddle_mode = self.params.get_int("PaddleMode")
       self._cruise_button_mode = self.params.get_int("CruiseButtonMode")
@@ -367,6 +368,7 @@ class VCruiseCarrot:
     if CS.cruiseState.available:
       if not self.cruise_state_available_last:
         self._lat_enabled = True
+        v_cruise_kph = self.v_ego_kph_set
       if not self.CP.pcmCruise:
         # if stock cruise is completely disabled, then we can use our own set speed logic
         self.v_cruise_kph = np.clip(v_cruise_kph, self._cruise_speed_min, self._cruise_speed_max)
@@ -438,7 +440,7 @@ class VCruiseCarrot:
       ]:
         self.button_cnt = 1
         self.button_prev = bt
-        self.button_long_time = 40 if bt in [ButtonType.accelCruise, ButtonType.decelCruise] else 70
+        self.button_long_time = self._cruise_button_long_delay if bt in [ButtonType.accelCruise, ButtonType.decelCruise] else self._cruise_button_long_delay + 30
 
       elif not b.pressed and self.button_cnt > 0 and bt == self.button_prev:
         if bt == ButtonType.cancel:

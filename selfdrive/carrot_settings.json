@@ -434,22 +434,6 @@
       "cdescr": "胡萝卜巡航 ATC 减速度设置，-1: 不改变"
     },
     {
-      "group": "크루즈",
-      "name": "CommaLongAcc",
-      "title": "콤마크루즈(0)",
-      "descr": "콤마 롱컨트롤 사용",
-      "egroup": "CRUISE",
-      "etitle": "Use Comma Long",
-      "edescr": "",
-      "min": 0,
-      "max": 1,
-      "default": 0,
-      "unit": 1,
-      "cgroup": "巡航设置",
-      "ctitle": "使用 Comma 纵向控制",
-      "cdescr": ""
-    },
-    {
       "group": "조향튜닝",
       "name": "CustomSR",
       "title": "CustomSteerRatiox0.1(0)",
@@ -960,6 +944,22 @@
       "cgroup": "按键设置",
       "ctitle": "巡航速度单位扩展(10)",
       "cdescr": "SET/DECEL 加减速单位 (模式 1,2,3, GasTok)"
+    },
+    {
+      "group": "버튼설정",
+      "name": "CruiseButtonLongDelay",
+      "title": "크루즈버튼롱딜레이(40)",
+      "descr": "버튼을 길게 눌렀을 때 기능이 작동하기 전까지의 지연 시간입니다.",
+      "egroup": "Button Settings",
+      "etitle": "Cruise Button Long Delay (40)",
+      "edescr": "Delay before the long-press action is triggered.",
+      "min": 30,
+      "max": 100,
+      "default": 40,
+      "unit": 10,
+      "cgroup": "按键设置",
+      "ctitle": "巡航按键长按延迟(40)",
+      "cdescr": "长按按钮后，功能触发前的延迟时间。"
     },
     {
       "group": "버튼설정",
@@ -1973,17 +1973,17 @@
       "group": "차량간격",
       "name": "DynamicTFollow",
       "title": "동적 차간거리 설정(0)",
-      "descr": "선행차와 거리에따른 동적 설정",
+      "descr": "선행차의 움직임 변화에 따라 차간거리를 동적으로 조절",
       "egroup": "FDIST",
       "etitle": "Dynamic TFollow",
-      "edescr": "Dynamic setting based on distance to lead vehicle",
+      "edescr": "Dynamically adjusts following distance based on changes in lead vehicle motion",
       "min": 0,
       "max": 100,
       "default": 0,
       "unit": 1,
       "cgroup": "跟车距离",
       "ctitle": "动态跟车时间",
-      "cdescr": "根据与前车距离的动态设置"
+      "cdescr": "根据前车运动变化动态调整跟车距离"
     },
     {
       "group": "차량간격",
@@ -2016,6 +2016,22 @@
       "cgroup": "跟车距离",
       "ctitle": "变道动态跟车时间 (100)%",
       "cdescr": "变道开始时临时缩小车距"
+    },
+    {
+      "group": "차량간격",
+      "name": "TFollowDecelBoost",
+      "title": "감속TFollow부스트비율(30)",
+      "descr": "감속 중 TF 추가 확보 비율. 값이 클수록 감속 시 차간거리를 더 여유있게 유지합니다.",
+      "egroup": "FDIST",
+      "etitle": "Decel TF Boost Ratio (30)",
+      "edescr": "Extra t_follow boost ratio during deceleration. Higher values keep more following distance while slowing down.",
+      "min": 0,
+      "max": 100,
+      "default": 10,
+      "unit": 10,
+      "cgroup": "跟车距离",
+      "ctitle": "减速TF增益比例(30)",
+      "cdescr": "减速时额外增加 t_follow 的比例。数值越大，减速时跟车距离越宽松。"
     },
     {
       "group": "감속제어",

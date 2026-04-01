@@ -1,19 +1,58 @@
 /* ---------- Home WS state ---------- */
+function setHomeServerState(summary, detail = summary, tone = "idle") {
+  if (typeof setServerStateStatus === "function") {
+    setServerStateStatus(summary, detail, tone);
+    return;
+  }
+
+  const box = document.getElementById("stateBox");
+  if (box) box.textContent = String(detail || summary || "");
+}
+
+function summarizeServerStatePayload(payload) {
+  const statusText = [
+    payload?.status,
+    payload?.state,
+    payload?.message,
+    payload?.result,
+    payload?.summary,
+    payload?.text,
+  ].find((value) => value != null && String(value).trim() !== "");
+
+  const hasError = Boolean(payload?.error || payload?.error_code || payload?.ok === false);
+  let summary = statusText ? String(statusText) : (hasError ? getUIText("error", "Error") : getUIText("connected", "Connected"));
+  if (summary.length > 72) summary = `${summary.slice(0, 69)}...`;
+
+  return {
+    summary,
+    tone: hasError ? "error" : "connected",
+  };
+}
+
 function wsConnect() {
   const wsProto = (location.protocol === "https:") ? "wss" : "ws";
   const ws = new WebSocket(wsProto + "://" + location.host + "/ws/state");
-  const box = document.getElementById("stateBox");
-  ws.onopen = () => box.textContent = "connected";
+  ws.onopen = () => {
+    const connected = getUIText("connected", "Connected");
+    setHomeServerState(connected, connected, "connected");
+  };
   ws.onmessage = (ev) => {
     try {
       const j = JSON.parse(ev.data);
-      box.textContent = JSON.stringify(j, null, 2);
+      const { summary, tone } = summarizeServerStatePayload(j);
+      setHomeServerState(summary, JSON.stringify(j, null, 2), tone);
     } catch (e) {
-      box.textContent = ev.data;
+      const text = String(ev.data || "").trim() || getUIText("connected", "Connected");
+      setHomeServerState(text, text, "connected");
     }
   };
+  ws.onerror = () => {
+    const error = getUIText("error", "Error");
+    setHomeServerState(error, error, "error");
+  };
   ws.onclose = () => {
-    box.textContent = "disconnected (reconnecting...)";
+    const reconnecting = getUIText("reconnecting", "Reconnecting...");
+    setHomeServerState(reconnecting, reconnecting, "error");
     setTimeout(wsConnect, 1000);
   };
 }
@@ -23,6 +62,57 @@ wsConnect();
 // ===== WebRTC (auto) =====
 let RTC_PC = null;
 let RTC_RETRY_T = null;
+const RTC_DEV_PREVIEW_ENABLED = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+const RTC_DEV_PREVIEW_KEY = "carrot.rtc.devPreview";
+let RTC_DEV_PREVIEW = false;
+
+function rtcHasLiveTrack() {
+  const v = document.getElementById("rtcVideo");
+  return Boolean(v && v.srcObject);
+}
+
+function rtcSyncDevToggleUi() {
+  const tools = document.getElementById("rtcDevTools");
+  const btn = document.getElementById("btnRtcDevToggle");
+  if (!tools || !btn) return;
+
+  tools.hidden = !RTC_DEV_PREVIEW_ENABLED;
+  btn.classList.toggle("is-on", RTC_DEV_PREVIEW);
+  btn.setAttribute("aria-pressed", RTC_DEV_PREVIEW ? "true" : "false");
+  btn.textContent = RTC_DEV_PREVIEW ? "RTC Preview ON" : "RTC Preview";
+}
+
+function rtcApplyDevPreview() {
+  const rtcCard = document.getElementById("rtcCard");
+  const rtcWrap = document.getElementById("rtcWrap");
+  const v = document.getElementById("rtcVideo");
+  if (!rtcCard || !rtcWrap || !v) return;
+
+  const showPreview = RTC_DEV_PREVIEW_ENABLED && RTC_DEV_PREVIEW && !rtcHasLiveTrack();
+  rtcWrap.classList.toggle("rtcWrap--dev-preview", showPreview);
+  v.classList.toggle("rtcVideo--dev-preview", showPreview);
+
+  if (showPreview) {
+    rtcCard.style.display = "block";
+    v.style.display = "block";
+    rtcStatusSet("dev preview");
+  } else if (!rtcHasLiveTrack()) {
+    v.style.display = "none";
+    rtcCard.style.display = "none";
+  }
+
+  hudAutoDock();
+  rtcSyncDevToggleUi();
+}
+
+function rtcSetDevPreview(next) {
+  RTC_DEV_PREVIEW = Boolean(next && RTC_DEV_PREVIEW_ENABLED);
+  try {
+    if (RTC_DEV_PREVIEW) localStorage.setItem(RTC_DEV_PREVIEW_KEY, "1");
+    else localStorage.removeItem(RTC_DEV_PREVIEW_KEY);
+  } catch {}
+  rtcApplyDevPreview();
+}
 
 function rtcStatusSet(s) {
   const el = document.getElementById("rtcStatus");
@@ -44,6 +134,7 @@ async function rtcDisconnect() {
   if (v) { v.srcObject = null; v.style.display = "none"; }
   const rtcCard = document.getElementById("rtcCard");
   rtcCard.style.display = "none";
+  rtcApplyDevPreview();
 
   // HUD auto dock handled by hudAutoDock()
   //await carWsDisconnect();
@@ -123,6 +214,9 @@ async function rtcConnectOnce() {
       }
 
       v.srcObject = stream;
+      v.classList.remove("rtcVideo--dev-preview");
+      const rtcWrap = document.getElementById("rtcWrap");
+      if (rtcWrap) rtcWrap.classList.remove("rtcWrap--dev-preview");
       v.style.display = "block";
       rtcCard.style.display = "block";
       try { await v.play(); } catch(e) { console.log("[RTC] play() failed", e); }
@@ -221,6 +315,7 @@ function rtcInitAuto() {
 const btnRtcFs = document.getElementById("btnRtcFs");
 const rtcVideoEl = document.getElementById("rtcVideo");
 const rtcWrap = document.getElementById("rtcWrap");
+const btnRtcDevToggle = document.getElementById("btnRtcDevToggle");
 
 // ���� ����ó������ ȣ��ǵ���: ��ư Ŭ�� / ���� �� �̺�Ʈ������ ����
 async function rtcToggleFullscreen() {
@@ -253,7 +348,9 @@ async function rtcToggleFullscreen() {
     return;
   }
 
-  alert(UI_STRINGS[LANG].fullscreen_not_supported || "Fullscreen not supported on this browser.");
+  showAppToast(UI_STRINGS[LANG].fullscreen_not_supported || "Fullscreen not supported on this browser.", {
+    tone: "error",
+  });
 }
 
 // ��ư
@@ -263,6 +360,10 @@ if (btnRtcFs) btnRtcFs.onclick = rtcToggleFullscreen;
 if (rtcVideoEl) {
   rtcVideoEl.style.cursor = "pointer";
   rtcVideoEl.addEventListener("click", rtcToggleFullscreen);
+}
+
+if (btnRtcDevToggle) {
+  btnRtcDevToggle.onclick = () => rtcSetDevPreview(!RTC_DEV_PREVIEW);
 }
 
 let CAR_WS = null;
@@ -301,12 +402,20 @@ function hudAutoDock() {
   const rtcVideo = document.getElementById("rtcVideo");
   const rtcCard = document.getElementById("rtcCard");
   const host = document.getElementById("hudOverlayHost");
-  if (!rtcVideo || !rtcCard || !host) return;
+  const rtcWrapEl = document.getElementById("rtcWrap");
+  if (!rtcVideo || !rtcCard || !host || !rtcWrapEl) return;
 
   const videoVisible = rtcCard.style.display !== "none" && rtcVideo.style.display !== "none";
   if (!videoVisible) { hudDock("card"); return; }
 
-  const fs = document.fullscreenElement === rtcVideo;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const fs = Boolean(
+    fsEl && (
+      fsEl === rtcWrapEl ||
+      fsEl === rtcVideo ||
+      (typeof fsEl.contains === "function" && (fsEl.contains(rtcVideo) || fsEl.contains(host)))
+    )
+  );
   const landscape = window.innerWidth >= window.innerHeight;
 
   if (fs && landscape) hudDock("bl");
@@ -383,39 +492,6 @@ async function carWsDisconnect() {
   CAR_WS = null;
 }
 
-async function updateQuickLink() {
-  const el = document.getElementById("quickLink");
-  if (!el) return;
-
-  try {
-    const v = await bulkGet(["GithubUsername"]);
-    const githubId = (v["GithubUsername"] || "").trim();
-
-    if (!githubId) {
-      el.style.display = "";
-      el.textContent = "GithubUsername empty (bulkGet ok)";
-      return;
-    }
-
-    const url = `https://shind0.synology.me/carrot/go/?id=${encodeURIComponent(githubId)}`;
-    el.href = url;
-    el.textContent = url;
-    el.style.display = "";
-  } catch (e) {
-    el.style.display = "";
-    el.removeAttribute("href");
-    el.textContent = "QuickLink error: " + (e?.message || e);
-    console.log("[QuickLink] failed:", e);
-  }
-}
-
-
-
-
-
-
-
-
 async function syncServerTimeOnConnect() {
   try {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -442,6 +518,14 @@ async function syncServerTimeOnConnect() {
 }
 
 function startAll() {
+  try {
+    RTC_DEV_PREVIEW = RTC_DEV_PREVIEW_ENABLED && localStorage.getItem(RTC_DEV_PREVIEW_KEY) === "1";
+  } catch {
+    RTC_DEV_PREVIEW = false;
+  }
+  rtcSyncDevToggleUi();
+  rtcApplyDevPreview();
+
   renderUIText();
   showPage("home", false);
   console.log("[time_sync] syncing server time on page load");
@@ -459,6 +543,7 @@ function startAll() {
   // keep HUD dock state in sync
   window.addEventListener("resize", hudAutoDock);
   document.addEventListener("fullscreenchange", hudAutoDock);
+  document.addEventListener("webkitfullscreenchange", hudAutoDock);
   setInterval(hudAutoDock, 800);
 }
 

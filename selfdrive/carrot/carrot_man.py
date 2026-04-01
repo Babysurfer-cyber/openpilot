@@ -341,7 +341,8 @@ class CarrotMan:
       if False and self.navd_active:  # mabox always active
         self.navd_active = False
         self.params.remove("NavDestination")
-    if not self.navi_points_active or not SHAPELY_AVAILABLE or (self.carrot_serv.active_carrot <= 1 and not self.navd_active):
+    is_onroad = self.params.get_bool("IsOnroad")
+    if not is_onroad or not self.navi_points_active or not SHAPELY_AVAILABLE or (self.carrot_serv.active_carrot <= 1 and not self.navd_active):
       #print(f"navi_points_active: {self.navi_points_active}, active_carrot: {self.carrot_serv.active_carrot}")
       if self.navi_points_active:
         print("navi_points_active: ", self.navi_points_active, "active_carrot: ", self.carrot_serv.active_carrot, "navd_active: ", self.navd_active)
@@ -991,6 +992,11 @@ class CarrotMan:
   def handle_traffic_light(self, d: dict):
     print(f"[Traffic] {d}")
 
+    # {'distance': 120, 'greenLightRemainTime': 0, 'leftLightRemainTime': 0, 'location': {'coordString': 'x:127.045286, y:37.477032', 'latitude': 37.47703188722564, 'longitude': 127.04528634430659},
+    #       'redLightRemainTime': 15, 'rightLightRemainTime': 0, 'uturnLightRemainTime': 0, 'greenLightOn': False, 'leftLightOn': False, 'redLightOn': True, 'rightLightOn': False, 'uturnLightOn': False}
+
+
+
   def handle_carrot_state(self, d: dict):
     try:
       self.carrot_serv.update(d)
@@ -1051,7 +1057,7 @@ class CarrotMan:
         self.handle_carrot_state(obj["rgdata"])
       
     if "sinf" in obj:
-      self.handle_signal(obj["sinf"])
+      self.handle_traffic_light(obj["sinf"])
 
   def carrot_navi_http_thread(self):
     asyncio.run(self.carrot_navi_http_server(7713))

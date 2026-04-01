@@ -167,7 +167,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"CruiseEcoControl", {PERSISTENT, INT, "2"}},
     {"CarrotCruiseDecel", {PERSISTENT, INT, "-1"}},
     {"CarrotCruiseAtcDecel", {PERSISTENT, INT, "-1"}},
-    {"CommaLongAcc", {PERSISTENT, INT, "0"}},
 
     {"AutoGasTokSpeed", {PERSISTENT, INT, "0"}},
     {"AutoGasSyncSpeed", {PERSISTENT, INT, "1"} },
@@ -209,6 +208,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"CruiseButtonTest3", {PERSISTENT, INT, "1"}},
 
     {"CruiseSpeedUnit", {PERSISTENT, INT, "10"}},
+    {"CruiseButtonLongDelay", {PERSISTENT, INT, "40"} },
     {"CruiseSpeedUnitBasic", {PERSISTENT, INT, "1"}},
     {"CruiseSpeed1", {PERSISTENT, INT, "30"}},
     {"CruiseSpeed2", {PERSISTENT, INT, "50"}},
@@ -267,6 +267,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     {"DynamicTFollow", {PERSISTENT, INT, "0"}},
     {"DynamicTFollowLC", {PERSISTENT, INT, "100"}},
+    {"TFollowDecelBoost", {PERSISTENT, INT, "10"}},
     {"EnableSpeedTF", {PERSISTENT, INT, "0"}},
     {"AChangeCostStarting", {PERSISTENT, INT, "10"}},
     {"TrafficStopDistanceAdjust", {PERSISTENT, INT, "400"}},
