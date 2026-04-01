@@ -1976,7 +1976,8 @@ public:
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  
-    int     cruise_blink_timer = 0;    // ⬅️ [수정] 크루즈 속도 3초 깜빡임 타이머
+    int     xSpdLimit_last = 0;        // ⬅️ [추가] 과속카메라 속도 기억용
+    int     cruise_blink_timer = 0;    
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
@@ -2085,15 +2086,17 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [수정] 제한속도 변경 감지 시 크루즈 속도 3초(60프레임) 타이머 세팅 ▼▼▼
-        if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            if (myDrivingMode == 5) {
-                cruise_blink_timer = 60; // 3초 (20fps * 3초)
-            }
+        // ▼▼▼ [수정] 도로 제한속도 OR 과속카메라 속도 변경 감지 시 타이머 세팅 ▼▼▼
+        if (nRoadLimitSpeed_last == 0) nRoadLimitSpeed_last = nRoadLimitSpeed; // 초기화 방어
+
+        // 도로 제한속도가 바뀌었거나, 과속카메라 속도(xSpdLimit)가 새로 뜨거나 사라졌을 때!
+        if (nRoadLimitSpeed != nRoadLimitSpeed_last || xSpdLimit != xSpdLimit_last) {
+            cruise_blink_timer = 60; // 3초 (20fps * 3초) 깜빡임 시작!
         }
-        if (nRoadLimitSpeed > 0) {
-            nRoadLimitSpeed_last = nRoadLimitSpeed;
-        }
+
+        // 현재 상태 저장
+        nRoadLimitSpeed_last = nRoadLimitSpeed;
+        xSpdLimit_last = xSpdLimit;
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
