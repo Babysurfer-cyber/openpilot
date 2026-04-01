@@ -2359,7 +2359,7 @@ public:
         }
         
         // 👇 좌측 하단 HUD 배경 그리기 (빈공간이 생겨서 윗부분을 40px 낮춤!)
-        ui_fill_rect(s->vg, { bx - 120, by - 90, 475, 315 }, bg_color, 30, 2, &stroke_color);
+        ui_fill_rect(s->vg, { bx - 120, by - 90, 475, 315 }, bg_color, 30, 5, &stroke_color);
 
         // ▼▼▼ [추가] 앞차 인식(Lead Vehicle) 시 HUD 박스 상단에 'LOCK-ON' 출력! ▼▼▼
         if (has_lead) {
