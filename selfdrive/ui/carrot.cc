@@ -2473,29 +2473,15 @@ public:
         NVGcolor mode_color = COLOR_BLUE_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
         switch (driving_mode) {
+        switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
-        case 5: 
-            strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
-            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
-            
-            if (auto_blink_timer > 0) {
-                auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
-                if (auto_blink_timer % 10 < 5) {
-                    text_color = COLOR_WHITE_ALPHA(0); // 글씨 투명도 0 (투명해짐 = 사라짐)
-                } else {
-                    text_color = COLOR_WHITE;          // 글씨 불투명 (다시 나타남)
-                }
-            } else {
-                text_color = COLOR_WHITE;  // 평상시 글씨
-            }
-            break; 
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-            
+        // ▼ [수정] 깜빡임 로직 완전 삭제! 항상 선명한 흰색 글씨로 고정 ▼
+        case 5: strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210); text_color = COLOR_WHITE; break; 
+        
         default: strcpy(driving_mode_str, tr("ERRM").toStdString().c_str()); break;
         }
 
