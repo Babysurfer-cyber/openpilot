@@ -1973,6 +1973,15 @@ public:
     float   cruiseTarget = 0.0;
     int     myDrivingMode = 1;
 
+    // ▼▼▼ [시스템 설정 속도 변경 스마트 감지 변수] ▼▼▼
+    float   v_cruise_last = 0.0f;     
+    int     nRoadLimitSpeed_last = 0; 
+    int     xSpdLimit_last = 0;       
+    int     limit_change_grace = 0;   
+    int     speed_arrow_timer = 0;    
+    int     speed_arrow_type = 0; // 1: 상승, 2: 하락
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
@@ -2084,6 +2093,31 @@ public:
         trafficState = lp.getTrafficState();
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
+
+        // ▼▼▼ [과속카메라/도로제한속도 기반 스마트 감속/가속 감지] ▼▼▼
+        if (nRoadLimitSpeed_last == 0) nRoadLimitSpeed_last = nRoadLimitSpeed; // 초기화 방어
+        if (v_cruise_last == 0.0f) v_cruise_last = v_cruise;
+
+        // 원인: 과속카메라 속도 변경 OR 도로 제한속도 변경
+        if (xSpdLimit != xSpdLimit_last || nRoadLimitSpeed != nRoadLimitSpeed_last) {
+            limit_change_grace = 60; // 3초(60프레임) 동안 크루즈 설정 속도가 변하는지 감시창 열기
+        }
+
+        if (limit_change_grace > 0) {
+            limit_change_grace--;
+            // 감시 기간 중 실제 크루즈 설정 속도(v_cruise)가 변했다면? 시스템 개입 확정!
+            if (v_cruise != v_cruise_last) {
+                speed_arrow_timer = 40; // 2초간 화살표 표시 (20fps * 2초)
+                speed_arrow_type = (v_cruise > v_cruise_last) ? 1 : 2; // UP(1) or DOWN(2)
+                limit_change_grace = 0; // 감지 완료, 감시 종료
+            }
+        }
+
+        // 현재 상태 저장
+        nRoadLimitSpeed_last = nRoadLimitSpeed;
+        xSpdLimit_last = xSpdLimit;
+        v_cruise_last = v_cruise;
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
         if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
@@ -2413,6 +2447,24 @@ public:
         }
         // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
         ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+
+        // ▼▼▼ [크루즈 속도 우측 상단 화살표 출력 (2초간 4회 깜빡임)] ▼▼▼
+        if (speed_arrow_timer > 0) {
+            speed_arrow_timer--; // 프레임마다 감소
+
+            if (speed_arrow_timer % 10 < 5) {
+                int arrow_size = 35; // 숫자 옆에 어울리게 작게 표시
+                int arrow_x = cruise_x + 55; // 크루즈 숫자(110 등) 우측
+                int arrow_y = cruise_y - 65; // MODEL 글씨 옆 상단
+
+                if (speed_arrow_type == 1) {
+                    ui_draw_image(s, { arrow_x, arrow_y, arrow_size, arrow_size }, "ic_arrow_up", 1.0f);
+                } else if (speed_arrow_type == 2) {
+                    ui_draw_image(s, { arrow_x, arrow_y, arrow_size, arrow_size }, "ic_arrow_down", 1.0f);
+                }
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
@@ -3252,9 +3304,11 @@ void ui_nvg_init(UIState *s) {
   {"ic_apm", "../assets/images/img_apm.png"},
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
-  {"ic_navi_point", "../assets/images/navi_point.png"}
-
+  {"ic_navi_point", "../assets/images/navi_point.png"}, // ⬅️ 쉼표(,) 필수!
+  {"ic_arrow_up", "../assets/images/img_arrow_up.png"},
+  {"ic_arrow_down", "../assets/images/img_arrow_down.png"}
   };
+
   for (auto [name, file] : images) {
     s->images[name] = nvgCreateImage(s->vg, file, 1);
     assert(s->images[name] != 0);
