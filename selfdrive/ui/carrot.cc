@@ -923,8 +923,8 @@ protected:
         right_lane_line = sm["carState"].getCarState().getRightLaneLine();
         for (int i = 0; i < std::size(lane_line_vertices); i++) {
             lane_line_probs[i] = model_lane_line_probs[i];
-            float line_width = 0.08; 
-            if (i == 1 && left_lane_line >= 20) line_width = 0.08;
+            float line_width = 0.06; 
+            if (i == 1 && left_lane_line >= 20) line_width = 0.06;
             update_line_data(s, model_lane_lines[i], line_width, 0.0, 0.0, &lane_line_vertices[i], max_idx);
             if (i == 1) {
               update_line_data(s, model_lane_lines[i], line_width, 0.0, 0.0, &lane_line_vertices_for_double, max_idx, true, -0.3);
@@ -941,7 +941,7 @@ protected:
         int max_idx_road_edge = get_path_length_idx(model_lane_lines[0], 100);
         for (int i = 0; i < std::size(road_edge_vertices); i++) {
             road_edge_stds[i] = model_road_edge_stds[i];
-            update_line_data(s, model_road_edges[i], 0.1, 0.0, 0.0, &road_edge_vertices[i], max_idx_road_edge);
+            update_line_data(s, model_road_edges[i], 0.08, 0.0, 0.0, &road_edge_vertices[i], max_idx_road_edge);
         }
         return true;
     }
