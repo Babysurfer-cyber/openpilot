@@ -174,10 +174,10 @@ class CarSpecificEvents:
 
     if CC.enabled:
       if self.vCruise_prev == 0 and CS.vCruise > 0:
-        events.add(EventName.prompt)
+        events.add(EventName.audiolongEngaged)
 
     if self.carrotCruise_prev != CS.carrotCruise:
-      events.add(EventName.prompt)
+      events.add(EventName.audiolongEngaged)
 
     self.carrotCruise_prev = CS.carrotCruise
     self.vCruise_prev = CS.vCruise
