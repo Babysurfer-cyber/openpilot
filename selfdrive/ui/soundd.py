@@ -42,7 +42,7 @@ sound_list: dict[int, tuple[str, int | None, float]] = {
   AudibleAlert.warningImmediate: ("warning_immediate.wav", None, MAX_VOLUME),
 
   AudibleAlert.longEngaged: ("tici_engaged.wav", 1, MAX_VOLUME),
-  AudibleAlert.longDisengaged: ("tici_disengaged.wav", None, MAX_VOLUME),
+  AudibleAlert.longDisengaged: ("tici_disengaged.wav", 1, MAX_VOLUME),
 
   AudibleAlert.trafficSignGreen: ("traffic_sign_green.wav", None, MAX_VOLUME),
   AudibleAlert.trafficSignChanged: ("traffic_sign_changed.wav", None, MAX_VOLUME),
@@ -56,7 +56,7 @@ sound_list: dict[int, tuple[str, int | None, float]] = {
   AudibleAlert.disengage2:  ("audio_disengage.wav", None, MAX_VOLUME),
   AudibleAlert.speedDown:  ("audio_speed_down.wav", None, MAX_VOLUME),
   AudibleAlert.audioTurn: ("audio_turn.wav", None, MAX_VOLUME),
-  AudibleAlert.reverseGear: ("reverse_gear.wav", 1, float(Params().get_int("SoundVolumeAdjustEngage"))/100.),
+  AudibleAlert.reverseGear: ("reverse_gear.wav", 1, MAX_VOLUME),
   AudibleAlert.audio1: ("audio_1.wav", None, MAX_VOLUME),
   AudibleAlert.audio2: ("audio_2.wav", None, MAX_VOLUME),
   AudibleAlert.audio3: ("audio_3.wav", None, MAX_VOLUME),
