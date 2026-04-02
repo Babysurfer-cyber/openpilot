@@ -545,7 +545,7 @@ class CarrotPlanner:
         # 조건 A: 인식한 지 0.2초(20프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
         if is_cruising and a_ego < -0.5 and self.lead_detect_count <= 20:
  
-          self.events.add(EventName.audio10)  # ⬅️ 파일 생성 대신 깔끔하게 audio10 재생!
+          self.events.add(EventName.audio9)  # ⬅️ 파일 생성 대신 깔끔하게 audio10 재생!
           
           self.lead_alerted = True  # 알림을 줬다고 도장 찍음
           
