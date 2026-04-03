@@ -545,11 +545,11 @@ class CarrotPlanner:
       # 2. 최초 인식/끼어들기 후 0.2초 이내 "감속률 급증" 알림
       if not self.lead_alerted:
         
-        # 조건: 크루즈 중이고 + 감속 상태(a_ego < -0.5)에서 + 순간적으로 제동이 훅 들어갈 때(jerk < -0.05)
-        if is_cruising and a_ego < -0.5 and jerk < -0.05 and self.lead_detect_count <= 20:
+        # 조건: 크루즈 중 + 🚫내가 브레이크 안 밟음 + 감속(a_ego < -0.5) + 제동이 훅 들어갈 때(jerk < -0.05)
+        if is_cruising and not carstate.brakePressed and a_ego < -0.5 and jerk < -0.05 and self.lead_detect_count <= 20:
  
-          self.events.add(EventName.audio9)  # ⬅️ 군더더기 없이 audio9 띠링!
-          self.lead_alerted = True           # 알림 도장 쾅!
+          self.events.add(EventName.audio9)  
+          self.lead_alerted = True # 알림 도장 쾅!
           
         # 감속률 증가 없이 0.2초가 평화롭게 지나갔다면 기회 박탈
         elif self.lead_detect_count > 20:
