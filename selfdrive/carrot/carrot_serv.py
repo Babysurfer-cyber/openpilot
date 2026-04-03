@@ -893,12 +893,38 @@ class CarrotServ:
     else:
       self.active_carrot = 0
 
+    # =========================================================
+    # ▼ [추가] 과속카메라 안내 후 40% 주행 시점에 속도 변경 로직 ▼
+    # =========================================================
+    if not hasattr(self, 'initial_sdi_dist'):
+      self.initial_sdi_dist = 0
+      self.effective_speed_limit = self.nRoadLimitSpeed
+
+    # 새로운 카메라 감지 시 최초 거리 기록
+    if self.xSpdDist > 0:
+      if self.initial_sdi_dist == 0 or self.xSpdDist > self.initial_sdi_dist + 50:
+        self.initial_sdi_dist = self.xSpdDist
+    else:
+      self.initial_sdi_dist = 0
+
+    delay_speed_drop = False
+    # 카메라가 있고, 속도를 줄여야 하는 상황일 때
+    if self.nRoadLimitSpeed < self.effective_speed_limit and self.initial_sdi_dist > 0:
+      # 초기 발견 거리의 60%보다 많이 남았다면 (즉, 아직 40%를 못 갔다면)
+      if self.xSpdDist > (self.initial_sdi_dist * 0.6):
+        delay_speed_drop = True
+
+    # 40%를 지나서 지연이 풀리거나, 감속 상황이 아니면 즉시 속도 동기화
+    if not delay_speed_drop:
+      self.effective_speed_limit = self.nRoadLimitSpeed
+    # =========================================================
+
     if self.autoRoadSpeedLimitOffset >= 0 and self.active_carrot>=2:
-      if self.nRoadLimitSpeed >= 30:
+      if self.effective_speed_limit >= 30: # ⬅️ nRoadLimitSpeed 대신 변경
         road_speed_limit_offset = self.autoRoadSpeedLimitOffset
         if not self.is_metric:
           road_speed_limit_offset *= CV.KPH_TO_MPH
-        limit_speed = self.nRoadLimitSpeed + road_speed_limit_offset
+        limit_speed = self.effective_speed_limit + road_speed_limit_offset # ⬅️ nRoadLimitSpeed 대신 변경
     else:
       limit_speed = 200
 
@@ -927,15 +953,12 @@ class CarrotServ:
     # =========================================================
     # ▼ [수정] 5번 모드(AUTO)는 상승/하락 모두, 다른 모드는 하락 시에만 안내음!
     # =========================================================
-    # 유저님이 직접 만드신 궁극의 5번 모드 감지!
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
-    # 초기 변수 세팅 (처음 1회만 실행)
     if not hasattr(self, 'prev_speed_limit'):
-      self.prev_speed_limit = self.nRoadLimitSpeed
+      self.prev_speed_limit = self.effective_speed_limit # ⬅️ 변경
     
-    # 현재 제한속도 (통합 nRoadLimitSpeed 사용)
-    current_limit = self.nRoadLimitSpeed
+    current_limit = self.effective_speed_limit # ⬅️ 변경
     
     # 안내음 발생 조건 체크
     if current_limit > 0 and self.prev_speed_limit > 0:
@@ -1097,7 +1120,7 @@ class CarrotServ:
     msg = messaging.new_message('carrotMan')
     msg.valid = True
     msg.carrotMan.activeCarrot = self.active_carrot
-    msg.carrotMan.nRoadLimitSpeed = int(self.nRoadLimitSpeed)
+    msg.carrotMan.nRoadLimitSpeed = int(self.effective_speed_limit) # ⬅️ 변경
     msg.carrotMan.remote = remote_ip
     msg.carrotMan.xSpdType = int(self.xSpdType)
     msg.carrotMan.xSpdLimit = int(self.xSpdLimit)
@@ -1140,7 +1163,7 @@ class CarrotServ:
       instruction = inst.navInstructionCarrot
       instruction.distanceRemaining = self.nGoPosDist
       instruction.timeRemaining = self.nGoPosTime
-      instruction.speedLimit = self.nRoadLimitSpeed / 3.6 if self.nRoadLimitSpeed > 0 else 0
+      instruction.speedLimit = self.effective_speed_limit / 3.6 if self.effective_speed_limit > 0 else 0 # ⬅️ 변경
       instruction.maneuverDistance = float(self.nTBTDist)
       instruction.maneuverSecondaryText = self.szNearDirName
       if self.szFarDirName and len(self.szFarDirName):
