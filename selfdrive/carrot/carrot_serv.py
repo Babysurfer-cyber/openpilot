@@ -1120,7 +1120,7 @@ class CarrotServ:
     msg = messaging.new_message('carrotMan')
     msg.valid = True
     msg.carrotMan.activeCarrot = self.active_carrot
-    msg.carrotMan.nRoadLimitSpeed = int(self.nRoadLimitSpeed)
+    msg.carrotMan.nRoadLimitSpeed = int(self.effective_speed_limit) #과속카메라 속도가 지연표시되게 함
     msg.carrotMan.remote = remote_ip
     msg.carrotMan.xSpdType = int(self.xSpdType)
     msg.carrotMan.xSpdLimit = int(self.xSpdLimit)
