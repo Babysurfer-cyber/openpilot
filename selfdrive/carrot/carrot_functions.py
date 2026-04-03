@@ -515,41 +515,43 @@ class CarrotPlanner:
     lead_detected = radarstate.leadOne.status # & radarstate.leadOne.radar
     is_cruising = carstate.cruiseState.enabled # 크루즈 작동 여부 확인
 
-    # [수정] 앞차 최초 인식 + 끼어들기 감지 알림 로직 통합 (더욱 완벽한 방식)
+    # ▼ [추가] 이전 프레임의 가속도를 불러와서 순간 감속률(Jerk) 계산 ▼
+    prev_a = getattr(self, 'a_ego_prev', a_ego)
+    jerk = a_ego - prev_a  # 음수면 감속이 갑자기 깊어짐을 의미
+
+    # [수정] 앞차 최초 인식 + 끼어들기 감지 알림 로직 통합 (심플하고 완벽하게!)
     if lead_detected:
       current_lead_dist = radarstate.leadOne.dRel
       
       # =========================================================
-      # ▼ [수정됨] 1. 끼어들기 감지: 거리가 5미터 이상 훅 줄어들었을 때
+      # 1. 상태 리셋: 새로운 차 인식 OR 거리가 5m 이상 훅 줄어들 때(끼어들기)
       # =========================================================
-      if self.prev_lead_status and (self.prev_lead_dist - current_lead_dist) > 5.0:
-        
-        # [NEW] 단, 운전자가 브레이크를 밟고 있거나, 이미 급감속(a_ego < -3.0) 중일 때는 
-        # 노즈다이브로 인한 센서 오류이거나 운전자가 이미 인지한 상황이므로 알림 리셋 생략!
-        if not carstate.brakePressed and a_ego > -3.0:
-          # 완전히 새로운 앞차가 나타난 것으로 간주하고 타이머와 도장(알림 상태)을 싹 초기화!
-          self.lead_alerted = False
-          self.lead_detect_count = 0
+      is_new_lead = not self.prev_lead_status
+      is_cut_in = self.prev_lead_status and (self.prev_lead_dist - current_lead_dist) > 5.0
+      
+      if is_new_lead or is_cut_in:
+        # 잡다한 예외(브레이크 등) 다 지우고, 무조건 타이머와 도장을 초기화!
+        self.lead_alerted = False
+        self.lead_detect_count = 0
       # =========================================================
 
-      # 다음 프레임 비교를 위해 저장 (이 부분은 딱 한 번만 있어야 합니다!)
+      # 다음 프레임 비교를 위해 저장
       self.prev_lead_dist = current_lead_dist
       self.prev_lead_status = True
 
       self.lead_lost_count = 0
       self.lead_detect_count += 1  # 앞차를 인식한 시간 카운트 시작
 
-      # 2. 최초 인식(또는 끼어들기 리셋) 후 0.2초 이내 감속 알림
+      # 2. 최초 인식/끼어들기 후 0.2초 이내 "감속률 급증" 알림
       if not self.lead_alerted:
         
-        # 조건 A: 인식한 지 0.2초(20프레임) 이내이고, 마침 내 차가 감속을 한다면 -> 알림 발생!
-        if is_cruising and a_ego < -0.5 and self.lead_detect_count <= 20:
+        # 조건: 크루즈 중이고 + 감속 상태(a_ego < -0.5)에서 + 순간적으로 제동이 훅 들어갈 때(jerk < -0.05)
+        if is_cruising and a_ego < -0.5 and jerk < -0.05 and self.lead_detect_count <= 20:
  
-          self.events.add(EventName.audio9)  # ⬅️ 파일 생성 대신 깔끔하게 audio10 재생!
+          self.events.add(EventName.audio9)  # ⬅️ 군더더기 없이 audio9 띠링!
+          self.lead_alerted = True           # 알림 도장 쾅!
           
-          self.lead_alerted = True  # 알림을 줬다고 도장 찍음
-          
-        # 조건 B: 감속 없이 0.2초가 평화롭게 지나가 버렸다면? -> 소리 없이 기회 박탈
+        # 감속률 증가 없이 0.2초가 평화롭게 지나갔다면 기회 박탈
         elif self.lead_detect_count > 20:
           self.lead_alerted = True
 
@@ -561,7 +563,10 @@ class CarrotPlanner:
       self.lead_lost_count += 1
       if self.lead_lost_count > 100:
         self.lead_alerted = False
-        self.lead_detect_count = 0  # <--- 새로운 차를 위해 타이머도 0으로 초기화
+        self.lead_detect_count = 0  # 새로운 차를 위해 타이머 초기화
+
+    # ▼ [추가] 다음 프레임의 Jerk 계산을 위해 현재 가속도 업데이트 ▼
+    self.a_ego_prev = a_ego
 
     self.xStop = self.update_stop_dist(x[31])
 
