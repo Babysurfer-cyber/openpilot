@@ -336,19 +336,9 @@ class CarController(CarControllerBase):
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
       # blinkers
+      # blinkers
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        left_blinker = CC.leftBlinker
-        right_blinker = CC.rightBlinker
-        
-        # =========================================================
-        # ▼ [테스트] 후진(R) 기어 시 좌측 깜빡이 강제 점등 로직 ▼
-        # =========================================================
-        if CS.out.gearShifter == structs.CarState.GearShifter.reverse:
-          left_blinker = True   # 후진 시 무조건 왼쪽 깜빡이 켜기!
-          right_blinker = False # 오른쪽은 끄기
-        # =========================================================
-        
-        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, left_blinker, right_blinker))
+        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
 
       if self.camera_scc_params in [2, 3]:
         self.canfd_toggle_adas(CC, CS)
