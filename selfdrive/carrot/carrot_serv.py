@@ -1105,9 +1105,6 @@ class CarrotServ:
       self.prev_speed_limit = self.nRoadLimitSpeed
     # =========================================================
 
-    self._update_cmd()
-    msg = messaging.new_message('carrotMan')
-
 
     self._update_cmd()
     msg = messaging.new_message('carrotMan')
