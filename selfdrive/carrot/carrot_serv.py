@@ -925,40 +925,55 @@ class CarrotServ:
     hda_active = False
 
     # =========================================================
-    # ▼ [수정] 5번 모드(AUTO)는 상승/하락 모두, 다른 모드는 하락 시에만 안내음!
+    # ▼ [최종 수정] 5번(AUTO) 모드와 일반 모드 분리 안내음 로직 ▼
     # =========================================================
-    # 유저님이 직접 만드신 궁극의 5번 모드 감지!
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
-    # 초기 변수 세팅 (처음 1회만 실행)
+    # 변수 초기화 (처음 1회)
+    if not hasattr(self, 'prev_desired_speed'):
+      self.prev_desired_speed = desired_speed
     if not hasattr(self, 'prev_speed_limit'):
       self.prev_speed_limit = self.nRoadLimitSpeed
-    
-    # 현재 제한속도 (통합 nRoadLimitSpeed 사용)
-    current_limit = self.nRoadLimitSpeed
-    
-    # 안내음 발생 조건 체크
-    if current_limit > 0 and self.prev_speed_limit > 0:
-      play_prompt = False
-      
-      if current_limit < self.prev_speed_limit:
-        # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음!
-        play_prompt = True
-      elif current_limit > self.prev_speed_limit and my_driving_mode == 5:
-        # 조건 B: 제한속도가 '상승'할 때는 5번(AUTO) 모드일 때만 안내음!
-        play_prompt = True
-        
-      # 소리 발생 파일 생성
-      if play_prompt:
-        try:
-          open("/dev/shm/carrot_prompt", "w").close()
-        except Exception:
-          pass
-          
-    # 다음 비교를 위해 현재 속도를 기억
-    if current_limit > 0:
-      self.prev_speed_limit = current_limit
+
+    play_prompt = False
+
+    # ---------------------------------------------------------
+    # [1] 5번(AUTO) 모드: "목표 크루즈 속도"가 카메라 등에 의해 변할 때
+    # ---------------------------------------------------------
+    if my_driving_mode == 5:
+      # 하락 시
+      if (self.prev_desired_speed - desired_speed) > 2.0:
+        if source in ["CAM", "HDA", "bump", "section", "police", "waze", "road"]:
+          play_prompt = True
+      # 상승 시 (제한 풀림)
+      elif (desired_speed - self.prev_desired_speed) > 2.0 and desired_speed < 200:
+        if source in ["CAM", "HDA", "bump", "section", "police", "waze", "road"]:
+          play_prompt = True
+
+    # ---------------------------------------------------------
+    # [2] 일반 모드(1~4번): "도로 제한속도 표지판" 숫자가 떨어질 때만
+    # ---------------------------------------------------------
+    else:
+      current_limit = self.nRoadLimitSpeed
+      if current_limit > 0 and self.prev_speed_limit > 0:
+        if current_limit < self.prev_speed_limit:
+          play_prompt = True  # 제한속도가 떨어지면 무조건 경고!
+
+    # 소리 발생 파일 생성 (신호탄)
+    if play_prompt:
+      try:
+        open("/dev/shm/carrot_prompt", "w").close()
+      except Exception:
+        pass
+
+    # 다음 프레임 비교를 위해 현재 상태 저장
+    self.prev_desired_speed = desired_speed
+    if self.nRoadLimitSpeed > 0:
+      self.prev_speed_limit = self.nRoadLimitSpeed
     # =========================================================
+
+    self._update_cmd()
+    msg = messaging.new_message('carrotMan')
 
     ### 과속카메라, 사고방지턱
 
