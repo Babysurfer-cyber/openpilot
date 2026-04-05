@@ -574,7 +574,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.laneChange: {
     ET.PERMANENT: Alert(
-      "차선을 변경합니다",
+      "",
       "",
       AlertStatus.normal, AlertSize.small,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, 3.),
@@ -582,7 +582,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.steerSaturated: {
     ET.PERMANENT: Alert(
-      "핸들을 잡아주세요",
+      "",
       "회전이 조향 한도를 초과함",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.HIGH, VisualAlert.none, AudibleAlert.warningSoft, 2.),
