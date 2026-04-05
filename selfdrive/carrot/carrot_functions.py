@@ -548,7 +548,7 @@ class CarrotPlanner:
         # 조건: 크루즈 중 + 🚫내가 브레이크 안 밟음 + 감속(a_ego < -0.5) + 제동이 훅 들어갈 때(jerk < -0.05)
         if is_cruising and not carstate.brakePressed and a_ego < -0.5 and jerk < -0.05 and self.lead_detect_count <= 20:
  
-          self.events.add(EventName.audio9)  
+         # self.events.add(EventName.audio9)
           self.lead_alerted = True # 알림 도장 쾅!
           
         # 감속률 증가 없이 0.2초가 평화롭게 지나갔다면 기회 박탈
