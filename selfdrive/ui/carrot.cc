@@ -2343,29 +2343,30 @@ public:
         // ▼ [추가] 앞차 인식(Lead Vehicle) 여부를 시스템에서 가져옴
         bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
 
-        NVGcolor stroke_color = COLOR_GREY;
+        // 🎯 [수정] 앞차를 인식하면 테두리(stroke)를 녹색으로, 놓치면 회색으로!
+        NVGcolor stroke_color = has_lead ? COLOR_GREEN : COLOR_GREY;
         NVGcolor bg_color;
         
-        // 1. 기본 배경색 설정 (앞차가 있고 & 크루즈가 켜져있을 때만 녹색 투명도 90)
+        // 1. 기본 배경색 설정
         if (has_lead && longActive) {
             bg_color = COLOR_BLACK_ALPHA(90);
         } else {
             bg_color = COLOR_BLACK_ALPHA(90);
         }
         
-        // 2. 과속카메라 감지 시 타이머에 맞춰 빨간색(투명도 90)으로 덮어쓰기 (깜빡임 효과)
+        // 2. 과속카메라 감지 시 빨간색(투명도 90)으로 고정
         if (cam_detected) {
             bg_color = COLOR_RED_ALPHA(90);
         }
         
-        // 👇 좌측 하단 HUD 배경 그리기 (빈공간이 생겨서 윗부분을 40px 낮춤!)
+        // 👇 좌측 하단 HUD 배경 그리기
         ui_fill_rect(s->vg, { bx - 120, by - 90, 475, 315 }, bg_color, 30, 5, &stroke_color);
 
         // ▼▼▼ [추가] 앞차 인식(Lead Vehicle) 시 HUD 박스 상단에 'LOCK-ON' 출력! ▼▼▼
         if (has_lead) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            // 박스의 가로 중앙(bx + 117), 세로 상단 바로 위(by - 100)에 배치
-            ui_draw_text(s, bx + 117, by - 100, "LOCK-ON", 55, COLOR_ORANGE, BOLD);
+            // 🎯 [수정] 글씨 색상을 COLOR_ORANGE에서 COLOR_GREEN으로 변경!
+            ui_draw_text(s, bx + 117, by - 100, "LOCK-ON", 55, COLOR_GREEN, BOLD);
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
