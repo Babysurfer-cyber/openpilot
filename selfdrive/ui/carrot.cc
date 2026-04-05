@@ -2354,7 +2354,7 @@ public:
         }
         
         // 2. 과속카메라 감지 시 타이머에 맞춰 빨간색(투명도 90)으로 덮어쓰기 (깜빡임 효과)
-        if (cam_detected && blink_timer > 8) {
+        if (cam_detected) {
             bg_color = COLOR_RED_ALPHA(90);
         }
         
