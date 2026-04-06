@@ -1,117 +1,290 @@
-/* ---------- Home WS state ---------- */
+/* ---------- Home Runtime State ---------- */
 function setHomeServerState(summary, detail = summary, tone = "idle") {
-  if (typeof setServerStateStatus === "function") {
-    setServerStateStatus(summary, detail, tone);
-    return;
+  void summary;
+  void detail;
+  void tone;
+}
+
+function summarizeLiveRuntimeState(payload, errorMessage = "") {
+  if (!payload?.ok) {
+    const summary = errorMessage || getUIText("reconnecting", "Reconnecting...");
+    return {
+      summary,
+      detail: JSON.stringify({ ok: false, error: errorMessage || "live_runtime unavailable" }, null, 2),
+      tone: "error",
+    };
   }
 
-  const box = document.getElementById("stateBox");
-  if (box) box.textContent = String(detail || summary || "");
+  const ageMs = Number.isFinite(Number(payload.snapshotAgeMs)) ? Number(payload.snapshotAgeMs) : null;
+  const servicesCount = payload.services && typeof payload.services === "object" ? Object.keys(payload.services).length : 0;
+  const paramsCount = payload.runtime?.params && typeof payload.runtime.params === "object" ? Object.keys(payload.runtime.params).length : 0;
+  const summary = ageMs != null && ageMs > 1500
+    ? `${getUIText("reconnecting", "Reconnecting...")} ${Math.round(ageMs)}ms`
+    : getUIText("connected", "Connected");
+  const tone = ageMs != null && ageMs > 1500 ? "error" : "connected";
+  const detail = JSON.stringify({
+    ok: true,
+    snapshotAgeMs: ageMs,
+    servicesCount,
+    paramsCount,
+    meta: payload.meta || {},
+  }, null, 2);
+
+  return { summary, detail, tone };
 }
 
-function summarizeServerStatePayload(payload) {
-  const statusText = [
-    payload?.status,
-    payload?.state,
-    payload?.message,
-    payload?.result,
-    payload?.summary,
-    payload?.text,
-  ].find((value) => value != null && String(value).trim() !== "");
+const CARROT_LIVE_RUNTIME_STATE = {
+  ok: false,
+  meta: {},
+  runtime: { params: {} },
+  services: {},
+  snapshotAgeMs: null,
+  fetchedAtMs: 0,
+  dataSignature: "",
+};
+window.CarrotLiveRuntimeState = CARROT_LIVE_RUNTIME_STATE;
 
-  const hasError = Boolean(payload?.error || payload?.error_code || payload?.ok === false);
-  let summary = statusText ? String(statusText) : (hasError ? getUIText("error", "Error") : getUIText("connected", "Connected"));
-  if (summary.length > 72) summary = `${summary.slice(0, 69)}...`;
+let LIVE_RUNTIME_FETCH_T = null;
+let LIVE_RUNTIME_FETCH_IN_FLIGHT = null;
+let LIVE_RUNTIME_POLL_ACTIVE = false;
+let LAST_HUD_PAYLOAD_SIGNATURE = "";
+const RTC_STATS_POLL_MS = 2000;
+const RTC_PERF_STATE = {
+  active: false,
+  collectedAtMs: 0,
+  connectionState: "idle",
+  iceConnectionState: "new",
+  codec: "",
+  inbound: null,
+  video: null,
+  error: "",
+};
+window.CarrotRtcPerf = RTC_PERF_STATE;
+let RTC_STATS_T = null;
 
-  return {
-    summary,
-    tone: hasError ? "error" : "connected",
-  };
+function isCarrotPageVisible() {
+  return document.body?.dataset?.page === "carrot" && !document.hidden;
 }
 
-function wsConnect() {
-  const wsProto = (location.protocol === "https:") ? "wss" : "ws";
-  const ws = new WebSocket(wsProto + "://" + location.host + "/ws/state");
-  ws.onopen = () => {
-    const connected = getUIText("connected", "Connected");
-    setHomeServerState(connected, connected, "connected");
-  };
-  ws.onmessage = (ev) => {
+function shouldRunCarrotHudRealtime() {
+  return isCarrotPageVisible();
+}
+
+function shouldRunCarrotVisionRealtime() {
+  return isCarrotPageVisible() && window.CARROT_VISION_ACTIVE;
+}
+
+function emitCarrotRenderRequest(detail = {}) {
+  window.dispatchEvent(new CustomEvent("carrot:render-request", { detail }));
+}
+
+function emitCarrotVisionChange(active) {
+  window.dispatchEvent(new CustomEvent("carrot:visionchange", { detail: { active: Boolean(active) } }));
+}
+
+function getLiveRuntimeDataSignature(payload) {
+  try {
+    return JSON.stringify({
+      meta: payload?.meta || {},
+      runtime: payload?.runtime || { params: {} },
+      services: payload?.services || {},
+    });
+  } catch {
+    return "";
+  }
+}
+
+async function fetchLiveRuntimeState(force = false) {
+  if (LIVE_RUNTIME_FETCH_IN_FLIGHT) return LIVE_RUNTIME_FETCH_IN_FLIGHT;
+
+  LIVE_RUNTIME_FETCH_IN_FLIGHT = (async () => {
+    let shouldNotifyRender = Boolean(force);
     try {
-      const j = JSON.parse(ev.data);
-      const { summary, tone } = summarizeServerStatePayload(j);
-      setHomeServerState(summary, JSON.stringify(j, null, 2), tone);
-    } catch (e) {
-      const text = String(ev.data || "").trim() || getUIText("connected", "Connected");
-      setHomeServerState(text, text, "connected");
-    }
-  };
-  ws.onerror = () => {
-    const error = getUIText("error", "Error");
-    setHomeServerState(error, error, "error");
-  };
-  ws.onclose = () => {
-    const reconnecting = getUIText("reconnecting", "Reconnecting...");
-    setHomeServerState(reconnecting, reconnecting, "error");
-    setTimeout(wsConnect, 1000);
+      const suffix = force ? "?force=1" : "";
+      const response = await fetch(`/api/live_runtime${suffix}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!payload?.ok) throw new Error(payload?.error || "live_runtime failed");
+
+      const wasOk = CARROT_LIVE_RUNTIME_STATE.ok;
+      const nextDataSignature = getLiveRuntimeDataSignature(payload);
+      const dataChanged = nextDataSignature !== CARROT_LIVE_RUNTIME_STATE.dataSignature;
+
+      CARROT_LIVE_RUNTIME_STATE.ok = true;
+      if (dataChanged) {
+        CARROT_LIVE_RUNTIME_STATE.meta = payload.meta || {};
+        CARROT_LIVE_RUNTIME_STATE.runtime = payload.runtime || { params: {} };
+        CARROT_LIVE_RUNTIME_STATE.services = payload.services || {};
+        CARROT_LIVE_RUNTIME_STATE.dataSignature = nextDataSignature;
+      }
+      CARROT_LIVE_RUNTIME_STATE.snapshotAgeMs = Number.isFinite(Number(payload.snapshotAgeMs)) ? Number(payload.snapshotAgeMs) : null;
+      CARROT_LIVE_RUNTIME_STATE.fetchedAtMs = Date.now();
+      window.CarrotLiveRuntimeState = CARROT_LIVE_RUNTIME_STATE;
+      const serverState = summarizeLiveRuntimeState(payload);
+      setHomeServerState(serverState.summary, serverState.detail, serverState.tone);
+      shouldNotifyRender = shouldNotifyRender || dataChanged || !wasOk;
+	    } catch (_error) {
+      const wasOk = CARROT_LIVE_RUNTIME_STATE.ok;
+      CARROT_LIVE_RUNTIME_STATE.ok = false;
+      CARROT_LIVE_RUNTIME_STATE.fetchedAtMs = Date.now();
+      window.CarrotLiveRuntimeState = CARROT_LIVE_RUNTIME_STATE;
+	      const serverState = summarizeLiveRuntimeState(null, _error?.message || "");
+	      setHomeServerState(serverState.summary, serverState.detail, serverState.tone);
+      shouldNotifyRender = shouldNotifyRender || wasOk;
+	    } finally {
+      if (shouldNotifyRender) {
+        emitCarrotRenderRequest({ force: false, overlayDirty: true, hudDirty: true });
+      }
+	      LIVE_RUNTIME_FETCH_IN_FLIGHT = null;
+	    }
+  })();
+
+  return LIVE_RUNTIME_FETCH_IN_FLIGHT;
+}
+
+function getLiveRuntimePollMs() {
+  return shouldRunCarrotHudRealtime() ? 1000 : 3000;
+}
+
+function scheduleLiveRuntimeStateFetch(ms = getLiveRuntimePollMs()) {
+  if (!LIVE_RUNTIME_POLL_ACTIVE) return;
+  if (LIVE_RUNTIME_FETCH_T) clearTimeout(LIVE_RUNTIME_FETCH_T);
+  LIVE_RUNTIME_FETCH_T = setTimeout(async () => {
+    LIVE_RUNTIME_FETCH_T = null;
+    if (!LIVE_RUNTIME_POLL_ACTIVE) return;
+    await fetchLiveRuntimeState(false).catch(() => {});
+    scheduleLiveRuntimeStateFetch(getLiveRuntimePollMs());
+  }, ms);
+}
+
+function stopLiveRuntimeStateFetch() {
+  LIVE_RUNTIME_POLL_ACTIVE = false;
+  if (LIVE_RUNTIME_FETCH_T) {
+    clearTimeout(LIVE_RUNTIME_FETCH_T);
+    LIVE_RUNTIME_FETCH_T = null;
+  }
+}
+
+function startLiveRuntimeStateFetch(force = false, ms = getLiveRuntimePollMs()) {
+  LIVE_RUNTIME_POLL_ACTIVE = true;
+  if (force) fetchLiveRuntimeState(true).catch(() => {});
+  scheduleLiveRuntimeStateFetch(ms);
+}
+
+function resetRtcPerfState() {
+  RTC_PERF_STATE.active = false;
+  RTC_PERF_STATE.collectedAtMs = Date.now();
+  RTC_PERF_STATE.connectionState = "idle";
+  RTC_PERF_STATE.iceConnectionState = "new";
+  RTC_PERF_STATE.codec = "";
+  RTC_PERF_STATE.inbound = null;
+  RTC_PERF_STATE.video = null;
+  RTC_PERF_STATE.error = "";
+  window.CarrotRtcPerf = RTC_PERF_STATE;
+}
+
+function stopRtcPerfPolling() {
+  if (RTC_STATS_T) {
+    clearTimeout(RTC_STATS_T);
+    RTC_STATS_T = null;
+  }
+}
+
+function readRtcVideoPlaybackQuality(video) {
+  if (!video || typeof video.getVideoPlaybackQuality !== "function") return null;
+  const quality = video.getVideoPlaybackQuality();
+  if (!quality) return null;
+  return {
+    totalVideoFrames: Number(quality.totalVideoFrames ?? 0),
+    droppedVideoFrames: Number(quality.droppedVideoFrames ?? 0),
+    corruptedVideoFrames: Number(quality.corruptedVideoFrames ?? 0),
+    creationTime: Number(quality.creationTime ?? 0),
+    width: Number(video.videoWidth || 0),
+    height: Number(video.videoHeight || 0),
+    readyState: Number(video.readyState || 0),
+    currentTime: Number(video.currentTime || 0),
   };
 }
-wsConnect();
+
+function extractRtcInboundVideoStats(statsReport, statsMap) {
+  if (!statsReport) return { inbound: null, codec: "" };
+  const codecReport = statsReport.codecId ? statsMap.get(statsReport.codecId) : null;
+  return {
+    codec: codecReport?.mimeType || codecReport?.id || "",
+    inbound: {
+      framesDecoded: Number(statsReport.framesDecoded ?? 0),
+      framesDropped: Number(statsReport.framesDropped ?? 0),
+      framesPerSecond: Number(statsReport.framesPerSecond ?? 0),
+      frameWidth: Number(statsReport.frameWidth ?? 0),
+      frameHeight: Number(statsReport.frameHeight ?? 0),
+      jitter: Number(statsReport.jitter ?? 0),
+      bytesReceived: Number(statsReport.bytesReceived ?? 0),
+      packetsLost: Number(statsReport.packetsLost ?? 0),
+      decoderImplementation: statsReport.decoderImplementation || "",
+      freezeCount: Number(statsReport.freezeCount ?? 0),
+      totalFreezesDuration: Number(statsReport.totalFreezesDuration ?? 0),
+    },
+  };
+}
+
+async function collectRtcPerfStats() {
+  const pc = RTC_PC;
+  if (!pc) return;
+
+  try {
+    const stats = await pc.getStats(null);
+    let inboundVideoReport = null;
+    stats.forEach((report) => {
+      if (inboundVideoReport) return;
+      if (report?.type === "inbound-rtp" && report.kind === "video" && !report.isRemote) {
+        inboundVideoReport = report;
+      }
+    });
+
+    const video = document.getElementById("rtcVideo");
+    const inbound = extractRtcInboundVideoStats(inboundVideoReport, stats);
+    RTC_PERF_STATE.active = shouldRunCarrotVisionRealtime();
+    RTC_PERF_STATE.collectedAtMs = Date.now();
+    RTC_PERF_STATE.connectionState = pc.connectionState || "unknown";
+    RTC_PERF_STATE.iceConnectionState = pc.iceConnectionState || "unknown";
+    RTC_PERF_STATE.codec = inbound.codec;
+    RTC_PERF_STATE.inbound = inbound.inbound;
+    RTC_PERF_STATE.video = readRtcVideoPlaybackQuality(video);
+    RTC_PERF_STATE.error = "";
+    window.CarrotRtcPerf = RTC_PERF_STATE;
+  } catch (error) {
+    RTC_PERF_STATE.active = shouldRunCarrotVisionRealtime();
+    RTC_PERF_STATE.collectedAtMs = Date.now();
+    RTC_PERF_STATE.connectionState = pc.connectionState || "unknown";
+    RTC_PERF_STATE.iceConnectionState = pc.iceConnectionState || "unknown";
+    RTC_PERF_STATE.error = error?.message || String(error);
+    window.CarrotRtcPerf = RTC_PERF_STATE;
+  }
+}
+
+function scheduleRtcPerfPolling(ms = RTC_STATS_POLL_MS) {
+  if (RTC_STATS_T || !shouldRunCarrotVisionRealtime()) return;
+  RTC_STATS_T = setTimeout(async () => {
+    RTC_STATS_T = null;
+    if (!shouldRunCarrotVisionRealtime()) return;
+    await collectRtcPerfStats().catch(() => {});
+    scheduleRtcPerfPolling(RTC_STATS_POLL_MS);
+  }, ms);
+}
+
+function startRtcPerfPolling(force = false) {
+  if (force) collectRtcPerfStats().catch(() => {});
+  scheduleRtcPerfPolling(force ? 500 : RTC_STATS_POLL_MS);
+}
 
 
 // ===== WebRTC (auto) =====
 let RTC_PC = null;
 let RTC_RETRY_T = null;
-const RTC_DEV_PREVIEW_ENABLED = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-const RTC_DEV_PREVIEW_KEY = "carrot.rtc.devPreview";
-let RTC_DEV_PREVIEW = false;
-
+let RTC_WAIT_TRACK_T = null;
+let RTC_FAIL_COUNT = 0;
 function rtcHasLiveTrack() {
-  const v = document.getElementById("rtcVideo");
-  return Boolean(v && v.srcObject);
-}
-
-function rtcSyncDevToggleUi() {
-  const tools = document.getElementById("rtcDevTools");
-  const btn = document.getElementById("btnRtcDevToggle");
-  if (!tools || !btn) return;
-
-  tools.hidden = !RTC_DEV_PREVIEW_ENABLED;
-  btn.classList.toggle("is-on", RTC_DEV_PREVIEW);
-  btn.setAttribute("aria-pressed", RTC_DEV_PREVIEW ? "true" : "false");
-  btn.textContent = RTC_DEV_PREVIEW ? "RTC Preview ON" : "RTC Preview";
-}
-
-function rtcApplyDevPreview() {
-  const rtcCard = document.getElementById("rtcCard");
-  const rtcWrap = document.getElementById("rtcWrap");
-  const v = document.getElementById("rtcVideo");
-  if (!rtcCard || !rtcWrap || !v) return;
-
-  const showPreview = RTC_DEV_PREVIEW_ENABLED && RTC_DEV_PREVIEW && !rtcHasLiveTrack();
-  rtcWrap.classList.toggle("rtcWrap--dev-preview", showPreview);
-  v.classList.toggle("rtcVideo--dev-preview", showPreview);
-
-  if (showPreview) {
-    rtcCard.style.display = "block";
-    v.style.display = "block";
-    rtcStatusSet("dev preview");
-  } else if (!rtcHasLiveTrack()) {
-    v.style.display = "none";
-    rtcCard.style.display = "none";
-  }
-
-  hudAutoDock();
-  rtcSyncDevToggleUi();
-}
-
-function rtcSetDevPreview(next) {
-  RTC_DEV_PREVIEW = Boolean(next && RTC_DEV_PREVIEW_ENABLED);
-  try {
-    if (RTC_DEV_PREVIEW) localStorage.setItem(RTC_DEV_PREVIEW_KEY, "1");
-    else localStorage.removeItem(RTC_DEV_PREVIEW_KEY);
-  } catch {}
-  rtcApplyDevPreview();
+  const video = document.getElementById("rtcVideo");
+  return Boolean(video && video.srcObject);
 }
 
 function rtcStatusSet(s) {
@@ -127,25 +300,47 @@ function rtcCancelRetry() {
 }
 
 async function rtcDisconnect() {
-  rtcCancelRetry(); // �߰�
+  rtcCancelRetry();
+  rtcDisarmTrackTimeout();
+  stopRtcPerfPolling();
   try { if (RTC_PC) RTC_PC.close(); } catch {}
   RTC_PC = null;
-  const v = document.getElementById("rtcVideo");
-  if (v) { v.srcObject = null; v.style.display = "none"; }
-  const rtcCard = document.getElementById("rtcCard");
-  rtcCard.style.display = "none";
-  rtcApplyDevPreview();
+  resetRtcPerfState();
 
-  // HUD auto dock handled by hudAutoDock()
-  //await carWsDisconnect();
+  const video = document.getElementById("rtcVideo");
+  if (video) {
+    video.srcObject = null;
+    video.style.display = "none";
+  }
 }
 
 function rtcScheduleRetry(ms = 2000) {
-  rtcCancelRetry(); // �׻� ���� ��´�
+  if (!shouldRunCarrotVisionRealtime()) return;
+  rtcCancelRetry();
+  const backoff = Math.min(ms * Math.pow(1.5, RTC_FAIL_COUNT), 30000);
+  RTC_FAIL_COUNT = Math.min(RTC_FAIL_COUNT + 1, 20);
   RTC_RETRY_T = setTimeout(async () => {
     RTC_RETRY_T = null;
+    if (!shouldRunCarrotVisionRealtime()) return;
     await rtcConnectOnce().catch(() => {});
+  }, backoff);
+}
+
+function rtcArmTrackTimeout(ms = 5000) {
+  if (RTC_WAIT_TRACK_T) clearTimeout(RTC_WAIT_TRACK_T);
+  RTC_WAIT_TRACK_T = setTimeout(async () => {
+    RTC_WAIT_TRACK_T = null;
+    rtcStatusSet("no track, retry...");
+    await rtcDisconnect();
+    rtcScheduleRetry(2000);
   }, ms);
+}
+
+function rtcDisarmTrackTimeout() {
+  if (RTC_WAIT_TRACK_T) {
+    clearTimeout(RTC_WAIT_TRACK_T);
+    RTC_WAIT_TRACK_T = null;
+  }
 }
 
 async function waitIceComplete(pc, timeoutMs = 8000) {
@@ -163,28 +358,14 @@ async function waitIceComplete(pc, timeoutMs = 8000) {
   });
 }
 
-let RTC_WAIT_TRACK_T = null;
-
-function rtcArmTrackTimeout(ms = 5000) {
-  if (RTC_WAIT_TRACK_T) clearTimeout(RTC_WAIT_TRACK_T);
-  RTC_WAIT_TRACK_T = setTimeout(async () => {
-    RTC_WAIT_TRACK_T = null;
-    rtcStatusSet("no track, retry...");
-    await rtcDisconnect();
-    rtcScheduleRetry(1000);
-  }, ms);
-}
-
-function rtcDisarmTrackTimeout() {
-  if (RTC_WAIT_TRACK_T) {
-    clearTimeout(RTC_WAIT_TRACK_T);
-    RTC_WAIT_TRACK_T = null;
-  }
-}
+let _rtcConnecting = false;
 
 async function rtcConnectOnce() {
+  if (!shouldRunCarrotVisionRealtime()) return;
+  if (_rtcConnecting) return;
   if (RTC_PC && (RTC_PC.connectionState === "connected" || RTC_PC.connectionState === "connecting")) return;
 
+  _rtcConnecting = true;
   try {
     await rtcDisconnect();
     rtcStatusSet("connecting...");
@@ -192,68 +373,62 @@ async function rtcConnectOnce() {
     const pc = new RTCPeerConnection({
       iceServers: [],
       sdpSemantics: "unified-plan",
-      iceCandidatePoolSize: 1
+      iceCandidatePoolSize: 1,
     });
     RTC_PC = pc;
+    startRtcPerfPolling(true);
 
-    const v = document.getElementById("rtcVideo");
-    if (v) { v.muted = true; v.playsInline = true; }
-
-    const dbg = (...a) => console.log("[RTC]", ...a);
+    const video = document.getElementById("rtcVideo");
+    if (video) {
+      video.muted = true;
+      video.playsInline = true;
+    }
 
     pc.addTransceiver("video", { direction: "recvonly" });
 
     pc.ontrack = async (ev) => {
-      const rtcCard = document.getElementById("rtcCard");
-      const v = document.getElementById("rtcVideo");
-      if (!v) return;
+      const videoEl = document.getElementById("rtcVideo");
+      if (!videoEl) return;
 
       let stream = ev.streams && ev.streams[0];
       if (!stream) {
         stream = new MediaStream([ev.track]);
       }
 
-      v.srcObject = stream;
-      v.classList.remove("rtcVideo--dev-preview");
-      const rtcWrap = document.getElementById("rtcWrap");
-      if (rtcWrap) rtcWrap.classList.remove("rtcWrap--dev-preview");
-      v.style.display = "block";
-      rtcCard.style.display = "block";
-      try { await v.play(); } catch(e) { console.log("[RTC] play() failed", e); }
+      videoEl.srcObject = stream;
+      videoEl.style.display = "block";
+      try { await videoEl.play(); } catch (e) { console.log("[RTC] play() failed", e); }
       rtcStatusSet("track: " + ev.track.kind);
       rtcDisarmTrackTimeout();
-
-      hudAutoDock();
-      carWsConnect();
+      RTC_FAIL_COUNT = 0;
+      collectRtcPerfStats().catch(() => {});
     };
 
     pc.onconnectionstatechange = () => {
-      const st = pc.connectionState;
-      dbg("connectionState:", st);
-      rtcStatusSet("conn: " + st);
-      if (st === "failed" || st === "disconnected" || st === "closed") {
+      const state = pc.connectionState;
+      rtcStatusSet("conn: " + state);
+      if (state === "connected") RTC_FAIL_COUNT = 0;
+      collectRtcPerfStats().catch(() => {});
+      if (state === "failed" || state === "disconnected" || state === "closed") {
         rtcDisconnect();
         rtcScheduleRetry(2000);
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      const st = pc.iceConnectionState;
-      dbg("iceConnectionState:", st);
-      rtcStatusSet("ice: " + st);
-      if (st === "failed" || st === "disconnected" || st === "closed") {
+      const state = pc.iceConnectionState;
+      rtcStatusSet("ice: " + state);
+      collectRtcPerfStats().catch(() => {});
+      if (state === "failed" || state === "disconnected" || state === "closed") {
         rtcDisconnect();
         rtcScheduleRetry(2000);
       }
     };
 
-    // offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
     await waitIceComplete(pc, 8000);
 
-    const url = "/stream";
     const body = {
       sdp: pc.localDescription.sdp,
       cameras: ["road"],
@@ -261,30 +436,29 @@ async function rtcConnectOnce() {
       bridge_services_out: [],
     };
 
-    const r = await fetch(url, {
+    const response = await fetch("/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      throw new Error("stream http " + r.status + " " + t);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error("stream http " + response.status + " " + text);
     }
 
-    const ans = await r.json();
-    if (!ans || !ans.sdp) throw new Error("bad answer");
+    const answer = await response.json();
+    if (!answer || !answer.sdp) throw new Error("bad answer");
 
-    await pc.setRemoteDescription({ type: ans.type || "answer", sdp: ans.sdp });
-
+    await pc.setRemoteDescription({ type: answer.type || "answer", sdp: answer.sdp });
     rtcStatusSet("connected (waiting track...)");
     rtcArmTrackTimeout(6000);
-
   } catch (e) {
     rtcStatusSet("error: " + e.message);
-    await rtcDisconnect();        //  ���� �� ������ ����
-    rtcScheduleRetry(2000);       //  ���⼭�� ������ ��õ�
-    throw e;
+    await rtcDisconnect();
+    rtcScheduleRetry(2000);
+  } finally {
+    _rtcConnecting = false;
   }
 }
 
@@ -292,7 +466,6 @@ async function waitServerReady(timeoutMs = 8000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
     try {
-      // ���� ����ִ����� Ȯ�� (������ API)
       const r = await fetch("/api/settings", { cache: "no-store" });
       if (r.ok) return true;
     } catch {}
@@ -301,135 +474,212 @@ async function waitServerReady(timeoutMs = 8000) {
   return false;
 }
 
+window.CARROT_VISION_ACTIVE = false;
+
+window.CarrotVisionStart = async function() {
+  if (window.CARROT_VISION_ACTIVE) return;
+  window.CARROT_VISION_ACTIVE = true;
+  emitCarrotVisionChange(true);
+  
+  const btn = document.getElementById("visionStartOverlay");
+  if (btn) btn.style.display = "none";
+  
+  rtcStatusSet("waiting server...");
+  await waitServerReady(8000);
+  syncCarrotRealtimeLifecycle(true);
+};
+
 function rtcInitAuto() {
-  (async () => {
-    rtcStatusSet("waiting server...");
-    await waitServerReady(8000);   // �����ص� ��� ����
-    await rtcConnectOnce().catch(() => {});
-  })();
+  const btn = document.getElementById("btnStartVision");
+  if (btn) btn.onclick = window.CarrotVisionStart;
+}
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) rtcConnectOnce().catch(() => {});
+const RAW_HUD_LOG_PREFIX = "[raw hud]";
+const RAW_HUD_MUX_LOG_PREFIX = "[raw hud mux]";
+const RAW_HUD_SERVICES = window.CarrotRawCapnp?.HUD_SERVICES || [];
+const RAW_HUD_WS = Object.create(null);
+const RAW_HUD_RETRY_T = Object.create(null);
+const RAW_HUD_STATE = Object.create(null);
+window.CarrotHudState = RAW_HUD_STATE;
+const RAW_HUD_OVERLAY_DIRTY_SERVICES = new Set(["carState", "controlsState"]);
+const RAW_OVERLAY_LOG_PREFIX = "[raw overlay]";
+const RAW_OVERLAY_MUX_LOG_PREFIX = "[raw overlay mux]";
+const RAW_OVERLAY_SERVICES = window.CarrotRawCapnp?.OVERLAY_SERVICES || [];
+const RAW_OVERLAY_WS = Object.create(null);
+const RAW_OVERLAY_RETRY_T = Object.create(null);
+const RAW_OVERLAY_STATE = Object.create(null);
+window.CarrotOverlayState = RAW_OVERLAY_STATE;
+const RAW_OVERLAY_HUD_ONLY_SERVICES = new Set(["roadCameraState", "liveDelay", "liveTorqueParameters", "liveParameters"]);
+const RAW_MULTIPLEX_MODE = "raw-capnp-multiplex-relay";
+const RAW_TEXT_DECODER = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
+let RAW_HUD_MUX_WS = null;
+let RAW_HUD_MUX_RETRY_T = null;
+let RAW_HUD_MUX_DISABLED = false;
+let RAW_OVERLAY_MUX_WS = null;
+let RAW_OVERLAY_MUX_RETRY_T = null;
+let RAW_OVERLAY_MUX_DISABLED = false;
+const RAW_DECODE_WORKER_URL = "/js/raw_capnp_worker.js";
+let RAW_DECODE_WORKER = null;
+let RAW_DECODE_WORKER_FAILED = false;
+let RAW_DECODE_REQ_ID = 0;
+const RAW_DECODE_PENDING = new Map();
+const RAW_DECODE_SEQ = {
+  hud: Object.create(null),
+  overlay: Object.create(null),
+};
+
+function rejectPendingRawDecodeRequests(message) {
+  for (const [requestId, pending] of RAW_DECODE_PENDING.entries()) {
+    RAW_DECODE_PENDING.delete(requestId);
+    pending.reject(new Error(message));
+  }
+}
+
+function handleRawDecodeWorkerMessage(event) {
+  const payload = event?.data || {};
+  const requestId = Number(payload.requestId);
+  const pending = RAW_DECODE_PENDING.get(requestId);
+  if (!pending) return;
+  RAW_DECODE_PENDING.delete(requestId);
+  if (!payload.ok) {
+    pending.reject(new Error(payload.error || "raw decode failed"));
+    return;
+  }
+  pending.resolve(payload.decoded);
+}
+
+function handleRawDecodeWorkerFailure(error) {
+  console.log("[raw decode] worker disabled", error);
+  RAW_DECODE_WORKER_FAILED = true;
+  if (RAW_DECODE_WORKER) {
+    try { RAW_DECODE_WORKER.terminate(); } catch {}
+    RAW_DECODE_WORKER = null;
+  }
+  rejectPendingRawDecodeRequests(error?.message || "raw decode worker failed");
+}
+
+function ensureRawDecodeWorker() {
+  if (RAW_DECODE_WORKER || RAW_DECODE_WORKER_FAILED || typeof Worker === "undefined") return RAW_DECODE_WORKER;
+  try {
+    const worker = new Worker(RAW_DECODE_WORKER_URL);
+    worker.onmessage = handleRawDecodeWorkerMessage;
+    worker.onerror = handleRawDecodeWorkerFailure;
+    worker.onmessageerror = handleRawDecodeWorkerFailure;
+    RAW_DECODE_WORKER = worker;
+  } catch (error) {
+    RAW_DECODE_WORKER_FAILED = true;
+    console.log("[raw decode] worker unavailable", error);
+  }
+  return RAW_DECODE_WORKER;
+}
+
+async function normalizeRawMessageBuffer(data) {
+  if (data instanceof ArrayBuffer) return data;
+  if (ArrayBuffer.isView(data)) {
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  }
+  if (data instanceof Blob) return data.arrayBuffer();
+  throw new Error(`unsupported raw payload: ${Object.prototype.toString.call(data)}`);
+}
+
+function decodeRawMessageSync(streamKind, service, buffer) {
+  if (streamKind === "hud") {
+    return window.CarrotRawCapnp?.decodeHudEvent?.(service, buffer);
+  }
+  if (streamKind === "overlay") {
+    return window.CarrotRawCapnp?.decodeOverlayEvent?.(service, buffer);
+  }
+  return null;
+}
+
+async function decodeRawMessage(streamKind, service, data) {
+  const buffer = await normalizeRawMessageBuffer(data);
+  const worker = ensureRawDecodeWorker();
+  if (!worker) {
+    return decodeRawMessageSync(streamKind, service, buffer);
+  }
+
+  return new Promise((resolve, reject) => {
+    const requestId = ++RAW_DECODE_REQ_ID;
+    RAW_DECODE_PENDING.set(requestId, { resolve, reject });
+    try {
+      worker.postMessage({ requestId, streamKind, service, buffer }, [buffer]);
+    } catch (error) {
+      RAW_DECODE_PENDING.delete(requestId);
+      reject(error);
+    }
   });
 }
-const btnRtcFs = document.getElementById("btnRtcFs");
-const rtcVideoEl = document.getElementById("rtcVideo");
-const rtcWrap = document.getElementById("rtcWrap");
-const btnRtcDevToggle = document.getElementById("btnRtcDevToggle");
 
-// ���� ����ó������ ȣ��ǵ���: ��ư Ŭ�� / ���� �� �̺�Ʈ������ ����
-async function rtcToggleFullscreen() {
-  const target = rtcWrap || rtcVideoEl;
+function nextRawDecodeSeq(streamKind, service) {
+  const bucket = RAW_DECODE_SEQ[streamKind];
+  const next = Number(bucket[service] || 0) + 1;
+  bucket[service] = next;
+  return next;
+}
 
-  // �̹� Ǯ��ũ���̸� ����
-  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  if (fsEl) {
-    if (document.exitFullscreen) await document.exitFullscreen().catch(()=>{});
-    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    return;
+function isLatestRawDecodeSeq(streamKind, service, seq) {
+  return RAW_DECODE_SEQ[streamKind]?.[service] === seq;
+}
+
+function buildRawMultiplexUrl(services) {
+  const wsProto = (location.protocol === "https:") ? "wss" : "ws";
+  const params = new URLSearchParams();
+  params.set("services", services.join(","));
+  return `${wsProto}://${location.host}/ws/raw_multiplex?${params.toString()}`;
+}
+
+async function parseRawMultiplexFrame(data) {
+  const buffer = await normalizeRawMessageBuffer(data);
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < 2) {
+    throw new Error("bad raw multiplex frame");
   }
-
-  // 1) ǥ�� Fullscreen API (��κ��� ũ��/�ȵ�/����ũž)
-  if (target.requestFullscreen) {
-    await target.requestFullscreen().catch(()=>{});
-    return;
+  const serviceNameLength = bytes[0];
+  const serviceNameEnd = 1 + serviceNameLength;
+  if (bytes.length <= serviceNameEnd) {
+    throw new Error("truncated raw multiplex frame");
   }
+  const service = RAW_TEXT_DECODER
+    ? RAW_TEXT_DECODER.decode(bytes.subarray(1, serviceNameEnd))
+    : String.fromCharCode(...bytes.subarray(1, serviceNameEnd));
+  return {
+    service,
+    payload: buffer.slice(serviceNameEnd),
+  };
+}
 
-  // 2) Safari (�Ϻδ� webkitRequestFullscreen)
-  if (target.webkitRequestFullscreen) {
-    target.webkitRequestFullscreen();
-    return;
-  }
-
-  // 3) iOS Safari: video ���� ��üȭ�� (���� �� ����)
-  //    (����: iOS�� inline ���/��å ������ �� ����� �� ������)
-  if (target.webkitEnterFullscreen) {
-    target.webkitEnterFullscreen();
-    return;
-  }
-
-  showAppToast(UI_STRINGS[LANG].fullscreen_not_supported || "Fullscreen not supported on this browser.", {
-    tone: "error",
+async function handleHudDecodedMessage(service, data) {
+  const seq = nextRawDecodeSeq("hud", service);
+  const decoded = await decodeRawMessage("hud", service, data);
+  if (!decoded) return;
+  if (!isLatestRawDecodeSeq("hud", service, seq)) return;
+  RAW_HUD_STATE[service] = decoded;
+  window.CarrotHudState = RAW_HUD_STATE;
+  _hudMarkDirty();
+  emitCarrotRenderRequest({
+    hudDirty: true,
+    overlayDirty: RAW_HUD_OVERLAY_DIRTY_SERVICES.has(service),
   });
 }
 
-// ��ư
-if (btnRtcFs) btnRtcFs.onclick = rtcToggleFullscreen;
-
-// ���� ��(���ϸ�)
-if (rtcVideoEl) {
-  rtcVideoEl.style.cursor = "pointer";
-  rtcVideoEl.addEventListener("click", rtcToggleFullscreen);
-}
-
-if (btnRtcDevToggle) {
-  btnRtcDevToggle.onclick = () => rtcSetDevPreview(!RTC_DEV_PREVIEW);
-}
-
-let CAR_WS = null;
-let CAR_WS_RETRY_T = null;
-
-function carWsScheduleReconnect(ms = 1000) {
-  if (CAR_WS_RETRY_T) return;
-  CAR_WS_RETRY_T = setTimeout(() => {
-    CAR_WS_RETRY_T = null;
-    carWsConnect();
-  }, ms);
-}
-
-// ===== Driving HUD docking (card <-> WebRTC overlay) =====
-function hudDock(mode /* "card"|"top"|"bl" */) {
-  const hudRoot = document.getElementById("hudRoot");
-  const card = document.getElementById("driveHudCard");
-  const host = document.getElementById("hudOverlayHost");
-  if (!hudRoot || !card || !host) return;
-
-  host.classList.remove("dock_top","dock_bl");
-  host.style.display = "none";
-
-  if (mode === "top" || mode === "bl") {
-    host.classList.add(mode === "bl" ? "dock_bl" : "dock_top");
-    host.style.display = "";
-    if (hudRoot.parentElement !== host) host.appendChild(hudRoot);
-    card.style.display = "none";
-  } else {
-    if (hudRoot.parentElement !== card) card.appendChild(hudRoot);
-    card.style.display = "";
-  }
-}
-
-function hudAutoDock() {
-  const rtcVideo = document.getElementById("rtcVideo");
-  const rtcCard = document.getElementById("rtcCard");
-  const host = document.getElementById("hudOverlayHost");
-  const rtcWrapEl = document.getElementById("rtcWrap");
-  if (!rtcVideo || !rtcCard || !host || !rtcWrapEl) return;
-
-  const videoVisible = rtcCard.style.display !== "none" && rtcVideo.style.display !== "none";
-  if (!videoVisible) { hudDock("card"); return; }
-
-  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  const fs = Boolean(
-    fsEl && (
-      fsEl === rtcWrapEl ||
-      fsEl === rtcVideo ||
-      (typeof fsEl.contains === "function" && (fsEl.contains(rtcVideo) || fsEl.contains(host)))
-    )
-  );
-  const landscape = window.innerWidth >= window.innerHeight;
-
-  if (fs && landscape) hudDock("bl");
-  else hudDock("top");
+async function handleOverlayDecodedMessage(service, data) {
+  const seq = nextRawDecodeSeq("overlay", service);
+  const decoded = await decodeRawMessage("overlay", service, data);
+  if (!decoded) return;
+  if (!isLatestRawDecodeSeq("overlay", service, seq)) return;
+  RAW_OVERLAY_STATE[service] = decoded;
+  window.CarrotOverlayState = RAW_OVERLAY_STATE;
+  emitCarrotRenderRequest({
+    hudDirty: true,
+    overlayDirty: !RAW_OVERLAY_HUD_ONLY_SERVICES.has(service),
+  });
 }
 
 function drivingHudUpdateFromCarPayload(j) {
-  if (!window.DrivingHud) {
-    console.log("[HUD] update none");
-    return;
-  }
+  if (!window.DrivingHud || !j) return;
 
   const vEgoKph = (typeof j.vEgo === "number" && isFinite(j.vEgo)) ? j.vEgo * 3.6 : null;
-
   const payload = {
     cpuTempC: j.cpuTempC,
     memPct: j.memPct,
@@ -447,49 +697,346 @@ function drivingHudUpdateFromCarPayload(j) {
     driveMode: j.driveMode,
     speedLimitKph: j.speedLimitKph,
     speedLimitOver: j.speedLimitOver,
+    speedLimitBlink: j.speedLimitBlink,
     apm: j.apm,
   };
 
+  const payloadSignature = [
+    typeof LANG === "string" ? LANG : "",
+    payload.cpuTempC ?? "-",
+    payload.memPct ?? "-",
+    payload.diskPct ?? "-",
+    payload.vEgoKph ?? "-",
+    payload.vSetKph ?? "-",
+    payload.temp?.source ?? "-",
+    payload.temp?.speed ?? "-",
+    payload.temp?.is_decel ? 1 : 0,
+    payload.redDot ?? "-",
+    payload.tlight ?? "-",
+    payload.tfGap ?? "-",
+    payload.tfBars ?? "-",
+    payload.gear ?? "-",
+    payload.gpsOk ?? "-",
+    payload.driveMode?.name ?? "-",
+    payload.driveMode?.kind ?? "-",
+    payload.speedLimitKph ?? "-",
+    payload.speedLimitOver ? 1 : 0,
+    payload.speedLimitBlink ? 1 : 0,
+    payload.apm ?? "-",
+  ].join("|");
+  if (payloadSignature === LAST_HUD_PAYLOAD_SIGNATURE) return;
+  LAST_HUD_PAYLOAD_SIGNATURE = payloadSignature;
   window.DrivingHud.update(payload);
 }
-function carWsConnect() {
-  // �̹� ��������� �н�
-  if (CAR_WS && (CAR_WS.readyState === WebSocket.OPEN || CAR_WS.readyState === WebSocket.CONNECTING)) return;
+
+function drivingHudUpdateFromRawState() {
+  const payload = window.CarrotRawCapnp?.deriveHudPayload?.(RAW_HUD_STATE);
+  if (!payload) return;
+  drivingHudUpdateFromCarPayload(payload);
+}
+
+let _hudRenderDirty = false;
+let _hudRafId = null;
+
+function _hudMarkDirty() {
+  _hudRenderDirty = true;
+  _hudScheduleRender();
+}
+
+function _hudScheduleRender() {
+  if (_hudRafId != null || !_hudRenderDirty) return;
+  if (!shouldRunCarrotHudRealtime()) return;
+  _hudRafId = requestAnimationFrame(() => {
+    _hudRafId = null;
+    if (!_hudRenderDirty || !shouldRunCarrotHudRealtime()) return;
+    _hudRenderDirty = false;
+    drivingHudUpdateFromRawState();
+  });
+}
+
+function _hudStopRenderLoop() {
+  if (_hudRafId != null) {
+    cancelAnimationFrame(_hudRafId);
+    _hudRafId = null;
+  }
+  _hudRenderDirty = false;
+}
+
+function rawHudScheduleReconnect(service, ms = 1000) {
+  if (!shouldRunCarrotHudRealtime()) return;
+  if (RAW_HUD_RETRY_T[service]) return;
+  RAW_HUD_RETRY_T[service] = setTimeout(() => {
+    RAW_HUD_RETRY_T[service] = null;
+    if (!shouldRunCarrotHudRealtime()) return;
+    rawHudConnectService(service);
+  }, ms);
+}
+
+function rawHudScheduleMultiplexReconnect(ms = 1000) {
+  if (!shouldRunCarrotHudRealtime() || RAW_HUD_MUX_DISABLED) return;
+  if (RAW_HUD_MUX_RETRY_T) return;
+  RAW_HUD_MUX_RETRY_T = setTimeout(() => {
+    RAW_HUD_MUX_RETRY_T = null;
+    if (!shouldRunCarrotHudRealtime() || RAW_HUD_MUX_DISABLED) return;
+    rawHudConnectMultiplex();
+  }, ms);
+}
+
+function rawHudConnectService(service) {
+  if (!shouldRunCarrotHudRealtime()) return;
+  const current = RAW_HUD_WS[service];
+  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
 
   const wsProto = (location.protocol === "https:") ? "wss" : "ws";
-  CAR_WS = new WebSocket(wsProto + "://" + location.host + "/ws/carstate");
+  const ws = new WebSocket(`${wsProto}://${location.host}/ws/raw/${service}`);
+  ws.binaryType = "arraybuffer";
+  RAW_HUD_WS[service] = ws;
 
-  CAR_WS.onopen = () => {
-    console.log("[CAR_WS] open");
+  ws.onopen = () => {
+    console.log(RAW_HUD_LOG_PREFIX, service, "open");
   };
 
-  CAR_WS.onmessage = (ev) => {
+  ws.onmessage = async (ev) => {
     try {
-      const j = JSON.parse(ev.data);
-      // console.log("[CAR_WS] msg keys:", Object.keys(j || {}));
-      // console.log("[CAR_WS] vEgo:", j?.vEgo, "type:", typeof j?.vEgo);
-      drivingHudUpdateFromCarPayload(j);
-      hudAutoDock();
+      if (typeof ev.data === "string") {
+        const hello = JSON.parse(ev.data);
+        console.log(RAW_HUD_LOG_PREFIX, service, "hello", hello);
+        return;
+      }
+      await handleHudDecodedMessage(service, ev.data);
     } catch (e) {
-      console.log("[CAR_WS] bad msg", e, ev.data);
+      console.log(RAW_HUD_LOG_PREFIX, service, "bad msg", e);
     }
   };
 
-  CAR_WS.onerror = (e) => {
-    console.log("[CAR_WS] error", e);
+  ws.onerror = (e) => {
+    console.log(RAW_HUD_LOG_PREFIX, service, "error", e);
   };
 
-  CAR_WS.onclose = () => {
-    console.log("[CAR_WS] close -> reconnect");
-    CAR_WS = null;
-    carWsScheduleReconnect(1000);
+  ws.onclose = () => {
+    console.log(RAW_HUD_LOG_PREFIX, service, "close -> reconnect");
+    RAW_HUD_WS[service] = null;
+    rawHudScheduleReconnect(service, 1000);
   };
 }
 
-async function carWsDisconnect() {
-  if (CAR_WS_RETRY_T) { clearTimeout(CAR_WS_RETRY_T); CAR_WS_RETRY_T = null; }
-  try { if (CAR_WS) CAR_WS.close(); } catch {}
-  CAR_WS = null;
+function rawHudConnectAllLegacy() {
+  for (const service of RAW_HUD_SERVICES) {
+    rawHudConnectService(service);
+  }
+  _hudMarkDirty();
+}
+
+function rawHudConnectMultiplex() {
+  if (!shouldRunCarrotHudRealtime() || RAW_HUD_MUX_DISABLED) return;
+  const current = RAW_HUD_MUX_WS;
+  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
+
+  let helloReceived = false;
+  const ws = new WebSocket(buildRawMultiplexUrl(RAW_HUD_SERVICES));
+  ws.binaryType = "arraybuffer";
+  RAW_HUD_MUX_WS = ws;
+
+  ws.onopen = () => {
+    console.log(RAW_HUD_MUX_LOG_PREFIX, "open");
+  };
+
+  ws.onmessage = async (ev) => {
+    try {
+      if (typeof ev.data === "string") {
+        const hello = JSON.parse(ev.data);
+        console.log(RAW_HUD_MUX_LOG_PREFIX, "hello", hello);
+        helloReceived = hello?.mode === RAW_MULTIPLEX_MODE;
+        return;
+      }
+      const frame = await parseRawMultiplexFrame(ev.data);
+      if (!RAW_HUD_SERVICES.includes(frame.service)) return;
+      await handleHudDecodedMessage(frame.service, frame.payload);
+    } catch (e) {
+      console.log(RAW_HUD_MUX_LOG_PREFIX, "bad msg", e);
+    }
+  };
+
+  ws.onerror = (e) => {
+    console.log(RAW_HUD_MUX_LOG_PREFIX, "error", e);
+  };
+
+  ws.onclose = () => {
+    console.log(RAW_HUD_MUX_LOG_PREFIX, "close");
+    RAW_HUD_MUX_WS = null;
+    if (!shouldRunCarrotHudRealtime()) return;
+    if (!helloReceived) {
+      RAW_HUD_MUX_DISABLED = true;
+      rawHudConnectAllLegacy();
+      return;
+    }
+    rawHudScheduleMultiplexReconnect(1000);
+  };
+}
+
+function rawHudConnectAll() {
+  if (!RAW_HUD_MUX_DISABLED) {
+    rawHudConnectMultiplex();
+    if (RAW_HUD_MUX_WS) {
+      _hudMarkDirty();
+      return;
+    }
+  }
+  rawHudConnectAllLegacy();
+}
+
+function rawOverlayScheduleReconnect(service, ms = 1000) {
+  if (!shouldRunCarrotVisionRealtime()) return;
+  if (RAW_OVERLAY_RETRY_T[service]) return;
+  RAW_OVERLAY_RETRY_T[service] = setTimeout(() => {
+    RAW_OVERLAY_RETRY_T[service] = null;
+    if (!shouldRunCarrotVisionRealtime()) return;
+    rawOverlayConnectService(service);
+  }, ms);
+}
+
+function rawOverlayScheduleMultiplexReconnect(ms = 1000) {
+  if (!shouldRunCarrotVisionRealtime() || RAW_OVERLAY_MUX_DISABLED) return;
+  if (RAW_OVERLAY_MUX_RETRY_T) return;
+  RAW_OVERLAY_MUX_RETRY_T = setTimeout(() => {
+    RAW_OVERLAY_MUX_RETRY_T = null;
+    if (!shouldRunCarrotVisionRealtime() || RAW_OVERLAY_MUX_DISABLED) return;
+    rawOverlayConnectMultiplex();
+  }, ms);
+}
+
+function rawOverlayConnectService(service) {
+  if (!shouldRunCarrotVisionRealtime()) return;
+  const current = RAW_OVERLAY_WS[service];
+  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
+
+  const wsProto = (location.protocol === "https:") ? "wss" : "ws";
+  const ws = new WebSocket(`${wsProto}://${location.host}/ws/raw/${service}`);
+  ws.binaryType = "arraybuffer";
+  RAW_OVERLAY_WS[service] = ws;
+
+  ws.onopen = () => {
+    console.log(RAW_OVERLAY_LOG_PREFIX, service, "open");
+  };
+
+  ws.onmessage = async (ev) => {
+    try {
+      if (typeof ev.data === "string") {
+        const hello = JSON.parse(ev.data);
+        console.log(RAW_OVERLAY_LOG_PREFIX, service, "hello", hello);
+        return;
+      }
+      await handleOverlayDecodedMessage(service, ev.data);
+    } catch (e) {
+      console.log(RAW_OVERLAY_LOG_PREFIX, service, "bad msg", e);
+    }
+  };
+
+  ws.onerror = (e) => {
+    console.log(RAW_OVERLAY_LOG_PREFIX, service, "error", e);
+  };
+
+  ws.onclose = () => {
+    console.log(RAW_OVERLAY_LOG_PREFIX, service, "close -> reconnect");
+    RAW_OVERLAY_WS[service] = null;
+    rawOverlayScheduleReconnect(service, 1000);
+  };
+}
+
+function rawOverlayConnectAllLegacy() {
+  for (const service of RAW_OVERLAY_SERVICES) {
+    rawOverlayConnectService(service);
+  }
+}
+
+function rawOverlayConnectMultiplex() {
+  if (!shouldRunCarrotVisionRealtime() || RAW_OVERLAY_MUX_DISABLED) return;
+  const current = RAW_OVERLAY_MUX_WS;
+  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
+
+  let helloReceived = false;
+  const ws = new WebSocket(buildRawMultiplexUrl(RAW_OVERLAY_SERVICES));
+  ws.binaryType = "arraybuffer";
+  RAW_OVERLAY_MUX_WS = ws;
+
+  ws.onopen = () => {
+    console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "open");
+  };
+
+  ws.onmessage = async (ev) => {
+    try {
+      if (typeof ev.data === "string") {
+        const hello = JSON.parse(ev.data);
+        console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "hello", hello);
+        helloReceived = hello?.mode === RAW_MULTIPLEX_MODE;
+        return;
+      }
+      const frame = await parseRawMultiplexFrame(ev.data);
+      if (!RAW_OVERLAY_SERVICES.includes(frame.service)) return;
+      await handleOverlayDecodedMessage(frame.service, frame.payload);
+    } catch (e) {
+      console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "bad msg", e);
+    }
+  };
+
+  ws.onerror = (e) => {
+    console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "error", e);
+  };
+
+  ws.onclose = () => {
+    console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "close");
+    RAW_OVERLAY_MUX_WS = null;
+    if (!shouldRunCarrotVisionRealtime()) return;
+    if (!helloReceived) {
+      RAW_OVERLAY_MUX_DISABLED = true;
+      rawOverlayConnectAllLegacy();
+      return;
+    }
+    rawOverlayScheduleMultiplexReconnect(1000);
+  };
+}
+
+function rawOverlayConnectAll() {
+  if (!RAW_OVERLAY_MUX_DISABLED) {
+    rawOverlayConnectMultiplex();
+    if (RAW_OVERLAY_MUX_WS) return;
+  }
+  rawOverlayConnectAllLegacy();
+}
+
+async function rawHudDisconnectAll() {
+  _hudStopRenderLoop();
+  if (RAW_HUD_MUX_RETRY_T) {
+    clearTimeout(RAW_HUD_MUX_RETRY_T);
+    RAW_HUD_MUX_RETRY_T = null;
+  }
+  try { if (RAW_HUD_MUX_WS) RAW_HUD_MUX_WS.close(); } catch {}
+  RAW_HUD_MUX_WS = null;
+  for (const service of RAW_HUD_SERVICES) {
+    if (RAW_HUD_RETRY_T[service]) {
+      clearTimeout(RAW_HUD_RETRY_T[service]);
+      RAW_HUD_RETRY_T[service] = null;
+    }
+    try { if (RAW_HUD_WS[service]) RAW_HUD_WS[service].close(); } catch {}
+    RAW_HUD_WS[service] = null;
+  }
+}
+
+async function rawOverlayDisconnectAll() {
+  if (RAW_OVERLAY_MUX_RETRY_T) {
+    clearTimeout(RAW_OVERLAY_MUX_RETRY_T);
+    RAW_OVERLAY_MUX_RETRY_T = null;
+  }
+  try { if (RAW_OVERLAY_MUX_WS) RAW_OVERLAY_MUX_WS.close(); } catch {}
+  RAW_OVERLAY_MUX_WS = null;
+  for (const service of RAW_OVERLAY_SERVICES) {
+    if (RAW_OVERLAY_RETRY_T[service]) {
+      clearTimeout(RAW_OVERLAY_RETRY_T[service]);
+      RAW_OVERLAY_RETRY_T[service] = null;
+    }
+    try { if (RAW_OVERLAY_WS[service]) RAW_OVERLAY_WS[service].close(); } catch {}
+    RAW_OVERLAY_WS[service] = null;
+  }
 }
 
 async function syncServerTimeOnConnect() {
@@ -518,34 +1065,73 @@ async function syncServerTimeOnConnect() {
 }
 
 function startAll() {
-  try {
-    RTC_DEV_PREVIEW = RTC_DEV_PREVIEW_ENABLED && localStorage.getItem(RTC_DEV_PREVIEW_KEY) === "1";
-  } catch {
-    RTC_DEV_PREVIEW = false;
-  }
-  rtcSyncDevToggleUi();
-  rtcApplyDevPreview();
-
   renderUIText();
-  showPage("home", false);
+  showPage("carrot", false);
   console.log("[time_sync] syncing server time on page load");
   syncServerTimeOnConnect().catch(() => {});
   rtcInitAuto();
-  updateQuickLink().catch(() => {});
+  ensureRawDecodeWorker();
 
   if (window.DrivingHud) {
     window.DrivingHud.init();
+    _hudMarkDirty();
+  }
+  syncCarrotRealtimeLifecycle(false);
+}
+
+let _carrotHudRealtimeActive = false;
+let _carrotVisionRealtimeActive = false;
+
+function syncCarrotRealtimeLifecycle(forceFetch = false) {
+  const nextHudActive = shouldRunCarrotHudRealtime();
+  const nextVisionActive = shouldRunCarrotVisionRealtime();
+
+  if (nextHudActive === _carrotHudRealtimeActive && nextVisionActive === _carrotVisionRealtimeActive && !forceFetch) {
+    if (nextVisionActive && !_rtcConnecting && !rtcHasLiveTrack()) {
+      rtcConnectOnce().catch(() => {});
+    }
+    if (nextHudActive) _hudScheduleRender();
+    return;
   }
 
-  // start car telemetry WS (10Hz)
-  carWsConnect();
+  _carrotHudRealtimeActive = nextHudActive;
+  _carrotVisionRealtimeActive = nextVisionActive;
 
-  // keep HUD dock state in sync
-  window.addEventListener("resize", hudAutoDock);
-  document.addEventListener("fullscreenchange", hudAutoDock);
-  document.addEventListener("webkitfullscreenchange", hudAutoDock);
-  setInterval(hudAutoDock, 800);
+  if (nextHudActive) {
+    console.log("[perf] carrot hud realtime -> active");
+    ensureRawDecodeWorker();
+    rawHudConnectAll();
+    startLiveRuntimeStateFetch(forceFetch, 100);
+    _hudMarkDirty();
+  } else {
+    console.log("[perf] carrot hud realtime -> idle");
+    _hudStopRenderLoop();
+    stopLiveRuntimeStateFetch();
+    rawHudDisconnectAll();
+  }
+
+  if (nextVisionActive) {
+    console.log("[perf] carrot vision realtime -> active");
+    ensureRawDecodeWorker();
+    rawOverlayConnectAll();
+    startRtcPerfPolling(true);
+    if (!_rtcConnecting && !rtcHasLiveTrack()) {
+      rtcCancelRetry();
+      RTC_FAIL_COUNT = 0;
+      rtcConnectOnce().catch(() => {});
+    }
+  } else {
+    console.log("[perf] carrot vision realtime -> idle");
+    stopRtcPerfPolling();
+    rawOverlayDisconnectAll();
+    rtcDisconnect().catch(() => {});
+  }
+
+  emitCarrotRenderRequest({ force: true, overlayDirty: true, hudDirty: true });
 }
+
+document.addEventListener("visibilitychange", () => syncCarrotRealtimeLifecycle(false));
+window.addEventListener("carrot:pagechange", () => syncCarrotRealtimeLifecycle(false));
 
 
 

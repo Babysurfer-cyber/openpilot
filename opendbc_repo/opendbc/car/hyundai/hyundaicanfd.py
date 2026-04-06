@@ -203,12 +203,12 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
       "LKA_MODE": 2,
       "LKA_ICON": 2 if enabled else 1,
       "TORQUE_REQUEST": apply_steer,
-      #"DampingGain": 3 if enabled else 100,
+      "DampingGain": 100, #3 if enabled else 100,
       "STEER_REQ": 1 if lat_active else 0,
       #"STEER_MODE": 0,
       "HAS_LANE_SAFETY": 0,  # hide LKAS settings
       "VALUE63": 0,
-      "VALUE64": 0,
+      "VALUE64": 100,
     }
 
   if CP.flags & HyundaiFlags.CANFD_HDA2:
@@ -674,7 +674,7 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
 
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          disp_angle, left_lane_warning, right_lane_warning,
-                         enable_corner_radar, stopping):
+                         enable_corner_radar, stopping, canfd_debug):
   ret = []
 
   md = CS.MD
@@ -698,7 +698,6 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
       if CS.cruise_buttons_msg is not None:
         values = copy.copy(CS.cruise_buttons_msg)
 
-        values["LFA_BTN"] = 0
         if  HDA_LFA_SymSta == 0 and 0 < frame % 200 < 12:
           values["LFA_BTN"] = 1
 
@@ -868,6 +867,10 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
 
         if (left_lane_warning and not CS.out.leftBlinker) or (right_lane_warning and not CS.out.rightBlinker):
           values["VIBRATE"] = 1
+
+        if canfd_debug > 0:
+          values["FAULT_LSS"] = 0
+          values["FAULT_DAS"] = 0
 
         ret.append(packer.make_can_msg("CCNC_0x162", CAN.ECAN, values))
 

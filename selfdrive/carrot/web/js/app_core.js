@@ -24,6 +24,12 @@ disableViewportZoomGestures();
 let SETTINGS = null;
 let CURRENT_GROUP = null;
 let LANG = "ko"; // "ko" | "en" | "zh"
+const LANG_STORAGE_KEY = "carrot_web_lang";
+const LANG_EMOJI = {
+  ko: "🇰🇷",
+  en: "🇺🇸",
+  zh: "🇨🇳",
+};
 
 const UI_STRINGS = {
   ko: {
@@ -32,6 +38,7 @@ const UI_STRINGS = {
     tools: "도구",
     terminal: "터미널",
     fleet: "Fleet",
+    carrot: "당근",
     lang: "언어",
     branch_select: "브랜치 선택",
     branch_current: "현재",
@@ -120,6 +127,7 @@ const UI_STRINGS = {
     tools: "Tools",
     terminal: "Terminal",
     fleet: "Fleet",
+    carrot: "Carrot",
     lang: "Lang",
     branch_select: "Branch Select",
     branch_current: "Current",
@@ -207,6 +215,7 @@ const UI_STRINGS = {
     tools: "工具",
     terminal: "终端",
     fleet: "车队",
+    carrot: "胡萝卜",
     lang: "语言",
     branch_select: "分支选择",
     branch_current: "当前",
@@ -444,13 +453,39 @@ const appBranchPickerList = document.getElementById("appBranchPickerList");
 const appBranchPickerClose = document.getElementById("appBranchPickerClose");
 const swipeContainer = document.getElementById("swipeContainer");
 const PAGE_ELEMENTS = {
-  home: document.getElementById("pageHome"),
   setting: document.getElementById("pageSetting"),
   car: document.getElementById("pageCar"),
   tools: document.getElementById("pageTools"),
   terminal: document.getElementById("pageTerminal"),
   branch: document.getElementById("pageBranch"),
+  carrot: document.getElementById("pageCarrot"),
 };
+
+function normalizeLangCode(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (value.startsWith("ko")) return "ko";
+  if (value.startsWith("zh")) return "zh";
+  if (value.startsWith("en")) return "en";
+  return "";
+}
+
+function detectDefaultLang() {
+  try {
+    const stored = normalizeLangCode(localStorage.getItem(LANG_STORAGE_KEY));
+    if (stored) return stored;
+  } catch {}
+
+  const browserLangs = Array.isArray(navigator.languages) && navigator.languages.length
+    ? navigator.languages
+    : [navigator.language, navigator.userLanguage];
+  for (const candidate of browserLangs) {
+    const normalized = normalizeLangCode(candidate);
+    if (normalized) return normalized;
+  }
+  return "ko";
+}
+
+LANG = detectDefaultLang();
 const PAGE_TRANSITION_CLASSES = [
   "page-transitioning",
   "page-active",
@@ -466,7 +501,7 @@ const SWIPE_VELOCITY_THRESHOLD = 0.45;
 const SWIPE_EDGE_RESISTANCE = 0.18;
 let pageTransitionTimer = null;
 let pageTransitionToken = 0;
-let CURRENT_PAGE = "home";
+let CURRENT_PAGE = "carrot";
 let appToastSerial = 0;
 let activeAppToast = null;
 let appToastHideTimer = null;
@@ -502,7 +537,7 @@ const modelList = document.getElementById("modelList");
 const modelTitle = document.getElementById("modelTitle");
 const modelMeta = document.getElementById("modelMeta");
 
-btnHome.onclick = () => showPage("home", true, getSwipeTransition(CURRENT_PAGE, "home"));
+btnHome.onclick = () => showPage("carrot", true, getSwipeTransition(CURRENT_PAGE, "carrot"));
 btnRecordToggle.onclick = () => toggleRecord();
 btnSetting.onclick = () => showPage("setting", true, getSwipeTransition(CURRENT_PAGE, "setting"));
 btnTerminal.onclick = () => showPage("terminal", true, getSwipeTransition(CURRENT_PAGE, "terminal"));
@@ -534,20 +569,12 @@ const branchMeta = document.getElementById("branchMeta");
 const branchList = document.getElementById("branchList");
 
 // Quick Link
-const quickLink = document.getElementById("quickLink");
-const chipServerLabel = document.getElementById("chipServerLabel");
-const chipStateText = document.getElementById("chipStateText");
-const chipDot = document.getElementById("chipDot");
-const btnToggleServerState = document.getElementById("btnToggleServerState");
-const utilityStatePane = document.getElementById("utilityStatePane");
-const chipQuickLabel = document.getElementById("chipQuickLabel");
-const btnSaveQuickLink = document.getElementById("btnSaveQuickLink");
+const quickLink = document.getElementById("toolsQuickLink");
+const chipQuickLabel = document.getElementById("toolsQuickLinkTitle");
+const btnSaveQuickLink = document.getElementById("btnToolsQuickLink");
 let QUICK_LINK_URL = "";
 let QUICK_LINK_STATUS = "loading";
 let QUICK_LINK_MESSAGE = "";
-let SERVER_STATE_SUMMARY = UI_STRINGS[LANG]?.connecting || "connecting...";
-let SERVER_STATE_DETAIL = UI_STRINGS[LANG]?.connecting || "connecting...";
-let SERVER_STATE_TONE = "idle";
 let quickLinkActionTimer = null;
 
 btnBackBranch.onclick = () => history.back();
@@ -776,8 +803,9 @@ function showPage(page, pushHistory = false, transition = null) {
   else setDisplayedPage(page);
 
   document.body.dataset.page = page;
+  window.dispatchEvent(new CustomEvent("carrot:pagechange", { detail: { page, prevPage } }));
 
-  btnHome.classList.toggle("active", page === "home");
+  btnHome.classList.toggle("active", page === "carrot");
   btnSetting.classList.toggle("active", page === "setting");
   btnTools.classList.toggle("active", page === "tools");
   btnTerminal.classList.toggle("active", page === "terminal");
@@ -792,38 +820,41 @@ function showPage(page, pushHistory = false, transition = null) {
     window.scrollTo(0, 0);
   }
 
-  if (page === "home") {
-    loadCurrentCar().catch(() => {});
-    loadRecordState().catch(() => {});
-    updateQuickLink().catch(() => {});
-  }
-
   if (page === "setting") {
     if (!SETTINGS) loadSettings();
     else if (typeof syncSettingViewportLayout === "function" && typeof isCompactLandscapeMode === "function" && isCompactLandscapeMode()) {
       syncSettingViewportLayout().catch(() => {});
     } else if (pushHistory || !CURRENT_GROUP) showSettingScreen("groups", false);
+    loadCurrentCar().catch(() => {});
   }
 
   if (page === "car") {
     showCarScreen("makers", false);
     if (!CARS) loadCars();
+    loadCurrentCar().catch(() => {});
   }
   if (page === "tools") {
     initToolsPage();
+    updateQuickLink().catch(() => {});
   }
   if (page === "terminal" && typeof initTerminalPage === "function") {
     initTerminalPage();
   }
+  if (page === "carrot" && window.HomeDrive && typeof window.HomeDrive.refresh === "function") {
+    window.HomeDrive.refresh();
+  }
+  if (page === "carrot") {
+    loadRecordState().catch(() => {});
+  }
 
   const state =
-    (page === "home") ? { page: "home" } :
     (page === "setting") ? { page: "setting", screen: "groups", group: null } :
     (page === "car") ? { page: "car", screen: "makers", maker: null } :
     (page === "tools") ? { page: "tools" } :
     (page === "terminal") ? { page: "terminal" } :
+    (page === "carrot") ? { page: "carrot" } :
     (page === "branch") ? { page: "branch" } :
-    { page: "home" };
+    { page: "carrot" };
 
   if (pushHistory) history.pushState(state, "");
   else history.replaceState(state, "");
@@ -902,6 +933,9 @@ function toggleLang() {
   if (LANG === "ko") LANG = "en";
   else if (LANG === "en") LANG = "zh";
   else LANG = "ko";
+  try {
+    localStorage.setItem(LANG_STORAGE_KEY, LANG);
+  } catch {}
 
   updateLangLabel();
 
@@ -925,6 +959,7 @@ function toggleLang() {
 function renderUIText() {
   const s = UI_STRINGS[LANG];
   if (!s) return;
+  document.title = s.home || "Home";
 
   // Nav bar (nested spans — set last child text)
   setNavText("btnHome", s.home);
@@ -933,9 +968,7 @@ function renderUIText() {
   setNavText("btnTerminal", s.terminal);
   setNavText("btnFleet", s.fleet);
 
-  // Home
-  setText("chipServerLabel", s.server_state);
-  setText("chipQuickLabel", s.quick_link);
+  setText("carrotTitle", s.home || "Home");
 
   // Car Select
   setText("carTitle", s.car_select);
@@ -954,6 +987,8 @@ function renderUIText() {
   setText("toolsTitle", s.tools);
   setText("gitCommandsTitle", s.git_commands);
   setText("userSystemTitle", s.user_system);
+  setText("toolsQuickLinkTitle", s.quick_link);
+  setText("btnToolsQuickLink", s.open);
   setText("userSettingsTitle", s.section_settings_backup);
   setText("btnReboot", s.reboot);
   setText("btnBackupSettings", s.backup);
@@ -989,7 +1024,9 @@ function renderUIText() {
   setText("appBranchPickerClose", s.close);
   updateLangLabel();
   syncHomeUtilityButtons();
-  renderServerStateUI();
+  if (window.DrivingHud && typeof window.DrivingHud.renderText === "function") {
+    window.DrivingHud.renderText();
+  }
   renderQuickLinkUI();
 }
 
@@ -1012,17 +1049,21 @@ function updateLangLabel() {
 
   const main = langLabel.querySelector(".lang-label__main");
   const sub = langLabel.querySelector(".lang-label__sub");
+  const emoji = LANG_EMOJI[LANG] || "🌐";
   if (main && sub) {
-    main.textContent = "lang";
-    sub.textContent = `(${LANG})`;
+    main.textContent = emoji;
+    sub.textContent = "";
+    sub.hidden = true;
   } else {
-    langLabel.textContent = `lang (${LANG})`;
+    langLabel.textContent = emoji;
   }
 
   if (btnLang) {
-    btnLang.setAttribute("aria-label", `lang (${LANG})`);
-    btnLang.title = `lang (${LANG})`;
+    const text = `${getUIText("lang", "lang")} (${LANG})`;
+    btnLang.setAttribute("aria-label", text);
+    btnLang.title = text;
   }
+  document.documentElement.lang = LANG;
 }
 
 function getUIText(key, fallback = "") {
@@ -1236,22 +1277,7 @@ document.addEventListener("keydown", (ev) => {
   }
 });
 
-function isUtilityPaneOpen(pane) {
-  return Boolean(pane) && !pane.hidden;
-}
-
-function syncUtilityToggle(btn, isOpen) {
-  if (!btn) return;
-  const label = isOpen ? getUIText("close", "Close") : getUIText("open", "Open");
-  btn.textContent = label;
-  btn.setAttribute("aria-label", label);
-  btn.title = label;
-  btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
-  btn.classList.toggle("is-open", isOpen);
-}
-
 function syncHomeUtilityButtons() {
-  syncUtilityToggle(btnToggleServerState, isUtilityPaneOpen(utilityStatePane));
   if (btnSaveQuickLink) {
     const label = getUIText("open", "Open");
     btnSaveQuickLink.textContent = label;
@@ -1268,19 +1294,6 @@ function flashQuickLinkActionLabel(label, duration = 1400) {
     quickLinkActionTimer = null;
     syncHomeUtilityButtons();
   }, duration);
-}
-
-function renderServerStateUI() {
-  if (chipStateText) chipStateText.textContent = SERVER_STATE_SUMMARY || getUIText("connecting", "Connecting...");
-  const detail = SERVER_STATE_DETAIL || SERVER_STATE_SUMMARY || "";
-  const box = document.getElementById("stateBox");
-  if (box) box.textContent = detail;
-
-  if (chipDot) {
-    chipDot.classList.remove("connected", "error");
-    if (SERVER_STATE_TONE === "connected") chipDot.classList.add("connected");
-    else if (SERVER_STATE_TONE === "error") chipDot.classList.add("error");
-  }
 }
 
 function renderQuickLinkUI() {
@@ -1314,12 +1327,7 @@ function renderQuickLinkUI() {
   }
 }
 
-function setServerStateStatus(summary, detail = summary, tone = "idle") {
-  SERVER_STATE_SUMMARY = String(summary || getUIText("connecting", "Connecting..."));
-  SERVER_STATE_DETAIL = String(detail || SERVER_STATE_SUMMARY);
-  SERVER_STATE_TONE = tone || "idle";
-  renderServerStateUI();
-}
+function setServerStateStatus() {}
 
 async function updateQuickLink() {
   QUICK_LINK_URL = "";
@@ -1348,13 +1356,6 @@ async function updateQuickLink() {
     renderQuickLinkUI();
     console.log("[QuickLink] failed:", e);
   }
-}
-
-if (btnToggleServerState) {
-  btnToggleServerState.onclick = () => {
-    if (utilityStatePane) utilityStatePane.hidden = !utilityStatePane.hidden;
-    syncHomeUtilityButtons();
-  };
 }
 
 async function openQuickLink() {
@@ -1410,7 +1411,7 @@ async function setParam(name, value) {
 }
 
 /* ── Swipe Navigation ──────────────────────────────────── */
-const SWIPE_PAGES = ["home", "setting", "tools", "terminal"];
+const SWIPE_PAGES = ["carrot", "setting", "tools", "terminal"];
 const SETTING_BACK_EDGE_WIDTH = 32;
 
 function isLandscapeRailMode() {
@@ -1786,5 +1787,4 @@ function cleanupSettingBackFrame() {
 })();
 
 syncHomeUtilityButtons();
-renderServerStateUI();
 renderQuickLinkUI();
