@@ -2368,22 +2368,41 @@ public:
         // (기존 왼쪽 신호등 표시 로직은 우측 기어박스 자리로 이동하기 위해 삭제됨)
 
         // draw speed
-
         char speed[32];
         // 1. 현재 속도 계산 (0 미만으로 내려가면 0으로 고정)
         float display_speed = s->scene.is_metric ? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH;
         if (display_speed < 0.0f) display_speed = 0.0f; // 후진이나 노이즈로 인한 마이너스 방지
         sprintf(speed, "%.0f", display_speed);
+        
         // 2. 화면 정중앙 상단 좌표 설정
         int center_x = s->fb_w / 2;
-        int top_y = 200; // 숫자의 기준 Y 좌표 (높이가 마음에 안 들면 이 숫자를 조절하세요)
-        // 3. 속도 숫자 그리기 (폰트크기 160)
-        ui_draw_text(s, center_x, top_y, speed, 160, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        int top_y = 200; // 숫자의 기준 Y 좌표
+        
+        // ▼▼▼ [추가] 과속카메라 앞 10% 이상 과속 시 속도 빨간색 깜빡임 ▼▼▼
+        NVGcolor speed_color = COLOR_WHITE; // 기본은 항상 흰색
+        
+        if (cam_detected && xSpdLimit > 0) {
+            // 미터법(km/h) / 야드파운드법(mph) 환경에 맞게 카메라 제한속도 변환
+            float limit_speed_converted = xSpdLimit * (s->scene.is_metric ? 1.0f : KM_TO_MILE);
+            
+            // 내 속도가 카메라 제한속도의 110%(10% 초과) 이상인가?
+            if (display_speed >= limit_speed_converted * 1.1f) {
+                // 이미 돌아가고 있는 blink_timer(0~15)를 활용해 절반은 빨간색, 절반은 연한 흰색으로!
+                if (blink_timer > 7) {
+                    speed_color = COLOR_RED;          // 눈에 확 띄는 빨간색!
+                } else {
+                    speed_color = COLOR_WHITE_ALPHA(50); // 깜빡임 효과를 위해 반투명하게 숨김
+                }
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        
+        // 3. 속도 숫자 그리기 (결정된 speed_color 적용)
+        ui_draw_text(s, center_x, top_y, speed, 160, speed_color, BOLD, 0.0f, 0.0f);
+        
         // 4. 속도 단위 (km/h 또는 mph) 추가 그리기
-        // 차량 설정이 미터법(km/h)인지 확인하여 자동으로 단위를 맞춰줍니다.
         const char* speed_unit = s->scene.is_metric ? "km/h" : "mph";
-        // 숫자(top_y)보다 45픽셀 아래에 40폰트 크기로 단위를 그립니다.
-        ui_draw_text(s, center_x, top_y + 45, speed_unit, 40, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+        ui_draw_text(s, center_x, top_y + 45, speed_unit, 40, speed_color, BOLD, 0.0f, 0.0f);
 
         // draw cruise speed
         char cruise_speed[32];
