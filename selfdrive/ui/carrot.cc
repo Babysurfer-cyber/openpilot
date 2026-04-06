@@ -2371,28 +2371,34 @@ public:
         char speed[32];
         // 1. 현재 속도 계산 (0 미만으로 내려가면 0으로 고정)
         float display_speed = s->scene.is_metric ? v_ego * MS_TO_KPH : v_ego * MS_TO_MPH;
-        if (display_speed < 0.0f) display_speed = 0.0f; // 후진이나 노이즈로 인한 마이너스 방지
-        sprintf(speed, "%.0f", display_speed);
+        if (display_speed < 0.0f) display_speed = 0.0f; 
+        
+        // 화면에 표시될 '정수' 속도값 (소수점 반올림)
+        int current_speed_int = (int)(display_speed + 0.5f);
+        sprintf(speed, "%d", current_speed_int);
         
         // 2. 화면 정중앙 상단 좌표 설정
         int center_x = s->fb_w / 2;
         int top_y = 200; // 숫자의 기준 Y 좌표
         
-        // ▼▼▼ [추가] 과속카메라 앞 10% 이상 과속 시 속도 빨간색 깜빡임 ▼▼▼
+        // ▼▼▼ [수정] 과속카메라 앞 제한속도 + 6km/h 이상(+5 초과) 시 속도 빨간색 깜빡임 ▼▼▼
         NVGcolor speed_color = COLOR_WHITE; // 기본은 항상 흰색
         
         if (cam_detected && xSpdLimit > 0) {
-            // 미터법(km/h) / 야드파운드법(mph) 환경에 맞게 카메라 제한속도 변환
+            // 카메라 제한 속도와 마진(5km/h)을 미터/야드법에 맞게 변환 후 정수로 반올림
             float limit_speed_converted = xSpdLimit * (s->scene.is_metric ? 1.0f : KM_TO_MILE);
+            float over_speed_margin = s->scene.is_metric ? 5.0f : 5.0f * KM_TO_MILE;
             
-            // 내 속도가 카메라 제한속도의 105%(5% 초과) 이상인가?
-            if (display_speed >= limit_speed_converted * 1.05f) {
-                // 이미 돌아가고 있는 blink_timer(0~15)를 활용해 절반은 빨간색, 절반은 연한 흰색으로!
+            int limit_int = (int)(limit_speed_converted + 0.5f);
+            int margin_int = (int)(over_speed_margin + 0.5f);
+            
+            // 🎯 화면에 보이는 숫자가 "제한속도 + 5"를 '초과'할 때 (즉, +6부터!)
+            if (current_speed_int > limit_int + margin_int) {
+                // '빨간색 ↔ 흰색'으로 교차 깜빡임
                 if (blink_timer > 7) {
-                    speed_color = COLOR_RED;          // 눈에 확 띄는 빨간색!
-                } else {
-                    speed_color = COLOR_WHITE_ALPHA(50); // 깜빡임 효과를 위해 반투명하게 숨김
+                    speed_color = COLOR_RED;   // 번쩍! (눈에 확 띄는 빨간색)
                 }
+                // (blink_timer <= 7 일 때는 위에서 설정한 COLOR_WHITE가 그대로 유지됨)
             }
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
