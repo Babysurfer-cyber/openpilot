@@ -2385,8 +2385,8 @@ public:
             // 미터법(km/h) / 야드파운드법(mph) 환경에 맞게 카메라 제한속도 변환
             float limit_speed_converted = xSpdLimit * (s->scene.is_metric ? 1.0f : KM_TO_MILE);
             
-            // 내 속도가 카메라 제한속도의 110%(10% 초과) 이상인가?
-            if (display_speed >= limit_speed_converted * 1.1f) {
+            // 내 속도가 카메라 제한속도의 105%(5% 초과) 이상인가?
+            if (display_speed >= limit_speed_converted * 1.05f) {
                 // 이미 돌아가고 있는 blink_timer(0~15)를 활용해 절반은 빨간색, 절반은 연한 흰색으로!
                 if (blink_timer > 7) {
                     speed_color = COLOR_RED;          // 눈에 확 띄는 빨간색!
