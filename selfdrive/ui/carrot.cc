@@ -2355,14 +2355,15 @@ public:
             bg_color = COLOR_RED_ALPHA(90);
         }
         
-        // 👇 좌측 하단 HUD 배경 그리기
-        ui_fill_rect(s->vg, { bx - 120, by - 90, 475, 315 }, bg_color, 30, 5, &stroke_color);
+        // 👇 좌측 하단 HUD 배경 그리기 (위 10px, 아래 20px 축소!)
+        ui_fill_rect(s->vg, { bx - 120, by - 80, 475, 285 }, bg_color, 30, 5, &stroke_color);
 
         // ▼▼▼ [수정] 크루즈 활성화(longActive) 중에만 'LOCK-ON' 문구 출력! ▼▼▼
         if (has_lead && longActive) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            ui_draw_text(s, bx + 117, by - 100, "LOCK-ON", 55, COLOR_GREEN, BOLD);
+            ui_draw_text(s, bx + 117, by - 90, "LOCK-ON", 55, COLOR_GREEN, BOLD); // ⬅️ by-100을 by-90으로!
         }
+
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         // (기존 왼쪽 신호등 표시 로직은 우측 기어박스 자리로 이동하기 위해 삭제됨)
