@@ -2381,7 +2381,7 @@ public:
         int center_x = s->fb_w / 2;
         int top_y = 200; // 숫자의 기준 Y 좌표
         
-        // ▼▼▼ [수정] 과속카메라 앞 제한속도 + 6km/h 이상(+5 초과) 시 속도 빨간색 깜빡임 ▼▼▼
+        // ▼▼▼ [수정] 과속카메라 앞 초과 속도에 따른 색상 변경 (깜빡임 제거) ▼▼▼
         NVGcolor speed_color = COLOR_WHITE; // 기본은 항상 흰색
         
         if (cam_detected && xSpdLimit > 0) {
@@ -2392,14 +2392,15 @@ public:
             int limit_int = (int)(limit_speed_converted + 0.5f);
             int margin_int = (int)(over_speed_margin + 0.5f);
             
-            // 🎯 화면에 보이는 숫자가 "제한속도 + 5"를 '초과'할 때 (즉, +6부터!)
+            // 🎯 1단계: 5km/h 초과 (즉, +6 이상) -> 빨간색 고정
             if (current_speed_int > limit_int + margin_int) {
-                // '빨간색 ↔ 흰색'으로 교차 깜빡임
-                if (blink_timer > 7) {
-                    speed_color = COLOR_RED;   // 번쩍! (눈에 확 띄는 빨간색)
-                }
-                // (blink_timer <= 7 일 때는 위에서 설정한 COLOR_WHITE가 그대로 유지됨)
+                speed_color = COLOR_RED;   
+            } 
+            // 🎯 2단계: 제한속도는 넘겼지만 5km/h 이하 초과 (+1 ~ +5) -> 주황색 고정
+            else if (current_speed_int > limit_int) {
+                speed_color = COLOR_ORANGE;
             }
+            // 그 이하(제한속도 준수)는 기본값인 COLOR_WHITE 유지
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
