@@ -2416,10 +2416,12 @@ public:
         int cruise_x = bx;       // 이동하신 x좌표
         int cruise_y = by + 50;  // 이동하신 y좌표   
 		ui_draw_image(s, { bx - 100, by - 60, 350, 150 }, "ic_speed_bg", 1.0f);
+        
         // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
         if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
         else sprintf(cruise_speed, "--");        
+        
         if (strcmp(cruise_speed_last, cruise_speed) != 0) {
             strcpy(cruise_speed_last, cruise_speed);
             if(strcmp(cruise_speed, "--") != 0) {
@@ -2433,8 +2435,22 @@ public:
             current_size += (cruise_pump_timer * 7.0f); // 타이머 * 6 만큼 커짐
             cruise_pump_timer--; // 매 프레임마다 줄어듦
         }
-        // 테두리와 그림자(0.0f) 없이, 계산된 current_size를 적용해 그리기
-        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, COLOR_WHITE, BOLD, 0.0f, 0.0f);
+
+        // ▼▼▼ [수정] 크루즈 상태에서 엑셀(가스) 밟을 때 깜빡임 로직 ▼▼▼
+        NVGcolor cruise_color = COLOR_WHITE; // 기본은 항상 흰색
+        bool gas_pressed = (*(s->sm))["carState"].getCarState().getGasPressed();
+        
+        // 크루즈가 켜져 있고(longActive) + 엑셀을 밟고 있을 때(gas_pressed)
+        if (longActive && gas_pressed) {
+            // 다른 UI에서 쓰는 blink_timer(0~15)를 똑같이 써서 완벽한 동기화!
+            if (blink_timer > 7) {
+                cruise_color = COLOR_WHITE_ALPHA(0); // 투명하게 숨겨서 깜빡임 효과!
+            }
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        // 테두리와 그림자(0.0f) 없이, 계산된 current_size와 cruise_color를 적용해 그리기
+        ui_draw_text(s, cruise_x, cruise_y, cruise_speed, current_size, cruise_color, BOLD, 0.0f, 0.0f);
 
         // draw apply speed
         NVGcolor textColor = COLOR_GREEN;
