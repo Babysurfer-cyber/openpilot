@@ -2671,6 +2671,16 @@ public:
             sprintf(str, "%.1fV", voltage);
             ui_draw_text(s, dx, dy, str, 60, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         }
+		 // ▼▼▼ 여기에 새 코드를 복사해서 붙여넣으세요 ▼▼▼
+        bool lat_active = (*(s->sm))["carControl"].getCarControl().getLatActive();
+        int steer_icon_size = 128;
+        int steer_icon_x = s->fb_w - 120 - (steer_icon_size / 2); 
+        int steer_icon_y = 60; 
+        
+        if (lat_active || longActive) {
+            ui_draw_image(s, { steer_icon_x, steer_icon_y, steer_icon_size, steer_icon_size }, "ic_lfa_engaged", 1.0f);
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     }
     void drawDateTime(const UIState* s) {
         char str[128];
