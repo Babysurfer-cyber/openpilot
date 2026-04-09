@@ -2675,7 +2675,7 @@ public:
         bool lat_active = (*(s->sm))["carControl"].getCarControl().getLatActive();
         int steer_icon_size = 128;
         int steer_icon_x = s->fb_w - 120 - (steer_icon_size / 2); 
-        int steer_icon_y = 60; 
+        int steer_icon_y = 30; 
         
         if (lat_active || longActive) {
             ui_draw_image(s, { steer_icon_x, steer_icon_y, steer_icon_size, steer_icon_size }, "ic_lfa_engaged", 1.0f);
