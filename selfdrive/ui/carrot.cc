@@ -2381,22 +2381,22 @@ public:
         int center_x = s->fb_w / 2;
         int top_y = 200; // 숫자의 기준 Y 좌표
         
-        // ▼▼▼ [수정] 과속카메라 앞 초과 속도에 따른 색상 변경 (깜빡임 제거) ▼▼▼
+        // ▼▼▼ [수정] 과속카메라 앞 제한속도 110% 기준 색상 변경 ▼▼▼
         NVGcolor speed_color = COLOR_WHITE; // 기본은 항상 흰색
         
         if (cam_detected && xSpdLimit > 0) {
-            // 카메라 제한 속도와 마진(5km/h)을 미터/야드법에 맞게 변환 후 정수로 반올림
+            // 카메라 제한 속도를 미터/야드법에 맞게 변환
             float limit_speed_converted = xSpdLimit * (s->scene.is_metric ? 1.0f : KM_TO_MILE);
-            float over_speed_margin = s->scene.is_metric ? 5.0f : 5.0f * KM_TO_MILE;
             
+            // 제한속도 정수값과 110% 정수값 계산 (반올림 처리)
             int limit_int = (int)(limit_speed_converted + 0.5f);
-            int margin_int = (int)(over_speed_margin + 0.5f);
+            int limit_110_int = (int)(limit_speed_converted * 1.1f + 0.5f);
             
-            // 🎯 1단계: 5km/h 초과 (즉, +6 이상) -> 빨간색 고정
-            if (current_speed_int > limit_int + margin_int) {
+            // 🎯 1단계: 110% 이상 -> 빨간색 고정
+            if (current_speed_int >= limit_110_int) {
                 speed_color = COLOR_RED;   
             } 
-            // 🎯 2단계: 제한속도는 넘겼지만 5km/h 이하 초과 (+1 ~ +5) -> 주황색 고정
+            // 🎯 2단계: 제한속도 초과 ~ 110% 미만 -> 주황색 고정
             else if (current_speed_int > limit_int) {
                 speed_color = COLOR_ORANGE;
             }
