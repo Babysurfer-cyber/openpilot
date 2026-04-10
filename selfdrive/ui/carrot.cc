@@ -2803,6 +2803,17 @@ public:
 
       int bx = s->fb_w - 125;
       int by = s->fb_h - 280 / 2 + 15;
+
+      // ▼▼▼ [추가] TPMS 중앙에 자동차 아이콘 그리기 ▼▼▼
+      int car_size = 128; 
+      
+      // bx, by를 중심으로 이미지가 오도록 좌표 계산
+      int car_x = bx - (car_size / 2);
+      int car_y = by - (car_size / 2) + 5; 
+      
+      ui_draw_image(s, { car_x, car_y, car_size, car_size }, "ic_car", 1.0f);
+      // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
       auto tpms = car_state.getTpms();
       float fl = tpms.getFl();
       float fr = tpms.getFr();
