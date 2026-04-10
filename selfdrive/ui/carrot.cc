@@ -3308,7 +3308,8 @@ void ui_nvg_init(UIState *s) {
   {"ic_apn", "../assets/images/img_apn.png"},
   {"ic_hda", "../assets/images/img_hda.png"},
   {"ic_navi_point", "../assets/images/navi_point.png"},
-  {"ic_lfa_engaged", "../assets/images/LFA_Engaged.png"}
+  {"ic_lfa_engaged", "../assets/images/LFA_Engaged.png"},
+  {"ic_car", "../assets/images/car.png"}
 
   };
   for (auto [name, file] : images) {
