@@ -416,7 +416,7 @@ class VCruiseCarrot:
 
     SPEED_UP_UNIT = self._cruise_speed_unit_basic
     SPEED_DOWN_UNIT = self._cruise_speed_unit if self._cruise_button_mode in [1, 2, 3] else self._cruise_speed_unit_basic
-    V_CRUISE_DELTA = 5  #크루즈버튼 롱클릭 변경 단위
+    V_CRUISE_DELTA = 30  #크루즈버튼 롱클릭 변경 단위
     is_metric = self.is_metric
 
     # long press tracking
