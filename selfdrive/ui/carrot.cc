@@ -2805,7 +2805,7 @@ public:
       int by = s->fb_h - 280 / 2 + 15;
 
       // ▼▼▼ [추가] TPMS 중앙에 자동차 아이콘 그리기 ▼▼▼
-      int car_size = 160; 
+      int car_size = 180; 
       
       // bx, by를 중심으로 이미지가 오도록 좌표 계산
       int car_x = bx - (car_size / 2);
