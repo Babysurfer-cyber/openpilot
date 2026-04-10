@@ -2796,20 +2796,13 @@ public:
         ui_draw_text(s, bx - dw, by + 70, get_tpms_text(rl), 40, get_tpms_color(rl), BOLD);
         ui_draw_text(s, bx + dw, by + 70, get_tpms_text(rr), 40, get_tpms_color(rr), BOLD);
     }
+    void drawTpms3(const UIState* s) {
+      nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+      SubMaster& sm = *(s->sm);
+      auto car_state = sm["carState"].getCarState();
+
       int bx = s->fb_w - 125;
       int by = s->fb_h - 280 / 2 + 15;
-
-      // ▼▼▼ [추가] TPMS 중앙에 자동차 아이콘 그리기 ▼▼▼
-      // 나중에 크기를 조절하려면 아래 128 숫자만 바꾸시면 됩니다!
-      int car_size = 128; 
-      
-      // bx, by를 중심으로 이미지가 오도록 좌표 계산 (Y축은 위아래 숫자들 정중앙에 오도록 +5 보정)
-      int car_x = bx - (car_size / 2);
-      int car_y = by - (car_size / 2) + 5; 
-      
-      ui_draw_image(s, { car_x, car_y, car_size, car_size }, "ic_car", 1.0f);
-      // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
       auto tpms = car_state.getTpms();
       float fl = tpms.getFl();
       float fr = tpms.getFr();
@@ -3309,7 +3302,7 @@ void ui_nvg_init(UIState *s) {
   {"ic_hda", "../assets/images/img_hda.png"},
   {"ic_navi_point", "../assets/images/navi_point.png"},
   {"ic_lfa_engaged", "../assets/images/LFA_Engaged.png"},
-  {"ic_car", "../assets/images/car.png"}
+  {"ic_car", "../assets/images/car.png"}, // 자동차 아이콘 등록
 
   };
   for (auto [name, file] : images) {
