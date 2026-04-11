@@ -161,7 +161,7 @@ class VCruiseCarrot:
     self.long_pressed = False
     self.button_cnt = 0
     self.button_prev = ButtonType.unknown
-    self.button_long_time = 40
+    self.button_long_time = 50
 
     self.is_metric = True
 
