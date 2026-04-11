@@ -462,20 +462,22 @@ class VCruiseCarrot:
       bt = self.button_prev
 
       if bt in [ButtonType.accelCruise, ButtonType.decelCruise]:
-        # ▼ [추가/수정] 길게 누른 시점(long_time + 1)에 딱 '한 번'만 속도를 조절하도록 제한!
+        # 최초 도달 시 속도 조절
         if self.button_cnt == self.button_long_time + 1:
-          # 복잡한 배수(mod) 계산을 모두 지우고 정직하게 30씩만 조절!
           if bt == ButtonType.accelCruise:
             button_kph += 30
           else:
             button_kph -= 30
           button_type = bt
-        # self.button_cnt %= self.button_long_time  <-- (반복 금지를 위해 삭제 또는 주석 처리)
+        
+        # 🎯 핵심: 작동 후 카운터를 리셋해서 40프레임(0.4초) 뒤에 다시 작동하게 만듦!
+        self.button_cnt %= self.button_long_time
+        
       else: 
         if self.button_cnt == self.button_long_time + 1:
           button_type = bt
 
-        #self.button_cnt %= self.button_long_time
+        self.button_cnt %= self.button_long_time
 
     return button_kph, button_type, self.long_pressed
 
