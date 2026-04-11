@@ -3325,6 +3325,7 @@ void ui_nvg_init(UIState *s) {
   {"ic_navi_point", "../assets/images/navi_point.png"},
   {"ic_lfa_engaged", "../assets/images/LFA_Engaged.png"},
   {"ic_car", "../assets/images/car.png"}, // 자동차 아이콘 등록
+  {"ic_speed_cam", "../assets/images/speed_cam.png"}, // 과속카메라 아이콘 등록
 
   };
   for (auto [name, file] : images) {
