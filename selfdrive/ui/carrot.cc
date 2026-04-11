@@ -2352,7 +2352,7 @@ public:
         
         // 2. 과속카메라 감지 시 빨간색 고정
         if (cam_detected) {
-            bg_color = COLOR_RED_ALPHA(90);
+            bg_color = COLOR_BLACK_ALPHA(90);
         }
         
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
