@@ -2358,6 +2358,26 @@ public:
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
 
+		// ▼▼▼ 여기에 새 코드를 복사해서 붙여넣으세요 ▼▼▼
+        // =======================================================
+        // 🆕 [추가] 과속카메라 감지 시 좌측 상단 아이콘 표시 로직
+        // =======================================================
+        if (cam_detected) {
+            // 1. 아이콘 크기 설정 (LOCK-ON 글씨 55보다 살짝 큰 70으로 추천!)
+            int cam_icon_size = 70; 
+
+            // 2. 정확한 대칭 좌표 계산 (LOCK-ON의 bx+117과 대칭되는 bx-117 기준)
+            // bx-117에서 아이콘 크기의 절반만큼 왼쪽으로 뺍니다.
+            int cam_icon_x = bx - 117 - (cam_icon_size / 2);
+            
+            // 3. Y축 좌표 설정 (LOCK-ON 글씨 Y축 'by-95'와 완벽하게 수평 동기화)
+            // 이미지는 중심점이 아닌 탑레프트 기준이라 글씨보다 쪼금 더 위(by-115)로 잡아야 눈에 수평으로 보입니다.
+            int cam_icon_y = by - 115; 
+            
+            // 4. 아이콘 그리기 (완전 불투명 1.0f)
+            ui_draw_image(s, { cam_icon_x, cam_icon_y, cam_icon_size, cam_icon_size }, "ic_speed_cam", 1.0f);
+        }
+		// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         // ▼▼▼ [수정] 크루즈 활성화(longActive) 중에만 'LOCK-ON' 문구 출력! ▼▼▼
         if (has_lead && longActive) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
