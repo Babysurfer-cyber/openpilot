@@ -2483,10 +2483,10 @@ public:
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
+        // ▼ [수정] 5번 모드: 바탕은 항상 파란색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
         case 5: 
             strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
-            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
+            mode_color = COLOR_BLUE_ALPHA(210);  // 배경은 무조건 녹색 고정!
             
             if (auto_blink_timer > 0) {
                 auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
