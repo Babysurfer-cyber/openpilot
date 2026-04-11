@@ -2368,11 +2368,11 @@ public:
 
             // 2. 정확한 대칭 좌표 계산 (LOCK-ON의 bx+117과 대칭되는 bx-117 기준)
             // bx-117에서 아이콘 크기의 절반만큼 왼쪽으로 뺍니다.
-            int cam_icon_x = bx - 90 - (cam_icon_size / 2);
+            int cam_icon_x = bx - 117 - (cam_icon_size / 2);
             
             // 3. Y축 좌표 설정 (LOCK-ON 글씨 Y축 'by-95'와 완벽하게 수평 동기화)
             // 이미지는 중심점이 아닌 탑레프트 기준이라 글씨보다 쪼금 더 위(by-115)로 잡아야 눈에 수평으로 보입니다.
-            int cam_icon_y = by - 140; 
+            int cam_icon_y = by - 115; 
             
             // 4. 아이콘 그리기 (완전 불투명 1.0f)
             ui_draw_image(s, { cam_icon_x, cam_icon_y, cam_icon_size, cam_icon_size }, "ic_speed_cam", 1.0f);
