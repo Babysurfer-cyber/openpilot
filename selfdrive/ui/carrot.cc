@@ -120,7 +120,7 @@ void ui_draw_line_vg(NVGcontext* vg, const QPolygonF& vd, NVGcolor* color, NVGpa
     nvgFill(vg);
     if (stroke > 0.0) {
         nvgStrokeColor(vg, strokeColor);
-        nvgStrokeWidth(vg, stroke);
+        nvgStrokeWidth(vg, stroīke);
         nvgStroke(vg);
     }
 }
@@ -2362,10 +2362,10 @@ public:
         // 🆕 [추가] 과속카메라 감지 시 좌측 상단 아이콘 표시 로직
         // =======================================================
         if (cam_detected) {
-            int cam_icon_size = 70; 
+            int cam_icon_size = 100; 
 
             // 🎯 가로(X) 위치: HUD 배경 박스의 왼쪽 시작점(bx - 120)에 왼쪽 면을 딱 맞춤
-            int cam_icon_x = bx - 120;
+            int cam_icon_x = bx - 100;
             
             // 🎯 세로(Y) 위치: HUD 배경 박스의 윗면(by - 85)에 아이콘의 '바닥'이 오도록!
             // 윗면(by - 85)에서 아이콘 크기(cam_icon_size)만큼 위(-)로 빼주면 바닥면이 딱 맞게 얹힙니다.
