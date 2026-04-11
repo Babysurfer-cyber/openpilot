@@ -464,11 +464,11 @@ class VCruiseCarrot:
       if bt in [ButtonType.accelCruise, ButtonType.decelCruise]:
         # ▼ [추가/수정] 길게 누른 시점(long_time + 1)에 딱 '한 번'만 속도를 조절하도록 제한!
         if self.button_cnt == self.button_long_time + 1:
-          mod = button_kph % V_CRUISE_DELTA
+          # 복잡한 배수(mod) 계산을 모두 지우고 정직하게 30씩만 조절!
           if bt == ButtonType.accelCruise:
-            button_kph += V_CRUISE_DELTA - mod
+            button_kph += 30
           else:
-            button_kph -= V_CRUISE_DELTA - (-mod % V_CRUISE_DELTA)
+            button_kph -= 30
           button_type = bt
         # self.button_cnt %= self.button_long_time  <-- (반복 금지를 위해 삭제 또는 주석 처리)
       else: 
