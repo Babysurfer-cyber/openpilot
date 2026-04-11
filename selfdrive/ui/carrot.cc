@@ -3129,9 +3129,19 @@ public:
         auto car_state = sm["carState"].getCarState();
         float a_ego = car_state.getAEgo();
 
-        a_ego_width = a_ego_width * 0.5 + (w * std::abs(a_ego) / 4.0) * 0.5;
-        ui_fill_rect(vg, { w/2 - (int)(a_ego_width / 2), h - 30, (int)a_ego_width, 30 }, (a_ego >= 0)? COLOR_YELLOW : COLOR_RED, 15);
+        // ▼▼▼ [수정 전 원래 코드 - 지워주세요] ▼▼▼
+        // a_ego_width = a_ego_width * 0.5 + (w * std::abs(a_ego) / 4.0) * 0.5;
+        // ui_fill_rect(vg, { w/2 - (int)(a_ego_width / 2), h - 30, (int)a_ego_width, 30 }, (a_ego >= 0)? COLOR_YELLOW : COLOR_RED, 15);
 
+        // ▼▼▼ [수정 후 새 코드] 감속(음수) 시에만 막대가 커지고, 빨간색 고정! ▼▼▼
+        float target_width = (a_ego < 0) ? (w * std::abs(a_ego) / 4.0f) : 0.0f;
+        a_ego_width = a_ego_width * 0.5f + target_width * 0.5f;
+
+        if (a_ego_width > 1.0f) {
+            ui_fill_rect(vg, { w/2 - (int)(a_ego_width / 2), h - 30, (int)a_ego_width, 30 }, COLOR_RED_ALPHA(190), 15);
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+		
         steering_angle_pos = steering_angle_pos * 0.5 + (w / 2. - w / 2. * car_state.getSteeringAngleDeg() / 90) * 0.5;
         int x_st = (int)steering_angle_pos - 50;
         int x_ed = (int)steering_angle_pos + 50;
