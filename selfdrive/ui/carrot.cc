@@ -2344,7 +2344,7 @@ public:
         bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
 
         // 🎯 [수정] 크루즈가 켜져 있고(longActive) + 앞차를 인식했을 때만 녹색 테두리!
-        NVGcolor stroke_color = (has_lead && longActive) ? COLOR_GREEN : COLOR_GREY;
+        NVGcolor stroke_color = (has_lead && longActive) ? COLOR_GREY : COLOR_GREY;
         NVGcolor bg_color;
         
         // 1. 기본 배경색 설정
