@@ -120,7 +120,7 @@ void ui_draw_line_vg(NVGcontext* vg, const QPolygonF& vd, NVGcolor* color, NVGpa
     nvgFill(vg);
     if (stroke > 0.0) {
         nvgStrokeColor(vg, strokeColor);
-        nvgStrokeWidth(vg, stroīke);
+        nvgStrokeWidth(vg, stroke);
         nvgStroke(vg);
     }
 }
