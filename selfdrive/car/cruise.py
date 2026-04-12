@@ -462,22 +462,21 @@ class VCruiseCarrot:
       bt = self.button_prev
 
       if bt in [ButtonType.accelCruise, ButtonType.decelCruise]:
-        # 최초 도달 시 속도 조절
+        # 🎯 최초 도달(long_time + 1) 시 딱 '한 번'만 속도를 조절합니다!
         if self.button_cnt == self.button_long_time + 1:
           if bt == ButtonType.accelCruise:
-            button_kph += 30
+            button_kph += 40
           else:
-            button_kph -= 30
+            button_kph -= 40
           button_type = bt
         
-        # 🎯 핵심: 작동 후 카운터를 리셋해서 40프레임(0.4초) 뒤에 다시 작동하게 만듦!
-        self.button_cnt %= self.button_long_time
+        # 🚨 (삭제) 연속 변경을 유발하던 self.button_cnt %= self.button_long_time 줄을 지웠습니다.
         
       else: 
         if self.button_cnt == self.button_long_time + 1:
           button_type = bt
 
-        self.button_cnt %= self.button_long_time
+        # 🚨 (삭제) 여기서도 self.button_cnt %= self.button_long_time 줄을 지웠습니다.
 
     return button_kph, button_type, self.long_pressed
 
