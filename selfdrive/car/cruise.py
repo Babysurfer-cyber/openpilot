@@ -465,9 +465,9 @@ class VCruiseCarrot:
         # 🎯 최초 도달(long_time + 1) 시 딱 '한 번'만 속도를 조절합니다!
         if self.button_cnt == self.button_long_time + 1:
           if bt == ButtonType.accelCruise:
-            button_kph += 40
+            button_kph += 30
           else:
-            button_kph -= 40
+            button_kph -= 30
           button_type = bt
         
         # 🚨 (삭제) 연속 변경을 유발하던 self.button_cnt %= self.button_long_time 줄을 지웠습니다.
