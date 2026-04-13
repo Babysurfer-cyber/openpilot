@@ -829,6 +829,11 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
       if CS.adrv_0x1ea is not None:
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
+        
+        # ▼ [추가] 선행차 인식 시 HDA_MODE2 값을 2로 설정 (크루즈 On/Off 무관)
+        if hud_control.leadVisible:
+          values["HDA_MODE2"] = 2
+
         # blinker hold
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
