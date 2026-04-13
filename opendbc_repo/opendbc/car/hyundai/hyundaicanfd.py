@@ -827,7 +827,6 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         ret.append(packer.make_can_msg("ADRV_0x200", CAN.ECAN, values, rx_counter = rx_counter))
 
       if CS.adrv_0x1ea is not None:
-      if CS.adrv_0x1ea is not None:
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
