@@ -334,7 +334,7 @@ class CarController(CarControllerBase):
         can_sends.extend(hyundaicanfd.create_lfahda_cluster(self.packer, CS, self.CAN, CC.longActive, CC.latActive))
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
-          
+
       # blinkers
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
         can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
@@ -602,8 +602,7 @@ class HyundaiJerk:
     self.carrot_cruise = 0
     if CS.out.carrotCruise > 0 and not CC.cruiseControl.override:
       if CS.softHoldActive == 0 and not stopping:
-        # 기존: if CS.out.vEgo > 10/3.6:
-        if CS.out.vEgo > 0:  # 0km/h로 수정!
+        if CS.out.vEgo > 10/3.6:
           if carrot_cruise_decel < 0:
             if (a_target > -0.1 or accel > -0.1):
               self.carrot_cruise = 1
@@ -639,4 +638,3 @@ class HyundaiJerk:
         self.jerk_l = min(max(1.0, -self.jerk * 4.0), jerk_max_l)
         self.cb_upper = np.clip(0.9 + accel * 0.2, 0, 1.2)
         self.cb_lower = np.clip(0.8 + accel * 0.2, 0, 1.2)
-
