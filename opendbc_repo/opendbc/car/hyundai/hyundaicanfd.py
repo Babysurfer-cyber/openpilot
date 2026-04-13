@@ -787,27 +787,9 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["LANELINE_CURVATURE"] = (min(abs(curvature), 15) + (-1 if curvature < 0 else 0)) if lat_active else 0
         values["LANELINE_CURVATURE_DIRECTION"] = 1 if curvature < 0 and lat_active else 0
 
-        lane_color = 6 if md is not None and md.meta.laneChangeAvailableLeft else 2
-        if lane_line_check >= 1:
-          lane_line_warn_left = CS.out.leftLaneLine % 10 not in (0, 5)   # 실선이면 주황
-        else:
-          lane_line_warn_left = CS.out.leftLaneLine >= 20                  # 노란색이면 주황
-        lane_color = 4 if lane_line_warn_left or CS.out.leftBlindspot else lane_color
-        if hud_control.leftLaneDepart:
-          values["LANELINE_LEFT"] = 4 if (frame // 50) % 2 == 0 else 1
-        else:
-          values["LANELINE_LEFT"] = lane_color if hud_control.leftLaneVisible else 0
-
-        lane_color = 6 if md is not None and md.meta.laneChangeAvailableRight else 2
-        if lane_line_check >= 1:
-          lane_line_warn_right = CS.out.rightLaneLine % 10 not in (0, 5)
-        else:
-          lane_line_warn_right = CS.out.rightLaneLine >= 20
-        lane_color = 4 if lane_line_warn_right or CS.out.rightBlindspot else lane_color
-        if hud_control.rightLaneDepart:
-          values["LANELINE_RIGHT"] = 4 if (frame // 50) % 2 == 0 else 1
-        else:
-          values["LANELINE_RIGHT"] = lane_color if hud_control.rightLaneVisible else 0
+        # 위험 경고 로직 전부 삭제, 보이면 무조건 2, 안 보이면 0
+        values["LANELINE_LEFT"] = 2 if hud_control.leftLaneVisible else 0
+        values["LANELINE_RIGHT"] = 2 if hud_control.rightLaneVisible else 0
 
         values["LCA_LEFT_ARROW"] = 2 if CS.out.leftBlinker else 0
         values["LCA_RIGHT_ARROW"] = 2 if CS.out.rightBlinker else 0
