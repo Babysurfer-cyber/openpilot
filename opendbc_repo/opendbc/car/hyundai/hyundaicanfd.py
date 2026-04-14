@@ -762,11 +762,16 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["LFA_ICON"] = 5 if hdp_active else 2 if lat_active else 1 if lat_enabled else 0
         
         # ==========================================================
-        # ▼ [수정] 기존 조향 연동 LKA_ICON 표시 로직 완전 삭제!
-        # 오직 앞차가 인식되었을 때만 2번, 아니면 0(꺼짐)으로 설정
+        # ▼ [수정] 앞차가 보이면 LKA 아이콘(4)과 양쪽 차선(2)이 켜짐!
         # ==========================================================
-        values["LKA_ICON"] = 2 if hud_control.leadVisible else 0
+        if hud_control.leadVisible:
+          lka_icon_val = 4  # 4: 초록색 차선 아이콘 (3은 회색)
+          laneline_val = 2  # 2: 흰색 차선 (6은 초록색)
+        else:
+          lka_icon_val = 0  # 0: 아예 끄기
+          laneline_val = 0  # 0: 차선 지우기
         
+        values["LKA_ICON"] = lka_icon_val
         values["FCA_ALT_ICON"] = 0
 
         if values["ALERTS_2"] in [1, 2, 5, 6, 10, 21, 22]:
@@ -778,7 +783,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           values["SOUNDS_2"] = 0
           values["SOUNDS_4"] = 0
 
-        if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 26, 7, 8, 9, 10]: # hide gap distance msg.(11,12,13,14)
+        if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 26, 7, 8, 9, 10]: # hide gap distance msg.
           values["ALERTS_3"] = 0
           values["SOUNDS_3"] = 0
 
@@ -788,14 +793,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         if values["ALERTS_5"] in [11] and CS.softHoldActive == 0:
           values["ALERTS_5"] = 0
 
-        # curvature 표시(0x161쪽 기존 로직 유지)
+        # curvature 표시 (기존 로직 유지)
         curvature = round(CS.out.steeringAngleDeg / 3)
         values["LANELINE_CURVATURE"] = (min(abs(curvature), 15) + (-1 if curvature < 0 else 0)) if lat_active else 0
         values["LANELINE_CURVATURE_DIRECTION"] = 1 if curvature < 0 and lat_active else 0
 
-        # 위험 경고 로직 전부 삭제, 보이면 무조건 2, 안 보이면 0
-        values["LANELINE_LEFT"] = 2 if hud_control.leadVisible else 0
-        values["LANELINE_RIGHT"] = 2 if hud_control.leadVisible else 0
+        # ▼ 양쪽 차선 동기화!
+        values["LANELINE_LEFT"] = laneline_val
+        values["LANELINE_RIGHT"] = laneline_val
 
         values["LCA_LEFT_ARROW"] = 2 if CS.out.leftBlinker else 0
         values["LCA_RIGHT_ARROW"] = 2 if CS.out.rightBlinker else 0
