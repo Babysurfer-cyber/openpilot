@@ -179,7 +179,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   if angle_control:
     values = {
       "LKA_MODE": 0,
-      "LKA_ICON": 2 if enabled else 1,
+      "LKA_ICON": 0,
       "TORQUE_REQUEST": 0,  # apply_steer,
       "VALUE63": 0, # LKA_ASSIST
       "STEER_REQ": 0,  # 1 if lat_active else 0,
@@ -201,7 +201,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   else:
     values = {
       "LKA_MODE": 2,
-      "LKA_ICON": 2 if enabled else 1,
+      "LKA_ICON": 0,
       "TORQUE_REQUEST": apply_steer,
       "DampingGain": 100, #3 if enabled else 100,
       "STEER_REQ": 1 if lat_active else 0,
