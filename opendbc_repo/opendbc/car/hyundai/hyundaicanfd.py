@@ -813,6 +813,12 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
+        # ==========================================================
+        if CS.out.laneChangeState == LaneChangeState.laneChangeStarting:
+          values['AUTOLANECHANGE_MSG'] = 11
+        else:
+          values['AUTOLANECHANGE_MSG'] = 0
+
         # blinker hold
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
