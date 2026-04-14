@@ -1,4 +1,3 @@
-
 import copy
 import numpy as np
 from opendbc.car import CanBusBase
@@ -142,7 +141,7 @@ def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, 
       rx_counter = values.pop("COUNTER", None)
       if not emergency_steering:
         values["LKA_MODE"] = 0
-        #values["LKA_ICON"] = 2 if CC.latActive else 1
+        values["LKA_ICON"] = 2 if CC.latActive else 1
         values["TORQUE_REQUEST"] = -1024  # apply_steer,
         values["VALUE63"] = 0 # LKA_ASSIST
         values["STEER_REQ"] = 0  # 1 if lat_active else 0,
@@ -158,7 +157,7 @@ def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, 
   else:
     values = {}
     values["LKA_MODE"] = 2
-    #values["LKA_ICON"] = 2 if lat_active else 1
+    values["LKA_ICON"] = 2 if lat_active else 1
     values["TORQUE_REQUEST"] = apply_steer
     values["STEER_REQ"] = 1 if lat_active else 0
     values["VALUE64"] = 0  # STEER_MODE, NEW_SIGNAL_2
@@ -180,7 +179,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   if angle_control:
     values = {
       "LKA_MODE": 0,
-      #"LKA_ICON": 2 if enabled else 1,
+      "LKA_ICON": 2 if enabled else 1,
       "TORQUE_REQUEST": 0,  # apply_steer,
       "VALUE63": 0, # LKA_ASSIST
       "STEER_REQ": 0,  # 1 if lat_active else 0,
@@ -202,7 +201,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   else:
     values = {
       "LKA_MODE": 2,
-      #"LKA_ICON": 2 if enabled else 1,
+      "LKA_ICON": 2 if enabled else 1,
       "TORQUE_REQUEST": apply_steer,
       "DampingGain": 100, #3 if enabled else 100,
       "STEER_REQ": 1 if lat_active else 0,
@@ -761,18 +760,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["NAV_ICON"] = 2 if nav_active else 0
         values["HDA_ICON"] = 5 if hdp_active else 2 if cruise_enabled else 1 if main_enabled else 0
         values["LFA_ICON"] = 5 if hdp_active else 2 if lat_active else 1 if lat_enabled else 0
-        
-        # ==========================================================
-        # ▼ [수정] 앞차가 보이면 LKA 아이콘(4)과 양쪽 차선(2)이 켜짐!
-        # ==========================================================
-        if hud_control.leadVisible:
-          lka_icon_val = 4  # 4: 초록색 차선 아이콘 (3은 회색)
-          laneline_val = 2  # 2: 흰색 차선 (6은 초록색)
-        else:
-          lka_icon_val = 0  # 0: 아예 끄기
-          laneline_val = 0  # 0: 차선 지우기
-        
-        values["LKA_ICON"] = lka_icon_val
+        values["LKA_ICON"] = 4 if lat_active else 3 if lat_enabled else 0
         values["FCA_ALT_ICON"] = 0
 
         if values["ALERTS_2"] in [1, 2, 5, 6, 10, 21, 22]:
@@ -784,7 +772,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           values["SOUNDS_2"] = 0
           values["SOUNDS_4"] = 0
 
-        if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 26, 7, 8, 9, 10]: # hide gap distance msg.
+        if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 26, 7, 8, 9, 10]: # hide gap distance msg.(11,12,13,14)
           values["ALERTS_3"] = 0
           values["SOUNDS_3"] = 0
 
@@ -794,14 +782,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         if values["ALERTS_5"] in [11] and CS.softHoldActive == 0:
           values["ALERTS_5"] = 0
 
-        # curvature 표시 (기존 로직 유지)
+        # curvature 표시(0x161쪽 기존 로직 유지)
         curvature = round(CS.out.steeringAngleDeg / 3)
         values["LANELINE_CURVATURE"] = (min(abs(curvature), 15) + (-1 if curvature < 0 else 0)) if lat_active else 0
         values["LANELINE_CURVATURE_DIRECTION"] = 1 if curvature < 0 and lat_active else 0
 
-        # ▼ 양쪽 차선 동기화!
-        values["LANELINE_LEFT"] = laneline_val
-        values["LANELINE_RIGHT"] = laneline_val
+        # 위험 경고 로직 전부 삭제, 보이면 무조건 2, 안 보이면 0
+        values["LANELINE_LEFT"] = 2 if hud_control.leftLaneVisible else 0
+        values["LANELINE_RIGHT"] = 2 if hud_control.rightLaneVisible else 0
 
         values["LCA_LEFT_ARROW"] = 2 if CS.out.leftBlinker else 0
         values["LCA_RIGHT_ARROW"] = 2 if CS.out.rightBlinker else 0
@@ -824,6 +812,12 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
+        # ▼ [수정] 평상시에는 HDA_MODE2 = 2, 전방 차량 인식 시 1로 설정
+        if hud_control.leadVisible:
+          values["HDA_MODE2"] = 1
+        else:
+          values["HDA_MODE2"] = 2
+
         # blinker hold
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
