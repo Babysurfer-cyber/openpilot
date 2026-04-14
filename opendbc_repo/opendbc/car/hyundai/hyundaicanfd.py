@@ -788,8 +788,9 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["LANELINE_CURVATURE_DIRECTION"] = 1 if curvature < 0 and lat_active else 0
 
         # 위험 경고 로직 전부 삭제, 보이면 무조건 2, 안 보이면 0
-        values["LANELINE_LEFT"] = 1 if hud_control.leadVisible else 0
-        values["LANELINE_RIGHT"] = 5 if hud_control.leadVisible else 0
+        # 아래코드 작동 안함, 차선색 표현에 한계가 있는듯
+        #values["LANELINE_LEFT"] = 2 if hud_control.leadVisible else 0
+        #values["LANELINE_RIGHT"] = 2 if hud_control.leadVisible else 0
 
         values["LCA_LEFT_ARROW"] = 2 if CS.out.leftBlinker else 0
         values["LCA_RIGHT_ARROW"] = 2 if CS.out.rightBlinker else 0
