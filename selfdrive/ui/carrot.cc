@@ -2376,9 +2376,9 @@ public:
         }
 		// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         // ▼▼▼ [수정] 크루즈 활성화(longActive) 중에만 'LOCK-ON' 문구 출력! ▼▼▼
-        //if (has_lead && longActive) {
-            //nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            //ui_draw_text(s, bx + 117, by - 95, "LOCK-ON", 55, COLOR_GREEN, BOLD); // ⬅️ by-95로 살짝 올림!
+        if (has_lead && longActive) {
+            nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            ui_draw_text(s, bx + 117, by - 95, "", 55, COLOR_GREEN, BOLD); // ⬅️ by-95로 살짝 올림!
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
