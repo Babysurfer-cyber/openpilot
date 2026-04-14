@@ -317,7 +317,7 @@ def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
     if values["ALERTS_1"] == 0:
       values["SOUNDS_1"] = 0
       values["SOUNDS_2"] = 0
-      values["SOUNDS_4"] = 1 #차선변경 알림음
+      values["SOUNDS_4"] = 0
 
     if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 26, 7, 8, 9, 10]:
       values["ALERTS_3"] = 0
