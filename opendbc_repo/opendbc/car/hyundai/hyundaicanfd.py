@@ -141,7 +141,7 @@ def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, 
       rx_counter = values.pop("COUNTER", None)
       if not emergency_steering:
         values["LKA_MODE"] = 0
-        values["LKA_ICON"] = 2 if CC.latActive else 1
+        #values["LKA_ICON"] = 2 if CC.latActive else 1
         values["TORQUE_REQUEST"] = -1024  # apply_steer,
         values["VALUE63"] = 0 # LKA_ASSIST
         values["STEER_REQ"] = 0  # 1 if lat_active else 0,
@@ -157,7 +157,7 @@ def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, 
   else:
     values = {}
     values["LKA_MODE"] = 2
-    values["LKA_ICON"] = 2 if lat_active else 1
+    #values["LKA_ICON"] = 2 if lat_active else 1
     values["TORQUE_REQUEST"] = apply_steer
     values["STEER_REQ"] = 1 if lat_active else 0
     values["VALUE64"] = 0  # STEER_MODE, NEW_SIGNAL_2
@@ -179,7 +179,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   if angle_control:
     values = {
       "LKA_MODE": 0,
-      "LKA_ICON": 2 if enabled else 1,
+      #"LKA_ICON": 2 if enabled else 1,
       "TORQUE_REQUEST": 0,  # apply_steer,
       "VALUE63": 0, # LKA_ASSIST
       "STEER_REQ": 0,  # 1 if lat_active else 0,
@@ -201,7 +201,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   else:
     values = {
       "LKA_MODE": 2,
-      "LKA_ICON": 2 if enabled else 1,
+      #"LKA_ICON": 2 if enabled else 1,
       "TORQUE_REQUEST": apply_steer,
       "DampingGain": 100, #3 if enabled else 100,
       "STEER_REQ": 1 if lat_active else 0,
