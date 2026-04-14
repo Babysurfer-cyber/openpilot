@@ -760,7 +760,13 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["NAV_ICON"] = 2 if nav_active else 0
         values["HDA_ICON"] = 5 if hdp_active else 2 if cruise_enabled else 1 if main_enabled else 0
         values["LFA_ICON"] = 5 if hdp_active else 2 if lat_active else 1 if lat_enabled else 0
-        values["LKA_ICON"] = 4 if lat_active else 3 if lat_enabled else 0
+        
+        # ==========================================================
+        # ▼ [수정] 기존 조향 연동 LKA_ICON 표시 로직 완전 삭제!
+        # 오직 앞차가 인식되었을 때만 2번, 아니면 0(꺼짐)으로 설정
+        # ==========================================================
+        values["LKA_ICON"] = 2 if hud_control.leadVisible else 0
+        
         values["FCA_ALT_ICON"] = 0
 
         if values["ALERTS_2"] in [1, 2, 5, 6, 10, 21, 22]:
