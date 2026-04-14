@@ -1,3 +1,4 @@
+
 import copy
 import numpy as np
 from opendbc.car import CanBusBase
@@ -823,12 +824,6 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
-        # ▼ [수정] 평상시에는 HDA_MODE2 = 2, 전방 차량 인식 시 1로 설정
-        if hud_control.leadVisible:
-          values["HDA_MODE2"] = 1
-        else:
-          values["HDA_MODE2"] = 2
-
         # blinker hold
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
