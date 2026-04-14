@@ -142,6 +142,8 @@ def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, 
       if not emergency_steering:
         values["LKA_MODE"] = 0
         values["LKA_ICON"] = 2 if CC.hudControl.leadVisible else 0
+        values["LANELINE_LEFT"] = 2 if CC.hudControl.leadVisible else 0
+        values["LANELINE_RIGHT"] = 2 if CC.hudControl.leadVisible else 0
         values["TORQUE_REQUEST"] = -1024  # apply_steer,
         values["VALUE63"] = 0 # LKA_ASSIST
         values["STEER_REQ"] = 0  # 1 if lat_active else 0,
@@ -158,6 +160,8 @@ def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, 
     values = {}
     values["LKA_MODE"] = 2
     values["LKA_ICON"] = 2 if CC.hudControl.leadVisible else 0
+    values["LANELINE_LEFT"] = 2 if CC.hudControl.leadVisible else 0
+    values["LANELINE_RIGHT"] = 2 if CC.hudControl.leadVisible else 0
     values["TORQUE_REQUEST"] = apply_steer
     values["STEER_REQ"] = 1 if lat_active else 0
     values["VALUE64"] = 0  # STEER_MODE, NEW_SIGNAL_2
