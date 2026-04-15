@@ -813,6 +813,21 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
+        # ==========================================================
+        # ▼ [순정 내비게이션 연동] 과속카메라 앞 1번 메시지 표출 (초심플 버전!)
+        # ==========================================================
+        alc_msg = 0
+        
+        # 1. carstate.py에서 파싱한 순정 내비 카메라 정보 가져오기
+        oem_cam_speed = CS.out.speedLimit           # 순정 카메라 제한속도
+        oem_cam_dist = CS.out.speedLimitDistance    # 카메라 계산 거리
+        
+        # 2. 유저님 아이디어 적용: 거리가 0보다 클 때(구간 활성화) 무조건 1번 표출!
+        if oem_cam_speed > 0 and oem_cam_dist > 0:
+            alc_msg = 1
+            
+        values['AUTOLANECHANGE_MSG'] = alc_msg
+
         # blinker hold
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
