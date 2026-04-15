@@ -813,23 +813,24 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
-        # 차선변경 불가시 10번 메시지 띄우게 해봄 ==========================================================
+        # ==========================================================
+        # ▼ [가장 단순하고 완벽한 순정 로직] 
+        # 핸들을 밀었는데도 상태가 preLaneChange(대기)에 갇혀있으면 = 모델 거부 상태!
+        # ==========================================================
         alc_msg = 0
-        
-        # 1. 속도 변환 및 운전자 핸들 조작(토크) 감지
         v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
+        
+        # 1. 운전자 핸들 조작(토크) 감지
         nudge_left = CS.out.leftBlinker and CS.out.steeringPressed and CS.out.steeringTorque > 0
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         
-        # 2. 모델이 실제로 차선 변경을 수행 중인지 여부 (3: 좌측, 4: 우측 차선 변경)
-        is_changing_lane = lane_changing in [3, 4]
-        
-        # 3. 속도 30 이상 + 모델이 아직 차선을 안 넘음(대기/거부) + 사각지대 차 없음 + 핸들 밀었음!
-        if v_ego_kph >= 30.0 and not is_changing_lane:
-          if nudge_left and not CS.out.leftBlindspot:
-            alc_msg = 10
-          elif nudge_right and not CS.out.rightBlindspot:
-            alc_msg = 10
+        # 2. 순정 상태값 활용 (속도 30 이상 + 현재 상태가 '대기/거부' 상태일 때)
+        if CS.out.laneChangeState == LaneChangeState.preLaneChange and v_ego_kph >= 30.0:
+            # 3. 핸들을 밀었는데 + 사각지대에 차가 없음(빨간벽 아님) -> 즉, "모델"이 막고 있는 상황!
+            if nudge_left and not CS.out.leftBlindspot:
+                alc_msg = 10
+            elif nudge_right and not CS.out.rightBlindspot:
+                alc_msg = 10
             
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
