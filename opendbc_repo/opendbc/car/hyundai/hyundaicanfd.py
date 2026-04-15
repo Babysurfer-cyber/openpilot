@@ -810,9 +810,30 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         ret.append(packer.make_can_msg("ADRV_0x200", CAN.ECAN, values, rx_counter = rx_counter))
 
       if CS.adrv_0x1ea is not None:
+      if CS.adrv_0x1ea is not None:
         values = copy.copy(CS.adrv_0x1ea)
         rx_counter = values.pop("COUNTER", None)
         
+        # 차선변경 불가시 10번 메시지 띄우게 해봄 ==========================================================
+        alc_msg = 0
+        
+        # 1. 속도 변환 및 운전자 핸들 조작(토크) 감지
+        v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
+        nudge_left = CS.out.leftBlinker and CS.out.steeringPressed and CS.out.steeringTorque > 0
+        nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
+        
+        # 2. 모델이 실제로 차선 변경을 수행 중인지 여부 (3: 좌측, 4: 우측 차선 변경)
+        is_changing_lane = lane_changing in [3, 4]
+        
+        # 3. 속도 30 이상 + 모델이 아직 차선을 안 넘음(대기/거부) + 사각지대 차 없음 + 핸들 밀었음!
+        if v_ego_kph >= 30.0 and not is_changing_lane:
+          if nudge_left and not CS.out.leftBlindspot:
+            alc_msg = 10
+          elif nudge_right and not CS.out.rightBlindspot:
+            alc_msg = 10
+            
+        values['AUTOLANECHANGE_MSG'] = alc_msg
+
         # blinker hold
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
@@ -822,7 +843,6 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           lane_line=True,
           corner_radar=True,
           desire=desire,
-          # 기존대로 LR/RR만 깜빡임
           blink_pairs=[('LR_DETECT', 'LR_DETECT_DISTANCE'),
                        ('RR_DETECT', 'RR_DETECT_DISTANCE')],
           blink_t=1.0
