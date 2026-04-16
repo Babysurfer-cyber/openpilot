@@ -814,7 +814,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         rx_counter = values.pop("COUNTER", None)
         
         # ==========================================================
-        # ▼ [차선 변경 불가 알림] 실선 & 좁은 차로(2.5m 이하) 감지 시 10번 표출
+        # ▼ [차선 변경 불가 알림] 오직 '실선' 감지 시에만 10번 표출
         # ==========================================================
         alc_msg = 0
         v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
@@ -824,36 +824,17 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 실선 여부 판단 (Carrot 전용 변수, 20 이상이면 실선)
+        # 2. 실선 여부 판단 (Carrot 전용 변수, 20 이상이면 확실한 실선)
         left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
         right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
         
-        # 3. AI 비전(md) 데이터를 활용한 타겟 차선 폭 계산 (단위: 미터)
-        left_target_width = 3.5   # 기본 안전값
-        right_target_width = 3.5  # 기본 안전값
-        
-        if md is not None:
-            # [방어 로직] md 안에 laneLines가 없어도 에러가 나지 않도록 getattr 사용!
-            lane_lines = getattr(md, 'laneLines', [])
-            
-            if len(lane_lines) == 4:
-                # y[0]은 내 차 바로 앞 지점의 Y좌표
-                if len(lane_lines[0].y) > 0 and len(lane_lines[1].y) > 0:
-                    left_target_width = lane_lines[0].y[0] - lane_lines[1].y[0]
-                if len(lane_lines[2].y) > 0 and len(lane_lines[3].y) > 0:
-                    # 오른쪽 좌표는 마이너스 값이므로 (가까운 오른쪽) - (먼 오른쪽) = 양수 폭이 나옴 (완벽한 계산!)
-                    right_target_width = lane_lines[2].y[0] - lane_lines[3].y[0]
-
-        # 물리적 한계 임계값 설정 (차폭 고려)
-        MIN_WIDTH = 2.5
-        
-        # 4. 차선 변경 불가 조건일 때 핸들을 밀면 메시지 10번 표출
+        # 3. 실선 방향으로 핸들을 밀면 '즉시' 메시지 10번 표출
         if v_ego_kph >= 30.0 and not is_changing_lane:
             if nudge_left and not CS.out.leftBlindspot:
-                if left_solid or left_target_width < MIN_WIDTH:
+                if left_solid:
                     alc_msg = 10
             elif nudge_right and not CS.out.rightBlindspot:
-                if right_solid or right_target_width < MIN_WIDTH:
+                if right_solid:
                     alc_msg = 10
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
