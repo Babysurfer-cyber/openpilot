@@ -377,15 +377,6 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   #values["NSCCOnOff"] = 2  # 0: Default, 1: Off, 2: On, 3: Invalid
   #values["SET_ME_3"] = 0x3  # objRelsped와 충돌
   #values["ACC_ObjLatPos"] = - hud_control.leadDPath
-  # ==========================================================
-  # ▼ [완벽 보완] SCC가 앞차 데이터를 잃어버렸을 때만 비전 데이터 주입!
-  # ==========================================================
-  # 순정 SCC가 앞차를 못 잡으면 HUD_LEAD_INFO를 0으로 보냅니다.
-  # "순정은 놓쳤는데(0), 콤마 비전은 보고 있다면?" -> 비전 값으로 덮어쓰기!
-  if hud_control.leadVisible and CS.scc_control["HUD_LEAD_INFO"] == 0:
-      values["ACC_ObjDist"] = hud_control.leadDistance
-      values["ACC_ObjRelSpd"] = hud_control.leadRelSpeed
-  # ==========================================================
   values["DriveMode"] = 0 # 0: Default, 1: Comfort Mode, 2:Normal mode, 3:Dynamic mode, reserved
 
   hud_lead_info = 0
