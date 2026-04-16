@@ -257,6 +257,26 @@ class CarController(CarControllerBase):
       apply_torque = 0
       self.lkas_max_torque = 0
 
+    # ==========================================================
+    # ▼ [가상 사각지대 조향 저항 (Virtual BCA) - 150 묵직한 세팅]
+    # ==========================================================
+    bca_torque = 0
+    # 안전장치: 크루즈 모드가 켜져 있을 때(CC.enabled)만 작동하도록 제한
+    if CC.enabled:
+      # 1. 좌측 차선 변경 시도 방어
+      if CS.out.leftBlinker and CS.out.leftBlindspot and CS.out.steeringPressed and CS.out.steeringTorque > 0:
+        bca_torque = -150  # 우측(-)으로 150만큼 강하게 밀어내는 저항 토크!
+        
+      # 2. 우측 차선 변경 시도 방어
+      elif CS.out.rightBlinker and CS.out.rightBlindspot and CS.out.steeringPressed and CS.out.steeringTorque < 0:
+        bca_torque = 150   # 좌측(+)으로 150만큼 강하게 밀어내는 저항 토크!
+
+      # 3. 위험 감지 시 오픈파일럿 조향 강제 탈취
+      if bca_torque != 0:
+        apply_torque = bca_torque
+        apply_steer_req = True  # 핸들 뺏겼다고 모터가 꺼지지 않게 강제 활성화!
+    # ==========================================================
+
     self.apply_angle_last = apply_angle
 
     # Hold torque with induced temporary fault when cutting the actuation bit
