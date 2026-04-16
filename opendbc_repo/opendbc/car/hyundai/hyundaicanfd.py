@@ -873,7 +873,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
 
         if hud_control.leadDistance > 0:
           values["FF_DISTANCE"] = hud_control.leadDistance
-          ff_type = 3 if hud_control.leadRadar == 1 else 13
+          ff_type = 3 if hud_control.leadRadar == 1 else 3 #13을 3으로 수정, 13이 꼬깔콘 인듯
           values["FF_DETECT"] = ff_type if hud_control.leadRelSpeed > -0.1 else ff_type + 1
 
         _make_ccnc_values(
