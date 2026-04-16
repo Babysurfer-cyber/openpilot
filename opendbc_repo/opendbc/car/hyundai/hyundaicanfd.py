@@ -753,6 +753,19 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["TARGET"] = 1 if main_enabled else 0
         values["TARGET_DISTANCE"] = int(hud_control.leadDistance)
 
+        # ==========================================================
+        # ▼ [이스터에그] 앞차 인식 시 차로 바닥 초록색 카펫(Highlight) 깔기!
+        # ==========================================================
+        if hud_control.leadVisible:
+            values["LANE_HIGHLIGHT"] = 1  # 1: GREEN (초록색 카펫 켜기)
+            # 앞차까지의 거리(leadDistance)만큼 카펫 길이를 쫙 깔아줍니다!
+            # (DBC 한계치인 204.7m를 넘지 않도록 안전장치 min 적용)
+            values["LANE_HIGHLIGHT_DISTANCE"] = min(hud_control.leadDistance, 204.7)
+        else:
+            values["LANE_HIGHLIGHT"] = 0  # 0: HIDDEN (앞차 없으면 끄기)
+            values["LANE_HIGHLIGHT_DISTANCE"] = 0
+        # ==========================================================
+
         values["BACKGROUND"] = 6 if CS.paddle_button_prev > 0 else 1 if cruise_enabled else 3 if lat_active else 7
         values["CENTERLINE"] = 1 if HDA_CntrlModSta > 0 else 0
         values["CAR_CIRCLE"] = 2 if hdp_active else 1 if cruise_enabled else 0
