@@ -266,11 +266,11 @@ class CarController(CarControllerBase):
 
     # 1. 좌측 차선 변경 시도 방어
     if CS.out.leftBlinker and CS.out.leftBlindspot and CS.out.steeringPressed and CS.out.steeringTorque > 0:
-        bca_torque = -150  # 우측(-)으로 저항 토크 발생
+        bca_torque = -50  # 우측(-)으로 저항 토크 발생
         
     # 2. 우측 차선 변경 시도 방어
     elif CS.out.rightBlinker and CS.out.rightBlindspot and CS.out.steeringPressed and CS.out.steeringTorque < 0:
-        bca_torque = 150   # 좌측(+)으로 저항 토크 발생
+        bca_torque = 50   # 좌측(+)으로 저항 토크 발생
 
     # 3. 위험 감지 시 토크 명령 강제 전송
     if bca_torque != 0:
