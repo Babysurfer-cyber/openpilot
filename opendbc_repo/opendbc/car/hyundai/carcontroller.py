@@ -145,6 +145,8 @@ class CarController(CarControllerBase):
     self.MainMode_ACC_trigger = 0
     self.LFA_trigger = 0
 
+    self.bca_torque_last = 0.0  # BCA 스무딩을 위한 이전 프레임 토크 기억
+
     self.activeCarrot = 0
     self.camera_scc_params = Params().get_int("HyundaiCameraSCC")
     self.is_ldws_car = Params().get_bool("IsLdwsCar")
@@ -258,24 +260,41 @@ class CarController(CarControllerBase):
       self.lkas_max_torque = 0
 
     # ==========================================================
-    # ▼ [가상 사각지대 조향 저항 (Virtual BCA) - 상시 활성화 세팅]
+    # ▼ [가상 사각지대 조향 저항 (Virtual BCA) - 상시 활성화 & 0.1초 램프업]
     # ==========================================================
-    bca_torque = 0
+    bca_torque = 0.0
+    TARGET_BCA_TORQUE = 100.0
     
-    # if CC.enabled: 조건을 제거하여 크루즈 ON/OFF 상관없이 항상 감시합니다.
-
-    # 1. 좌측 차선 변경 시도 방어
+    # 1. 사각지대 위험 감지 및 목표 저항 방향 설정
     if CS.out.leftBlinker and CS.out.leftBlindspot and CS.out.steeringPressed and CS.out.steeringTorque > 0:
-        bca_torque = -50  # 우측(-)으로 저항 토크 발생
-        
-    # 2. 우측 차선 변경 시도 방어
+        bca_torque = -TARGET_BCA_TORQUE  # 왼쪽으로 차선 변경 시도 -> 우측(-)으로 저항
     elif CS.out.rightBlinker and CS.out.rightBlindspot and CS.out.steeringPressed and CS.out.steeringTorque < 0:
-        bca_torque = 50   # 좌측(+)으로 저항 토크 발생
+        bca_torque = TARGET_BCA_TORQUE   # 오른쪽으로 차선 변경 시도 -> 좌측(+)으로 저항
 
-    # 3. 위험 감지 시 토크 명령 강제 전송
+    # 2. 0.1초(10프레임) 스무딩 로직 (1프레임당 10.0씩 증감)
+    step = 10.0 
+    
     if bca_torque != 0:
-        apply_torque = bca_torque
-        apply_steer_req = True  # ★ 핵심: 크루즈가 꺼져 있어도 EPS에 토크 명령을 보내도록 강제 설정
+        # 저항을 강하게 걸 때
+        if bca_torque > self.bca_torque_last:
+            self.bca_torque_last = min(self.bca_torque_last + step, bca_torque)
+        elif bca_torque < self.bca_torque_last:
+            self.bca_torque_last = max(self.bca_torque_last - step, bca_torque)
+            
+        apply_torque = int(self.bca_torque_last)
+        apply_steer_req = True  # 크루즈 OFF 상태라도 EPS 모터 강제 개입
+        
+    else:
+        # 3. 위험 상황 종료 시 반동 방지 (0.1초 동안 부드럽게 풀기)
+        if self.bca_torque_last > 0:
+            self.bca_torque_last = max(self.bca_torque_last - step, 0.0)
+        elif self.bca_torque_last < 0:
+            self.bca_torque_last = min(self.bca_torque_last + step, 0.0)
+            
+        # 아직 힘이 덜 풀렸다면 그 순간까지는 모터 개입 유지
+        if self.bca_torque_last != 0:
+            apply_torque = int(self.bca_torque_last)
+            apply_steer_req = True
     # ==========================================================
     
     self.apply_angle_last = apply_angle
