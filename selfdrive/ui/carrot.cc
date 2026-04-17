@@ -3090,7 +3090,7 @@ void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
       if (gear == cereal::CarState::GearShifter::REVERSE) {
           nvgBeginPath(s->vg);
           nvgRect(s->vg, 0, 0, s->fb_w, s->fb_h); 
-          nvgFillColor(s->vg, nvgRGBA(0, 0, 0, 120)); 
+          nvgFillColor(s->vg, nvgRGBA(0, 0, 0, 180)); 
           nvgFill(s->vg);
       }
   }
