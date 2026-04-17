@@ -3080,14 +3080,19 @@ void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
   drawTurnInfo.draw(s);
 
   // ==========================================================
-  // ▼ [후진 변속 시 전체 화면 블랙아웃(음영) 처리]
+  // ▼ [후진 변속 시 전체 화면 블랙아웃(음영) 처리] (유저님 오리지널 안전 버전!)
   // ==========================================================
-  // s->scene 에 이미 저장된 기어 정보를 활용하면 더 빠릅니다.
-  if (s->scene.gear_shifter == cereal::CarState::GearShifter::REVERSE) {
-      nvgBeginPath(s->vg);
-      nvgRect(s->vg, 0, 0, s->fb_w, s->fb_h);     // 화면 전체 덮기
-      nvgFillColor(s->vg, nvgRGBA(0, 0, 0, 120)); // 투명도 120 (약 47% 어두워짐)
-      nvgFill(s->vg);
+  SubMaster& sm = *(s->sm);
+  if (sm.alive("carState")) {
+      auto gear = sm["carState"].getCarState().getGearShifter();
+      
+      // 기어가 후진(R)일 경우
+      if (gear == cereal::CarState::GearShifter::REVERSE) {
+          nvgBeginPath(s->vg);
+          nvgRect(s->vg, 0, 0, s->fb_w, s->fb_h); 
+          nvgFillColor(s->vg, nvgRGBA(0, 0, 0, 120)); 
+          nvgFill(s->vg);
+      }
   }
   // ==========================================================
 	
