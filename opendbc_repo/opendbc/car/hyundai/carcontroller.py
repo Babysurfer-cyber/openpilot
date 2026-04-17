@@ -145,8 +145,6 @@ class CarController(CarControllerBase):
     self.MainMode_ACC_trigger = 0
     self.LFA_trigger = 0
 
-    self.bca_torque_last = 0.0  # BCA 스무딩을 위한 이전 프레임 토크 기억
-
     self.activeCarrot = 0
     self.camera_scc_params = Params().get_int("HyundaiCameraSCC")
     self.is_ldws_car = Params().get_bool("IsLdwsCar")
@@ -255,36 +253,12 @@ class CarController(CarControllerBase):
         self.lkas_max_torque = min(self.lkas_max_torque + rate_up, target_torque)
 
 
-    # ==========================================================
-    # ▼ [BCA 조향 저항 - 1:1 능동 반사 (Active Force Feedback) 로직] (여기로 이사 옴!)
-    # ==========================================================
-    MAX_BCA_TORQUE = 150.0  
-    target_bca_torque = 0.0 
-
-    if CS.out.leftBlinker and CS.out.leftBlindspot and CS.out.steeringPressed and CS.out.steeringTorque > 0:
-        target_bca_torque = -min(CS.out.steeringTorque, MAX_BCA_TORQUE)
-    elif CS.out.rightBlinker and CS.out.rightBlindspot and CS.out.steeringPressed and CS.out.steeringTorque < 0:
-        target_bca_torque = min(abs(CS.out.steeringTorque), MAX_BCA_TORQUE)
-
-    step = 10.0 
-    if self.bca_torque_last < target_bca_torque:
-        self.bca_torque_last = min(self.bca_torque_last + step, target_bca_torque)
-    elif self.bca_torque_last > target_bca_torque:
-        self.bca_torque_last = max(self.bca_torque_last - step, target_bca_torque)
-        
-    apply_torque += int(round(self.bca_torque_last))
-    apply_torque = int(np.clip(apply_torque, -self.params.STEER_MAX, self.params.STEER_MAX))
-    # ==========================================================
-
-
-    # ▼ 수동 운전 시 무조건 0으로 덮어쓰기 (가장 마지막에 철벽 방어)
     if not CC.latActive:
       apply_torque = 0
       self.lkas_max_torque = 0
-      self.bca_torque_last = 0.0 # 수동 운전 중일 땐 BCA 댐핑 변수도 초기화!
 
-    
     self.apply_angle_last = apply_angle
+
     # Hold torque with induced temporary fault when cutting the actuation bit
     torque_fault = CC.latActive and not apply_steer_req
 
