@@ -281,6 +281,10 @@ class CarController(CarControllerBase):
         self.bca_torque_last = min(self.bca_torque_last + step, target_bca_torque)
     elif self.bca_torque_last > target_bca_torque:
         self.bca_torque_last = max(self.bca_torque_last - step, target_bca_torque)
+        
+    # 4. 최종 합산 및 안전 클리핑 (치명적 누락 해결!)
+    apply_torque += int(round(self.bca_torque_last))
+    apply_torque = int(np.clip(apply_torque, -self.params.STEER_MAX, self.params.STEER_MAX))
     # ==========================================================
     
     self.apply_angle_last = apply_angle
