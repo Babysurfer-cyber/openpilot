@@ -711,10 +711,11 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           elif CS.scc_control is not None and CS.scc_control["InfoDisplay"] == 4:
             if 10 < frame % 30 <= 16 and not stopping:
               values["CRUISE_BUTTONS"] = 2
-          else:
-            if CS.adrv_0x1ea is not None and CS.adrv_0x1ea["HDA_MODE2"] == 0: # if corner radar is disabled, send main btn
-              if 10 < frame % 1000 <= 16 and CS.out.vEgo > 3:
-                values["ADAPTIVE_CRUISE_MAIN_BTN"] = 1
+          # 아래 주석처리, 고속도로 크루즈시 옆두부 10초 주기로 꺼졌다 켜짐
+          #else:
+            #if CS.adrv_0x1ea is not None and CS.adrv_0x1ea["HDA_MODE2"] == 0: # if corner radar is disabled, send main btn
+              #if 10 < frame % 1000 <= 16 and CS.out.vEgo > 3:
+                #values["ADAPTIVE_CRUISE_MAIN_BTN"] = 1
 
         ret.append(packer.make_can_msg(CS.cruise_btns_msg_canfd, CAN.CAM, values))
 
