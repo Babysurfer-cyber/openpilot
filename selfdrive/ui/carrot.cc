@@ -2358,24 +2358,7 @@ public:
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
 
-        // =======================================================
-        // 🆕 [추가] 과속카메라 감지 시 좌측 상단 아이콘 표시 로직
-        // =======================================================
-        if (cam_detected) {
-            int cam_icon_size = 90; 
-
-            // 🎯 가로(X) 위치: HUD 배경 박스의 왼쪽 시작점(bx - 120)에 왼쪽 면을 딱 맞춤
-            int cam_icon_x = bx - 110;
-            
-            // 🎯 세로(Y) 위치: HUD 배경 박스의 윗면(by - 85)에 아이콘의 '바닥'이 오도록!
-            // 윗면(by - 85)에서 아이콘 크기(cam_icon_size)만큼 위(-)로 빼주면 바닥면이 딱 맞게 얹힙니다.
-            int cam_icon_y = by - 85 - cam_icon_size; 
-            
-            // 아이콘 그리기
-            ui_draw_image(s, { cam_icon_x, cam_icon_y, cam_icon_size, cam_icon_size }, "ic_speed_cam", 1.0f);
-        }
-		// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-        // ▼▼▼ [수정] 크루즈 활성화(longActive) 중에만 'LOCK-ON' 문구 출력! ▼▼▼
+       // ▼▼▼ [수정] 크루즈 활성화(longActive) 중에만 'LOCK-ON' 문구 출력! ▼▼▼
         if (has_lead && longActive) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             ui_draw_text(s, bx + 117, by - 95, "", 55, COLOR_GREEN, BOLD); // ⬅️ by-95로 살짝 올림!
@@ -2628,8 +2611,8 @@ public:
             
             if (xSpdLimit > 0 && xSignType != 22) {
                 disp_speed = (int)(xSpdLimit * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5);
-                limit_color = (blink_timer <= 8) ? COLOR_WHITE_ALPHA(190) : COLOR_WHITE_ALPHA(190);
-                ui_draw_text(s, dx, dy-45, "CAM", 30, COLOR_WHITE, BOLD);
+                limit_color = (blink_timer <= 8) ? COLOR_RED_ALPHA(190) : COLOR_RED_ALPHA(190);
+                ui_draw_text(s, dx, dy-45, "CAM", 30, COLOR_RED, BOLD);
             }
             else {
                 disp_speed = nRoadLimitSpeed;
