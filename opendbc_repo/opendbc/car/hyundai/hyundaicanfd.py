@@ -242,8 +242,8 @@ def create_suppress_lfa(packer, CAN, CS, CC):
   # ==========================================================
   lead_visible = CC.hudControl.leadVisible
   
-  values["LEFT_LANE_LINE"] = 3 if lead_visible else 0
-  values["RIGHT_LANE_LINE"] = 3 if lead_visible else 0
+  values["LEFT_LANE_LINE"] = 2 if lead_visible else 0
+  values["RIGHT_LANE_LINE"] = 2 if lead_visible else 0
   # ==========================================================
   
   return [packer.make_can_msg(suppress_msg, CAN.ACAN, values)]
