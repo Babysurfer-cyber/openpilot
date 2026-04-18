@@ -744,11 +744,10 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
 
         set_speed_in_units = hud_control.setSpeed * (CV.MS_TO_KPH if CS.is_metric else CV.MS_TO_MPH)
         values["vSetDis"] = int(set_speed_in_units + 0.5)
-
         values["DISTANCE"] = 4 if hdp_active else hud_control.leadDistanceBars
         values["DISTANCE_LEAD"] = 2 if cruise_enabled and hud_control.leadVisible else 1 if main_enabled and hud_control.leadVisible else 0
         values["DISTANCE_CAR"] = 3 if hdp_active else 2 if cruise_enabled else 1 if main_enabled else 0      
-        values["DISTANCE_SPACING"] = 5 if hdp_active else 1 if cruise_enabled else 0
+        values["DISTANCE_SPACING"] = 5 if hdp_active else 1 if cruise_enabled and hud_control.leadVisible else 3 if cruise_enabled else 0
         values["TARGET"] = 1 if main_enabled else 0
         values["TARGET_DISTANCE"] = int(hud_control.leadDistance)
 
@@ -918,3 +917,4 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           ret.append(packer.make_can_msg("HDA_INFO_4A3", CAN.CAM, values))
 
   return ret
+ 
