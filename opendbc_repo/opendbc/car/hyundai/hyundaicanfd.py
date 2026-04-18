@@ -222,7 +222,7 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
 
   return ret
 
-def create_suppress_lfa(packer, CAN, CS, CC):
+def create_suppress_lfa(packer, CAN, CS):
   if CS.cam_0x362 is not None:
     suppress_msg = "CAM_0x362"
     lfa_block_msg = CS.cam_0x362
@@ -232,20 +232,13 @@ def create_suppress_lfa(packer, CAN, CS, CC):
   else:
     return []
 
+  #values = {f"BYTE{i}": lfa_block_msg[f"BYTE{i}"] for i in range(3, msg_bytes) if i != 7}
   values = copy.copy(lfa_block_msg)
   values["COUNTER"] = lfa_block_msg["COUNTER"]
   values["SET_ME_0"] = 0
   values["SET_ME_0_2"] = 0
-  
-  # ==========================================================
-  # ▼ 유저님 요청: 앞차(leadVisible)가 있으면 3(두꺼운 선), 아니면 0(무력화)
-  # ==========================================================
-  lead_visible = CC.hudControl.leadVisible
-  
-  values["LEFT_LANE_LINE"] = 2 if lead_visible else 0
-  values["RIGHT_LANE_LINE"] = 2 if lead_visible else 0
-  # ==========================================================
-  
+  values["LEFT_LANE_LINE"] = 0
+  values["RIGHT_LANE_LINE"] = 0
   return [packer.make_can_msg(suppress_msg, CAN.ACAN, values)]
 
 def create_buttons(packer, CP, CAN, cnt, btn):
