@@ -746,8 +746,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["vSetDis"] = int(set_speed_in_units + 0.5)
         values["DISTANCE"] = 4 if hdp_active else hud_control.leadDistanceBars
         values["DISTANCE_LEAD"] = 2 if cruise_enabled and hud_control.leadVisible else 1 if main_enabled and hud_control.leadVisible else 0
-        values["DISTANCE_CAR"] = 3 if cruise_enabled and hud_control.leadVisible else 2 if cruise_enabled else 1 if main_enabled else 0      
-        values["DISTANCE_SPACING"] = 5 if cruise_enabled and hud_control.leadVisible else 3 if cruise_enabled else 0
+        values["DISTANCE_CAR"] = 3 if hdp_active else 2 if cruise_enabled else 1 if main_enabled else 0
+        values["DISTANCE_SPACING"] = 5 if hdp_active else 1 if cruise_enabled else 0
         values["TARGET"] = 1 if main_enabled else 0
         values["TARGET_DISTANCE"] = int(hud_control.leadDistance)
 
