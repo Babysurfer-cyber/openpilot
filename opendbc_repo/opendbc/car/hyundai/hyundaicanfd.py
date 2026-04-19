@@ -828,10 +828,6 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
             # 보정된 데이터 사용: 0(실선) 또는 5(경계석)일 때 실선으로 판정
             left_solid = getattr(CS.out, 'leftLaneLineMod', 0) in [0, 5]
             right_solid = getattr(CS.out, 'rightLaneLineMod', 0) in [0, 5]
-        else:
-            # Raw 데이터 사용: 20 이상일 때 실선으로 판정 (기존 로직)
-            left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
-            right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
 
         # 3. 전측방/후측방 종합 위험 판단 (당근파일럿 warning 변수 활용)
         danger_left = CS.out.leftBlindspot or left_lane_warning
