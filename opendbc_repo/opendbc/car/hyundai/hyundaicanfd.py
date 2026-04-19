@@ -823,12 +823,18 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 확실한 실선 여부 판단 (CS.out에 존재하는 Raw 데이터 활용)
-        # 💡 값이 20 이상이면 차선 종류가 2(실선) 또는 그 이상(경계석 등)임을 의미
-        left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
-        right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
+        # 2. DesireHelper의 점선/실선 완벽 구분 로직 그대로 이식!
+        if lane_line_check == 1:
+            # 옵션 ON: 오픈파일럿 AI 보정 데이터(Mod) 사용 (0: 실선, 5: 경계석)
+            # 💡 안전장치: 데이터 통신 지연 시 기본값 1(점선)로 처리하여 오작동 방지
+            left_solid = getattr(CS.out, 'leftLaneLineMod', 1) in [0, 5]
+            right_solid = getattr(CS.out, 'rightLaneLineMod', 1) in [0, 5]
+        else:
+            # 옵션 OFF: 차량 순정 센서 데이터(Raw) 사용 (20 이상: 실선/경계석)
+            left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
+            right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
 
-        # 3. 전측방/후측방 종합 위험 판단 (당근파일럿 warning 변수 활용)
+        # 3. 전측방/후측방 종합 위험 판단
         danger_left = CS.out.leftBlindspot or left_lane_warning
         danger_right = CS.out.rightBlindspot or right_lane_warning
         
@@ -837,15 +843,15 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
             
             # [왼쪽 방향]
             if CS.out.leftBlinker and danger_left:
-                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+                alc_msg = 1  # 조건 A: 사각지대/측방 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_left and left_solid:
-                alc_msg = 10 # 조건 B: 실선(20 이상)일 때 -> 메시지 10번 토크 팝업
+                alc_msg = 10 # 조건 B: 확실하게 판별된 실선일 때 -> 메시지 10번 토크 팝업
                 
             # [오른쪽 방향]
             elif CS.out.rightBlinker and danger_right:
-                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+                alc_msg = 1  # 조건 A: 사각지대/측방 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_right and right_solid:
-                alc_msg = 10 # 조건 B: 실선(20 이상)일 때 -> 메시지 10번 토크 팝업
+                alc_msg = 10 # 조건 B: 확실하게 판별된 실선일 때 -> 메시지 10번 토크 팝업
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
