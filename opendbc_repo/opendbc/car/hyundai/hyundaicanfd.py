@@ -823,9 +823,15 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 실선 여부 판단 (20 이상이면 확실한 실선)
-        left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
-        right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
+        # 2. 초정밀 실선 여부 판단 (LaneLineCheck 옵션에 따라 판정 기준 분기)
+        if lane_line_check == 1:
+            # 보정된 데이터 사용: 0(실선) 또는 5(경계석)일 때 실선으로 판정
+            left_solid = getattr(CS.out, 'leftLaneLineMod', 0) in [0, 5]
+            right_solid = getattr(CS.out, 'rightLaneLineMod', 0) in [0, 5]
+        else:
+            # Raw 데이터 사용: 20 이상일 때 실선으로 판정 (기존 로직)
+            left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
+            right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
 
         # 3. 전측방/후측방 종합 위험 판단 (당근파일럿 warning 변수 활용)
         danger_left = CS.out.leftBlindspot or left_lane_warning
@@ -836,19 +842,15 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
             
             # [왼쪽 방향]
             if CS.out.leftBlinker and danger_left:
-                # 조건 A: 위험 감지 -> 깜빡이만 켜도 [메시지 1번] 즉시 팝업
-                alc_msg = 1
+                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_left and left_solid:
-                # 조건 B: 실선 -> 토크를 줬을 때 [메시지 10번] 팝업
-                alc_msg = 10
+                alc_msg = 10 # 조건 B: 실선 -> 메시지 10번 토크 팝업
                 
             # [오른쪽 방향]
             elif CS.out.rightBlinker and danger_right:
-                # 조건 A: 위험 감지 -> 깜빡이만 켜도 [메시지 1번] 즉시 팝업
-                alc_msg = 1
+                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_right and right_solid:
-                # 조건 B: 실선 -> 토크를 줬을 때 [메시지 10번] 팝업
-                alc_msg = 10
+                alc_msg = 10 # 조건 B: 실선 -> 메시지 10번 토크 팝업
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
