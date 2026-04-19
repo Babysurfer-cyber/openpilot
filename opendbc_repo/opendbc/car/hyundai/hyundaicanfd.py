@@ -813,28 +813,42 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         rx_counter = values.pop("COUNTER", None)
         
         # ==========================================================
-        # ▼ [차선 변경 불가 알림] 오직 '실선' 감지 시에만 10번 표출
+        # ▼ [차선 변경 불가 알림] 실선 감지(10번) & 전후측방 위험(1번) 알림 분리
         # ==========================================================
         alc_msg = 0
         v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
         
-        # 1. 운전자 핸들 조작(토크) 감지
+        # 1. 운전자 핸들 조작(토크) 감지 (깜빡이 켬 + 핸들에 힘 들어감)
         nudge_left = CS.out.leftBlinker and CS.out.steeringPressed and CS.out.steeringTorque > 0
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 실선 여부 판단 (Carrot 전용 변수, 20 이상이면 확실한 실선)
+        # 2. 실선 여부 판단 (20 이상이면 확실한 실선)
         left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
         right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
+
+        # 3. 전측방/후측방 종합 위험 판단 (당근파일럿 warning 변수 활용)
+        danger_left = CS.out.leftBlindspot or left_lane_warning
+        danger_right = CS.out.rightBlindspot or right_lane_warning
         
-        # 3. 실선 방향으로 핸들을 밀면 '즉시' 메시지 10번 표출
+        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
         if v_ego_kph >= 30.0 and not is_changing_lane:
-            if nudge_left and not CS.out.leftBlindspot:
-                if left_solid:
-                    alc_msg = 10
-            elif nudge_right and not CS.out.rightBlindspot:
-                if right_solid:
-                    alc_msg = 10
+            
+            # [왼쪽 방향]
+            if CS.out.leftBlinker and danger_left:
+                # 조건 A: 위험 감지 -> 깜빡이만 켜도 [메시지 1번] 즉시 팝업
+                alc_msg = 1
+            elif nudge_left and left_solid:
+                # 조건 B: 실선 -> 토크를 줬을 때 [메시지 10번] 팝업
+                alc_msg = 10
+                
+            # [오른쪽 방향]
+            elif CS.out.rightBlinker and danger_right:
+                # 조건 A: 위험 감지 -> 깜빡이만 켜도 [메시지 1번] 즉시 팝업
+                alc_msg = 1
+            elif nudge_right and right_solid:
+                # 조건 B: 실선 -> 토크를 줬을 때 [메시지 10번] 팝업
+                alc_msg = 10
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
