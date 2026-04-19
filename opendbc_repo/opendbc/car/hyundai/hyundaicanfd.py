@@ -823,26 +823,40 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. DesireHelper의 최종 결론(warning) 무임승차 하기!
-        # 💡 DesireHelper가 LaneLineCheck 옵션에 맞춰 알아서 계산 후 warning을 보내줍니다.
-        # 따라서 "위험 경고가 떴는데 사각지대에 차가 없다 = 100% 실선이다" 가 성립합니다.
-        left_solid = left_lane_warning and not CS.out.leftBlindspot
-        right_solid = right_lane_warning and not CS.out.rightBlindspot
+        # 2. 유저님이 발견하신 완벽한 패턴! (계기판 주황색 라인 연동 로직)
+        left_solid = False
+        right_solid = False
+
+        left_raw = getattr(CS.out, 'leftLaneLine', 0)
+        right_raw = getattr(CS.out, 'rightLaneLine', 0)
+
+        if lane_line_check >= 1:
+            # 옵션 ON: 끝자리가 0이나 5가 아니면 실선으로 간주 (흰색/주황색 모두 커버!)
+            left_solid = (left_raw % 10) not in (0, 5)
+            right_solid = (right_raw % 10) not in (0, 5)
+        else:
+            # 옵션 OFF: 기존처럼 값이 20 이상이면 황색 실선/경계석으로 간주
+            left_solid = left_raw >= 20
+            right_solid = right_raw >= 20
+
+        # 3. 전측방/후측방 종합 위험 판단
+        danger_left = CS.out.leftBlindspot or left_lane_warning
+        danger_right = CS.out.rightBlindspot or right_lane_warning
         
-        # 3. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
+        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
         if v_ego_kph >= 30.0 and not is_changing_lane:
             
             # [왼쪽 방향]
-            if CS.out.leftBlinker and CS.out.leftBlindspot:
-                alc_msg = 1  # 조건 A: 사각지대 위험 감지 -> 메시지 1번 즉시 팝업
+            if CS.out.leftBlinker and danger_left:
+                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_left and left_solid:
-                alc_msg = 10 # 조건 B: 기획실에서 실선으로 판별하여 경고를 보냄 -> 메시지 10번 팝업
+                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
                 
             # [오른쪽 방향]
-            elif CS.out.rightBlinker and CS.out.rightBlindspot:
-                alc_msg = 1  # 조건 A: 사각지대 위험 감지 -> 메시지 1번 즉시 팝업
+            elif CS.out.rightBlinker and danger_right:
+                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_right and right_solid:
-                alc_msg = 10 # 조건 B: 기획실에서 실선으로 판별하여 경고를 보냄 -> 메시지 10번 팝업
+                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
