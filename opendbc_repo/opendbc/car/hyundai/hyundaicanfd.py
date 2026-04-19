@@ -823,10 +823,10 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 초정밀 실선 여부 판단 (무조건 Mod 데이터 사용)
-        # 💡 안전장치: 데이터가 없을 경우를 대비해 기본값을 1(점선)로 설정
-        left_solid = getattr(CS.out, 'leftLaneLineMod', 1) in [0, 5]
-        right_solid = getattr(CS.out, 'rightLaneLineMod', 1) in [0, 5]
+        # 2. 확실한 실선 여부 판단 (CS.out에 존재하는 Raw 데이터 활용)
+        # 💡 값이 20 이상이면 차선 종류가 2(실선) 또는 그 이상(경계석 등)임을 의미
+        left_solid = getattr(CS.out, 'leftLaneLine', 0) >= 20
+        right_solid = getattr(CS.out, 'rightLaneLine', 0) >= 20
 
         # 3. 전측방/후측방 종합 위험 판단 (당근파일럿 warning 변수 활용)
         danger_left = CS.out.leftBlindspot or left_lane_warning
@@ -839,13 +839,13 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
             if CS.out.leftBlinker and danger_left:
                 alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_left and left_solid:
-                alc_msg = 10 # 조건 B: 0 또는 5(실선/경계석)일 때 -> 메시지 10번 토크 팝업
+                alc_msg = 10 # 조건 B: 실선(20 이상)일 때 -> 메시지 10번 토크 팝업
                 
             # [오른쪽 방향]
             elif CS.out.rightBlinker and danger_right:
                 alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_right and right_solid:
-                alc_msg = 10 # 조건 B: 0 또는 5(실선/경계석)일 때 -> 메시지 10번 토크 팝업
+                alc_msg = 10 # 조건 B: 실선(20 이상)일 때 -> 메시지 10번 토크 팝업
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
