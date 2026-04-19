@@ -670,12 +670,21 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       ('LR_DETECT', 'LR_DETECT_DISTANCE'),
       ('RR_DETECT', 'RR_DETECT_DISTANCE'),
     ]
+    
+    # ▼▼▼ 유저님 맞춤형: 30m 이하일 때만 켜고, 깜빡임 로직 완전 배제 ▼▼▼
     for det_key, dist_key in radar_all:
-      if values[det_key] >= 4 and values[dist_key] != 0:
-        values[det_key] = 1
+      dist = values[dist_key]
+      
+      # 순정 레이더가 물체를 인식한 상태(4 이상)이고 거리값이 있을 때
+      if values[det_key] >= 4 and dist != 0:
+        if dist <= 30.0:
+          values[det_key] = 1  # 30m 이하: 회색 깍두기 그래픽 고정 (깜빡임 절대 없음)
+        else:
+          values[det_key] = 0  # 30m 초과: 화면에서 완전히 숨김
 
-    if blink_pairs:
-      _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
+    # 깜빡임 애니메이션을 만들던 함수는 이제 필요 없으므로 완전히 차단(주석 처리)합니다!
+    # if blink_pairs:
+    #   _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
 
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          disp_angle, left_lane_warning, right_lane_warning,
