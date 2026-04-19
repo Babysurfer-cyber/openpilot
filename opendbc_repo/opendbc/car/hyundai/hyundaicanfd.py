@@ -823,12 +823,16 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 초정밀 실선 여부 판단 (LaneLineCheck 옵션에 따라 판정 기준 분기)
+        # 2. 초정밀 실선 여부 판단
+        # 일단 기본값은 '실선 아님(False)'으로 둡니다.
+        left_solid = False
+        right_solid = False
+        
+        # LaneLineCheck 옵션이 켜져 있을 때만 정밀 데이터(Mod)로 판단합니다.
         if lane_line_check == 1:
-            # 보정된 데이터 사용: 0(실선) 또는 5(경계석)일 때 실선으로 판정
             left_solid = getattr(CS.out, 'leftLaneLineMod', 0) in [0, 5]
             right_solid = getattr(CS.out, 'rightLaneLineMod', 0) in [0, 5]
-
+          
         # 3. 전측방/후측방 종합 위험 판단 (당근파일럿 warning 변수 활용)
         danger_left = CS.out.leftBlindspot or left_lane_warning
         danger_right = CS.out.rightBlindspot or right_lane_warning
