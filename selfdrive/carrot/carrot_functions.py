@@ -339,7 +339,7 @@ class CarrotPlanner:
     # t_follow가 급격히 증가하면 목표거리도 급격히 증가하여 강한 감속을 유도할 수 있으므로
     # 증가 방향만 천천히 반영
     if t_follow > self.t_follow_last:
-      t_follow = min(t_follow, self.t_follow_last + 0.2 * DT_MDL)
+      t_follow = min(t_follow, self.t_follow_last + 0.1 * DT_MDL)
 
     self.t_follow_last = float(t_follow)
     return float(t_follow + adjust_t_follow)
