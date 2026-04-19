@@ -2672,13 +2672,16 @@ public:
             ui_draw_text(s, dx, dy, str, 60, COLOR_WHITE, BOLD, 0.0f, 0.0f);
         }
 
-		 // ▼▼▼ 여기에 새 코드를 복사해서 붙여넣으세요 ▼▼▼
+        // ▼▼▼ 여기에 새 코드를 복사해서 붙여넣으세요 ▼▼▼
         bool lat_active = (*(s->sm))["carControl"].getCarControl().getLatActive();
+        bool lat_enabled = (*(s->sm))["carState"].getCarState().getLatEnabled(); // ⬅️ 핸들 대기/활성 상태 가져오기!
+
         int steer_icon_size = 128;
         int steer_icon_x = s->fb_w - 120 - (steer_icon_size / 2); 
         int steer_icon_y = 45; 
         
-        if (lat_active || longActive) {
+        // 🎯 lat_active (조향 중) 이거나(||) lat_enabled (조향 대기) 일 때 아이콘 띄우기!
+        if (lat_active || lat_enabled || longActive) {
             ui_draw_image(s, { steer_icon_x, steer_icon_y, steer_icon_size, steer_icon_size }, "ic_lfa_engaged", 1.0f);
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
