@@ -846,8 +846,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         # 4. 팝업 조건 판단 (30km/h 이상)
         if v_ego_kph >= 30.0:
             
-            # [새치기 로직 발동!] AI의 확신(lane_changing)이든 명령(desire)이든 시작되는 즉시!
-            if is_changing_lane or (desire in [3, 4]):
+            # [새치기 로직 발동!] 명령(desire)이 시작되는 즉시!
+            if (desire in [3, 4]):
                 alc_msg = 3  # 3번 메시지로 기존 1번, 10번의 잔상을 강제로 덮어씌움
                 
             else: # 차선 변경 전, 방향지시등만 켜고 대기 중일 때
