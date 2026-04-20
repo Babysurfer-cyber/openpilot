@@ -625,10 +625,10 @@ def _apply_lane_desire(values, desire):
 
 def _apply_radar_blink(values, radar_pairs, frame, *,
                       disp_dist=30.0, min_dist=14.0,
-                      max_interval=200, min_interval=47, t=1.0):
+                      max_interval=100, t=1.0):
   """
   거리 > min_dist 일 때만 깜빡임.
-  14m(최소거리)에서는 min_interval(47)로, 30m(최대거리)에서는 max_interval(200)로 완벽히 독립되어 작동.
+  거리 멀수록 interval 커짐(느리게).
   """
   for det_key, dist_key in radar_pairs:
     dist = values[dist_key]
@@ -636,13 +636,8 @@ def _apply_radar_blink(values, radar_pairs, frame, *,
       continue
 
     d = min(dist, disp_dist)
-
-    # 1. 거리 비율 계산: 14m일 때 0.0, 30m일 때 1.0
-    ratio = (d - min_dist) / (disp_dist - min_dist)
-
-    # 2. 새로운 수학 공식! (최소 속도와 최대 속도를 양끝단에 고정)
-    interval = int((min_interval + (max_interval - min_interval) * ratio) * t)
-    interval = _clip_int(interval, min_interval, max_interval)
+    interval = int((1 + (max_interval - 1) * (d / disp_dist)) * t)
+    interval = _clip_int(interval, 1, max_interval)
 
     blink = (frame // interval) & 1
     values[det_key] = 2 - blink
@@ -670,21 +665,12 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       ('LR_DETECT', 'LR_DETECT_DISTANCE'),
       ('RR_DETECT', 'RR_DETECT_DISTANCE'),
     ]
-    
-    # ▼▼▼ 유저님 맞춤형: 30m 이하일 때만 켜고, 깜빡임 로직 완전 배제 ▼▼▼
     for det_key, dist_key in radar_all:
-      dist = values[dist_key]
-      
-      # 순정 레이더가 물체를 인식한 상태(4 이상)이고 거리값이 있을 때
-      if values[det_key] >= 4 and dist != 0:
-        if dist <= 30.0:
-          values[det_key] = 1  # 30m 이하: 회색 깍두기 그래픽 고정 (깜빡임 절대 없음)
-        else:
-          values[det_key] = 0  # 30m 초과: 화면에서 완전히 숨김
+      if values[det_key] >= 4 and values[dist_key] != 0:
+        values[det_key] = 1
 
-    # 깜빡임 애니메이션을 만들던 함수는 이제 필요 없으므로 완전히 차단(주석 처리)합니다!
-    # if blink_pairs:
-    #   _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
+    if blink_pairs:
+      _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
 
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          disp_angle, left_lane_warning, right_lane_warning,
