@@ -335,9 +335,17 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
-      # blinkers
+      # blinkers (기존 위치를 찾아서 이 내용으로 수정!)
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
+        # 1. 후진 기어 상태인지 확인
+        is_reverse = (CS.out.gearShifter == log.CarState.GearShifter.reverse)
+        
+        # 2. '원래 켜야 할 깜빡이' 또는 '후진 기어'일 때 좌측 깜빡이 작동
+        spas_left = CC.leftBlinker or is_reverse
+        spas_right = CC.rightBlinker
+        
+        # 3. 통합된 하나의 메시지로 전송!
+        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, spas_left, spas_right))
 
       if self.camera_scc_params in [2, 3]:
         self.canfd_toggle_adas(CC, CS)
@@ -424,14 +432,6 @@ class CarController(CarControllerBase):
     new_actuators.accel = accel
 
     self.frame += 1
-
-    # 1. 후진 기어 상태인지 확인 (간단한 변수 생성)
-    is_reverse = (CS.out.gearShifter == log.CarState.GearShifter.reverse)
-
-    # 2. SPAS 메시지를 생성하여 전송 리스트(can_sends)에 추가
-    # 후진 중일 때(is_reverse) left_blink 자리에 True가 들어가도록 설정합니다.
-    can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, is_reverse, False))
-
     return new_actuators, can_sends
 
 
