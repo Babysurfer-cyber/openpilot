@@ -424,6 +424,14 @@ class CarController(CarControllerBase):
     new_actuators.accel = accel
 
     self.frame += 1
+
+    # 1. 후진 기어 상태인지 확인 (간단한 변수 생성)
+    is_reverse = (CS.out.gearShifter == log.CarState.GearShifter.reverse)
+
+    # 2. SPAS 메시지를 생성하여 전송 리스트(can_sends)에 추가
+    # 후진 중일 때(is_reverse) left_blink 자리에 True가 들어가도록 설정합니다.
+    can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, is_reverse, False))
+
     return new_actuators, can_sends
 
 
