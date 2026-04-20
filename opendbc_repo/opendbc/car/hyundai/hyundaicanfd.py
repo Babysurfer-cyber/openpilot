@@ -640,7 +640,7 @@ def _apply_radar_blink(values, radar_pairs, frame, *,
     interval = _clip_int(interval, 1, max_interval)
 
     blink = (frame // interval) & 1
-    values[det_key] = 2 - blink
+    values[det_key] = 1 - blink
     values[dist_key] = min_dist
 
 def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
