@@ -223,6 +223,33 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_steer, 
   return ret
 
 def create_suppress_lfa(packer, CAN, CS):
+  # --- [1. 테스트 컨트롤러 메모리 생성 (최초 1회만 실행됨)] ---
+  if not hasattr(create_suppress_lfa, "test_color"):
+    create_suppress_lfa.test_color = 0       # 0부터 시작
+    create_suppress_lfa.prev_left = False    # 이전 좌측 깜빡이 상태
+    create_suppress_lfa.prev_right = False   # 이전 우측 깜빡이 상태
+
+  # --- [2. 현재 깜빡이 상태 확인] ---
+  curr_left = CS.out.leftBlinker
+  curr_right = CS.out.rightBlinker
+
+  # --- [3. 딸깍! 눌린 순간만 감지해서 계산 (Edge Detection)] ---
+  # 우측 깜빡이를 막 켰을 때 (+1)
+  if curr_right and not create_suppress_lfa.prev_right:
+    create_suppress_lfa.test_color += 1
+  
+  # 좌측 깜빡이를 막 켰을 때 (-1)
+  if curr_left and not create_suppress_lfa.prev_left:
+    create_suppress_lfa.test_color -= 1
+
+  # 0~15 범위 무한 루프 처리 (16이 되면 0으로, -1이 되면 15로 순환)
+  create_suppress_lfa.test_color = create_suppress_lfa.test_color % 16
+
+  # 다음 계산을 위해 현재 깜빡이 상태를 '이전 상태'로 저장
+  create_suppress_lfa.prev_left = curr_left
+  create_suppress_lfa.prev_right = curr_right
+
+  # --- [4. 원래 있던 CAN 통신 포장 로직] ---
   if CS.cam_0x362 is not None:
     suppress_msg = "CAM_0x362"
     lfa_block_msg = CS.cam_0x362
@@ -232,13 +259,19 @@ def create_suppress_lfa(packer, CAN, CS):
   else:
     return []
 
-  #values = {f"BYTE{i}": lfa_block_msg[f"BYTE{i}"] for i in range(3, msg_bytes) if i != 7}
   values = copy.copy(lfa_block_msg)
   values["COUNTER"] = lfa_block_msg["COUNTER"]
   values["SET_ME_0"] = 0
   values["SET_ME_0_2"] = 0
+  
+  # 기본 차선 인식률은 최고(3)로 고정하여 HDA를 속임
   values["LEFT_LANE_LINE"] = 3
   values["RIGHT_LANE_LINE"] = 3
+  
+  # --- [5. 우리가 깜빡이로 조작한 테스트 값 주입!] ---
+  values["LEFT_LANE_COLOR"] = create_suppress_lfa.test_color
+  values["RIGHT_LANE_COLOR"] = create_suppress_lfa.test_color
+
   return [packer.make_can_msg(suppress_msg, CAN.ACAN, values)]
 
 def create_buttons(packer, CP, CAN, cnt, btn):
