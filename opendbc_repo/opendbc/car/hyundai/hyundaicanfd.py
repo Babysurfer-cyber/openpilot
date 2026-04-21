@@ -843,25 +843,20 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         danger_left = CS.out.leftBlindspot or left_lane_warning
         danger_right = CS.out.rightBlindspot or right_lane_warning
         
-        # 4. 팝업 조건 판단 (30km/h 이상)
-        if v_ego_kph >= 30.0:
+        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
+        if v_ego_kph >= 30.0 and not is_changing_lane:
             
-            # [새치기 로직 발동!] 명령(desire)이 시작되는 즉시!
-            if (desire in [3, 4]):
-                alc_msg = 3  # 3번 메시지로 기존 1번, 10번의 잔상을 강제로 덮어씌움
+            # [왼쪽 방향]
+            if CS.out.leftBlinker and danger_left:
+                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+            elif nudge_left and left_solid:
+                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
                 
-            else: # 차선 변경 전, 방향지시등만 켜고 대기 중일 때
-                # [왼쪽 방향]
-                if CS.out.leftBlinker and danger_left:
-                    alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
-                elif nudge_left and left_solid:
-                    alc_msg = 10 # 조건 B: 계기판 주황색 실선 조건 -> 메시지 10번 팝업
-                    
-                # [오른쪽 방향]
-                elif CS.out.rightBlinker and danger_right:
-                    alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
-                elif nudge_right and right_solid:
-                    alc_msg = 10 # 조건 B: 계기판 주황색 실선 조건 -> 메시지 10번 팝업
+            # [오른쪽 방향]
+            elif CS.out.rightBlinker and danger_right:
+                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+            elif nudge_right and right_solid:
+                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
