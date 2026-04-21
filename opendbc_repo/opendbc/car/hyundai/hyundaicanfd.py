@@ -798,7 +798,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["LCA_RIGHT_ICON"] = 1 if CS.out.rightBlindspot else 2
 
         values["LANE_LEFT"] = 1 if desire in (1, 3) else 0
-        values["LANE_RIGHT"] = 2 if hud_control.leadVisible else 1 if desire in (2, 4) else 0
+        values["LANE_RIGHT"] = 1 if desire in (2, 4) else 0
 
         ret.append(packer.make_can_msg("ADRV_0x161", CAN.ECAN, values, rx_counter = rx_counter))
 
