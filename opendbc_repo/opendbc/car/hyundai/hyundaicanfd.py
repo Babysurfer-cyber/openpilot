@@ -286,15 +286,28 @@ def create_acc_cancel(packer, CP, CAN, cruise_info_copy):
 def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control):
 
   if CS.lfahda_cluster is not None:
-    # 원본 복사로 LFA_OptUsmSta=2 무사히 유지
     values = copy.copy(CS.lfahda_cluster)
     rx_counter = values.pop("COUNTER", None)
   else:
-    # 원본이 끊겼을 때도 강제로 2를 주입하여 계기판 파업 방지
+    return []
     values = {}
     rx_counter = None
     values["LFA_OptUsmSta"] = 2
     values["HDA_OptUsmSta"] = 2
+    
+  values["HDA_CntrlModSta"] = 2 if long_active else 0
+  
+  # ▼▼▼ 유저님 맞춤형 전방 차량 연동 + 조향 방어 로직 ▼▼▼
+  if lat_active:
+    # 오픈파일럿이 조향 중일 때: 
+    # 앞차가 보이면 2(초록 핸들+녹색선), 안 보이면 1(회색 핸들, 조향은 안 풀림!)
+    values["HDA_LFA_SymSta"] = 2 if hud_control.leadVisible else 1
+  else:
+    # 조향을 껐을 때는 안전하게 0(숨김)
+    values["HDA_LFA_SymSta"] = 0
+
+  return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
+
     
   values["HDA_CntrlModSta"] = 2 if long_active else 0
   
