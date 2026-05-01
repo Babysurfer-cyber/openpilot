@@ -941,8 +941,8 @@ class CarrotServ:
     if current_limit > 0 and self.prev_speed_limit > 0:
       play_prompt = False
       
-      if current_limit < self.prev_speed_limit:
-        # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음!
+      if current_limit < self.prev_speed_limit and my_driving_mode == 5:
+        # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음!, 오토모드만 소리나게 수정
         play_prompt = True
       elif current_limit > self.prev_speed_limit and my_driving_mode == 5:
         # 조건 B: 제한속도가 '상승'할 때는 5번(AUTO) 모드일 때만 안내음!
