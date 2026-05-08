@@ -29,6 +29,8 @@ BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: Bu
 GearShifter = structs.CarState.GearShifter
 READY_COUNT_OK = 200
 
+READY_COUNT_OK = 200
+
 
 NUMERIC_TO_TZ = {
     840: "America/New_York",   # 미국 (US) → 동부 시간대
@@ -108,6 +110,7 @@ class CarState(CarStateBase):
     self.manual_speed_limit_assist = None
     self.accelerator = None
     self.blinkers = None
+    self.blinkers_alt = None
     self.doors_seatbelts = None
     self.cruise_buttons_alt2 = None
 
@@ -168,6 +171,7 @@ class CarState(CarStateBase):
     if self.controls_ready_count <= READY_COUNT_OK:
       if Params().get_bool("ControlsReady"):
         self.controls_ready_count += 1
+
       self.cp = can_parsers[Bus.pt]
       self.cp_cam = can_parsers[Bus.cam]
       self.cp_alt = can_parsers[Bus.alt] if Bus.alt in can_parsers else None
@@ -249,6 +253,7 @@ class CarState(CarStateBase):
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
+          add_and_cache(self.cp, "BLINKERS_ALT", "blinkers_alt")
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
@@ -357,6 +362,8 @@ class CarState(CarStateBase):
       gear = cp.vl["EMS20"]["HYDROGEN_GEAR_SHIFTER"]
     elif self.CP.flags & HyundaiFlags.CLUSTER_GEARS:
       gear = cp.vl["CLU15"]["CF_Clu_Gear"]
+      if self.CP.carFingerprint == CAR.KIA_K7:
+        ret.gearStep = cp.vl["LVR11"]["CF_Lvr_GearInf"]
     elif self.CP.flags & HyundaiFlags.TCU_GEARS:
       gear = cp.vl["TCU12"]["CUR_GR"]
     else:
@@ -536,8 +543,8 @@ class CarState(CarStateBase):
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
     #ret.steerFaultTemporary = False
 
-    if self.blinkers is not None:
-      blinkers_info = self.blinkers
+    blinkers_info = self.blinkers if self.blinkers is not None else self.blinkers_alt if self.blinkers_alt is not None else None
+    if blinkers_info is not None:
       left_blinker_lamp = blinkers_info["LEFT_LAMP"] or blinkers_info["LEFT_LAMP_ALT"]
       right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
       ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, left_blinker_lamp, right_blinker_lamp)
