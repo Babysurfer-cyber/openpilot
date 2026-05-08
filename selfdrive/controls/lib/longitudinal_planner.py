@@ -108,7 +108,9 @@ class LongitudinalPlanner:
     self.solverExecutionTime = 0.0
 
     self.vCluRatio = 1.0
-
+    self.reset_decel_timer = 0
+    self.reset_decel_start_a = 0.0
+    
     self.v_cruise_kph = 0.0
 
     self.params = Params()

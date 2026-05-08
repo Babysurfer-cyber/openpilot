@@ -135,6 +135,9 @@ class Parser:
     if 'lane_lines_prob' in outs:
       self.parse_binary_crossentropy('lane_lines_prob', outs)
     self._parse_lead_if_exists(outs)
+    # op11 (commaai/openpilot ece8f7664d 이후): desire_state 가 off_policy 로 이동
+    if 'desire_state' in outs:
+      self.parse_categorical_crossentropy('desire_state', outs, out_shape=(ModelConstants.DESIRE_PRED_WIDTH,))
     return outs
 
   def parse_policy_outputs(self, outs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -144,7 +147,13 @@ class Parser:
       self.parse_mdn('plan', outs, in_N=plan_in_N, out_N=plan_out_N, out_shape=(ModelConstants.IDX_N, ModelConstants.PLAN_WIDTH))
     if 'planplus' in outs:
       self.parse_mdn('planplus', outs, in_N=0, out_N=0, out_shape=(ModelConstants.IDX_N, ModelConstants.PLAN_WIDTH))
-    self.parse_categorical_crossentropy('desire_state', outs, out_shape=(ModelConstants.DESIRE_PRED_WIDTH,))
+    # op11: 모델이 제어값(curv_unscaled, accel)을 직접 산출
+    if 'action' in outs:
+      action_width = getattr(ModelConstants, 'ACTION_WIDTH', 2)
+      self.parse_mdn('action', outs, in_N=0, out_N=0, out_shape=(action_width,))
+    # desire_state는 op7/legacy 에서만 출력 (op11 on_policy는 미출력)
+    if 'desire_state' in outs:
+      self.parse_categorical_crossentropy('desire_state', outs, out_shape=(ModelConstants.DESIRE_PRED_WIDTH,))
     # desire_pred, meta가 policy output에 있으면 파싱 (3-모델 아키텍처)
     if 'desire_pred' in outs:
       self.parse_categorical_crossentropy('desire_pred', outs, out_shape=(ModelConstants.DESIRE_PRED_LEN,ModelConstants.DESIRE_PRED_WIDTH))

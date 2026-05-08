@@ -38,24 +38,22 @@ SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 CUSTOM_MODEL_PATH = Path('/data/models')
 DEFAULT_MODEL_PATH = Path(__file__).parent / 'models'
 
-# 모델에 필요한 필수 파일 목록
-REQUIRED_MODEL_FILES = [
-    'driving_vision_tinygrad.pkl',
-    'driving_policy_tinygrad.pkl',
-    'driving_vision_metadata.pkl',
-    'driving_policy_metadata.pkl',
-]
-
 def validate_model_files(base: Path) -> bool:
-    """모델 디렉토리의 4개 필수 파일 모두 존재하는지 검증"""
-    for filename in REQUIRED_MODEL_FILES:
-        filepath = base / filename
-        if not filepath.exists():
-            cloudlog.warning(f"Model file missing: {filepath}")
+    """모델 디렉토리의 필수 파일 존재 검증 (on_policy 또는 policy 허용)"""
+    # vision 필수
+    for f in ['driving_vision_tinygrad.pkl', 'driving_vision_metadata.pkl']:
+        fp = base / f
+        if not fp.exists() or fp.stat().st_size == 0:
+            cloudlog.warning(f"Model file missing or empty: {fp}")
             return False
-        if filepath.stat().st_size == 0:
-            cloudlog.warning(f"Model file empty: {filepath}")
-            return False
+    # policy: on_policy 또는 policy 둘 중 하나
+    has_on_policy = (base / 'driving_on_policy_tinygrad.pkl').exists() and \
+                    (base / 'driving_on_policy_metadata.pkl').exists()
+    has_policy = (base / 'driving_policy_tinygrad.pkl').exists() and \
+                 (base / 'driving_policy_metadata.pkl').exists()
+    if not has_on_policy and not has_policy:
+        cloudlog.warning(f"No policy model found in {base}")
+        return False
     return True
 
 def get_model_paths():
@@ -103,9 +101,53 @@ RECOVERY_POWER = 1.0  # planplus 차선 복귀 강도
 IMG_QUEUE_SHAPE = (6*(ModelConstants.MODEL_RUN_FREQ//ModelConstants.MODEL_CONTEXT_FREQ + 1), 128, 256)
 assert IMG_QUEUE_SHAPE[0] == 30
 
+def get_lat_smooth_seconds_dynamic(model_output: dict[str, np.ndarray],
+                                   base_lat_smooth_seconds: float) -> tuple[float, float, float]:
+  if base_lat_smooth_seconds <= 0.0:
+    return 0.0, 0.0, 0.0
+
+  try:
+    y_std_1s = float(model_output['plan_stds'][0, 10, Plan.POSITION, 1])
+  except Exception:
+    y_std_1s = 0.0
+
+  extra_smooth_seconds = float(np.interp(y_std_1s, [0.15, 0.25], [0.0, base_lat_smooth_seconds]))
+
+  dynamic_lat_smooth_seconds = float(np.clip(base_lat_smooth_seconds + extra_smooth_seconds, 0.0, 0.60))
+
+  return dynamic_lat_smooth_seconds, y_std_1s, extra_smooth_seconds
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
                           lat_action_t: float, long_action_t: float, v_ego: float, lat_smooth_seconds: float, vEgoStopping: float) -> log.ModelDataV2.Action:
+    # op11: on_policy가 (curv_unscaled, accel)을 직접 산출. plan이 있으면 desired_velocity 만 plan에서 보강.
+    if 'action' in model_output:
+      desired_curv_unscaled, desired_accel = model_output['action'][0]
+      desired_curvature = float(desired_curv_unscaled) / 100.0
+      desired_accel = float(desired_accel)
+      should_stop = (v_ego < 0.3 and desired_accel < 0.1)
+
+      desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+      if v_ego > MIN_LAT_CONTROL_SPEED:
+        desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, lat_smooth_seconds)
+      else:
+        desired_curvature = prev_action.desiredCurvature
+
+      desired_velocity_now = prev_action.desiredVelocity
+      if 'plan' in model_output:
+        plan = model_output['plan'][0]
+        _, _, _, desired_velocity_now = get_accel_from_plan(plan[:, Plan.VELOCITY][:, 0],
+                                                            plan[:, Plan.ACCELERATION][:, 0],
+                                                            ModelConstants.T_IDXS,
+                                                            action_t=long_action_t,
+                                                            vEgoStopping=vEgoStopping)
+        desired_velocity_now = smooth_value(desired_velocity_now, prev_action.desiredVelocity, LONG_SMOOTH_SECONDS)
+
+      return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
+                                    desiredAcceleration=float(desired_accel),
+                                    shouldStop=bool(should_stop),
+                                    desiredVelocity=float(desired_velocity_now))
+
+    # op7/legacy: plan 에서 curvature/accel 산출
     plan = model_output['plan'][0]
     desired_accel, should_stop, _, desired_velocity_now = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
                                                      plan[:,Plan.ACCELERATION][:,0],
@@ -310,8 +352,7 @@ class ModelState:
 
     out = self.update_imgs(self.img_queues['img'], self.full_frames['img'], self.transforms['img'],
                            self.img_queues['big_img'], self.full_frames['big_img'], self.transforms['big_img'])
-    self.img_queues['img'], self.img_queues['big_img'] = out[0].realize(), out[2].realize()
-    vision_inputs = {'img': out[1], 'big_img': out[3]}
+    vision_inputs = {'img': out[0], 'big_img': out[1]}
 
     if prepare_only:
       return None
@@ -323,16 +364,31 @@ class ModelState:
     for k in [self.desire_key, 'features_buffer']:
       self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
+    # op11 추가 입력: action_t (lat/long action_t 시간지평), prev_action (이전 출력)
+    # 모델 메타데이터에 입력 슬롯이 있을 때만 채움 → op7 모델은 영향 없음
+    if 'action_t' in self.numpy_inputs:
+      action_t_in = inputs.get('action_t')
+      if action_t_in is not None:
+        self.numpy_inputs['action_t'][:] = action_t_in
+      else:
+        self.numpy_inputs['action_t'][:] = 0
+    if 'prev_action' in self.numpy_inputs:
+      prev_action_in = inputs.get('prev_action')
+      if prev_action_in is not None:
+        self.numpy_inputs['prev_action'][:] = prev_action_in
+      else:
+        self.numpy_inputs['prev_action'][:] = 0
 
     self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
 
     # off-policy 모델 실행 (있을 때만)
+    # op11: plan만 off_policy에 있고 on_policy는 action만 산출 → off_policy plan을 유지해야 함.
+    # op7: 양쪽 모두 plan을 산출 → dict 머지 순서로 on_policy plan이 자동 우선됨.
     if self.has_off_policy:
       self.off_policy_output = self.off_policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
       off_policy_outputs_dict = self.parser.parse_off_policy_outputs(self.slice_outputs(self.off_policy_output, self.off_policy_output_slices))
-      off_policy_outputs_dict.pop('plan')  # off-policy의 plan은 버린다
-      # 합성 순서: vision → off_policy → policy (policy가 최종 덮어쓰기)
+      # 합성 순서: vision → off_policy → policy (policy가 공유 키를 덮어쓰지만, op11처럼 policy에 plan이 없으면 off_policy plan 유지)
       combined_outputs_dict = {**vision_outputs_dict, **off_policy_outputs_dict, **policy_outputs_dict}
     else:
       combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
@@ -437,11 +493,6 @@ def main(demo=False):
       long_delay = params.get_float("LongActuatorDelay")*0.01
       vEgoStopping = params.get_float("VEgoStopping") * 0.01
       camera_yaw_trim_deg = params.get_float("CameraYawTrimDeg") * 0.01
-      
-    if custom_lat_delay > 0.0:
-      lat_delay = custom_lat_delay + lat_smooth_seconds
-    else:
-      lat_delay = sm["liveDelay"].lateralDelay + lat_smooth_seconds
 
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
     while meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
@@ -480,7 +531,7 @@ def main(demo=False):
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["roadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
-    #lateral_control_params = np.array([v_ego, lat_delay], dtype=np.float32)
+    #lat_delay = sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
     if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
 
@@ -489,7 +540,7 @@ def main(demo=False):
 
       if applied_yaw_trim_deg != 0.0:
         device_from_calib_euler[2] -= np.radians(applied_yaw_trim_deg)
-        
+
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
       model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics, False).astype(np.float32)
       model_transform_extra = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics, True).astype(np.float32)
@@ -517,9 +568,20 @@ def main(demo=False):
 
     bufs = {name: buf_extra if 'big' in name else buf_main for name in model.vision_input_names}
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
+    frame_delay = DT_MDL # compensate for time passed since the frame was captured: current_time - timestamp_eof is 50ms on average
+    action_delay = DT_MDL / 2 # middle of the interval between model output (current state) and next frame (expected state)
+    if custom_lat_delay > 0.0:
+      lat_delay_now = custom_lat_delay + lat_smooth_seconds
+    else:
+      lat_delay_now = sm["liveDelay"].lateralDelay + lat_smooth_seconds
+    lat_action_t = lat_delay_now + frame_delay + action_delay
+    long_action_t = long_delay + frame_delay + action_delay
     inputs:dict[str, np.ndarray] = {
       model.desire_key: vec_desire,
       'traffic_convention': traffic_convention,
+      'action_t': np.array([lat_action_t, long_action_t], dtype=np.float32),
+      'prev_action': np.array([prev_action.desiredCurvature * max(1.0, v_ego)**2,
+                               prev_action.desiredAcceleration], dtype=np.float32),
     }
 
     mt1 = time.perf_counter()
@@ -532,7 +594,18 @@ def main(demo=False):
       drivingdata_send = messaging.new_message('drivingModelData')
       posenet_send = messaging.new_message('cameraOdometry')
 
-      action = get_action_from_model(model_output, prev_action, lat_delay + DT_MDL, long_delay + DT_MDL, v_ego, lat_smooth_seconds, vEgoStopping)
+      lat_smooth_seconds_dynamic, y_std_1s, lat_smooth_extra = get_lat_smooth_seconds_dynamic(
+          model_output,
+          lat_smooth_seconds,
+        )
+      if custom_lat_delay > 0.0:
+        lat_delay_dynamic = custom_lat_delay + lat_smooth_seconds_dynamic
+      else:
+        lat_delay_dynamic = sm["liveDelay"].lateralDelay + lat_smooth_seconds_dynamic
+
+      frame_delay = DT_MDL # compensate for time passed since the frame was captured: current_time - timestamp_eof is 50ms on average
+      action_delay = DT_MDL / 2 # middle of the interval between model output (current state) and next frame (expected state)
+      action = get_action_from_model(model_output, prev_action, lat_delay_dynamic + frame_delay + action_delay, long_delay + frame_delay + action_delay, v_ego, lat_smooth_seconds_dynamic, vEgoStopping)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
