@@ -27,6 +27,7 @@ BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: Bu
                 Buttons.GAP_DIST: ButtonType.gapAdjustCruise, Buttons.CANCEL: ButtonType.cancel, Buttons.LFA_BUTTON: ButtonType.lfaButton}
 
 GearShifter = structs.CarState.GearShifter
+READY_COUNT_OK = 200
 
 
 NUMERIC_TO_TZ = {
@@ -107,7 +108,6 @@ class CarState(CarStateBase):
     self.manual_speed_limit_assist = None
     self.accelerator = None
     self.blinkers = None
-    self.blinkers_alt = None
     self.doors_seatbelts = None
     self.cruise_buttons_alt2 = None
 
@@ -165,7 +165,7 @@ class CarState(CarStateBase):
     self.controls_ready_count = 0
 
   def monitor_fingerprint(self, can_parsers, canfd):
-    if self.controls_ready_count <= 200:
+    if self.controls_ready_count <= READY_COUNT_OK:
       if Params().get_bool("ControlsReady"):
         self.controls_ready_count += 1
       self.cp = can_parsers[Bus.pt]
@@ -224,6 +224,8 @@ class CarState(CarStateBase):
           cp_cruise = self.cp_cam if self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC else self.cp
           add_and_cache(cp_cruise, "SCC_CONTROL", "scc_control")          
         elif self.controls_ready_count == 121:
+          add_and_cache(self.cp, "TCS", "tcs")
+          add_and_cache(self.cp, "MDPS", "mdps")
           add_and_cache(self.cp_cam, "LFA", "lfa")
           add_and_cache(self.cp_cam, "LFA_ALT", "lfa_alt")          
           add_and_cache(self.cp_cam, "LFAHDA_CLUSTER", "lfahda_cluster")
@@ -235,8 +237,6 @@ class CarState(CarStateBase):
           add_and_cache(self.cp_cam, "CCNC_0x162", "ccnc_0x162")
         elif self.controls_ready_count == 123:        
           add_and_cache(self.cp, "HDA_INFO_4A3", "hda_info_4a3")
-          add_and_cache(self.cp, "TCS", "tcs")
-          add_and_cache(self.cp, "MDPS", "mdps")
           add_and_cache(self.cp, "STEER_TOUCH_2AF", "steer_touch_2af")
         elif self.controls_ready_count == 124:
           add_and_cache(self.cp, self.cruise_btns_msg_canfd, "cruise_buttons_msg")
@@ -249,7 +249,6 @@ class CarState(CarStateBase):
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
-          add_and_cache(self.cp, "BLINKERS_ALT", "blinkers_alt")
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
@@ -313,7 +312,7 @@ class CarState(CarStateBase):
     # cruise state
     if self.CP.openpilotLongitudinalControl:
       # These are not used for engage/disengage since openpilot keeps track of state using the buttons
-      ret.cruiseState.available = self.main_enabled #cp.vl["TCS13"]["ACCEnable"] == 0
+      ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK #cp.vl["TCS13"]["ACCEnable"] == 0
       ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
@@ -358,8 +357,6 @@ class CarState(CarStateBase):
       gear = cp.vl["EMS20"]["HYDROGEN_GEAR_SHIFTER"]
     elif self.CP.flags & HyundaiFlags.CLUSTER_GEARS:
       gear = cp.vl["CLU15"]["CF_Clu_Gear"]
-      if self.CP.carFingerprint == CAR.KIA_K7:
-        ret.gearStep = cp.vl["LVR11"]["CF_Lvr_GearInf"]
     elif self.CP.flags & HyundaiFlags.TCU_GEARS:
       gear = cp.vl["TCU12"]["CUR_GR"]
     else:
@@ -539,8 +536,8 @@ class CarState(CarStateBase):
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
     #ret.steerFaultTemporary = False
 
-    blinkers_info = self.blinkers if self.blinkers is not None else self.blinkers_alt if self.blinkers_alt is not None else None
-    if blinkers_info is not None:
+    if self.blinkers is not None:
+      blinkers_info = self.blinkers
       left_blinker_lamp = blinkers_info["LEFT_LAMP"] or blinkers_info["LEFT_LAMP_ALT"]
       right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
       ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, left_blinker_lamp, right_blinker_lamp)
@@ -566,7 +563,7 @@ class CarState(CarStateBase):
     if cruise_button in [Buttons.RES_ACCEL, Buttons.SET_DECEL] and self.CP.openpilotLongitudinalControl:
       self.main_enabled = True
     # CAN FD cars enable on main button press, set available if no TCS faults preventing engagement
-    ret.cruiseState.available = self.main_enabled #cp.vl["TCS"]["ACCEnable"] == 0
+    ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK #cp.vl["TCS"]["ACCEnable"] == 0
     if self.CP.flags & HyundaiFlags.CAMERA_SCC.value:
       self.MainMode_ACC = cp_cam.vl["SCC_CONTROL"]["MainMode_ACC"] == 1
       self.ACCMode = cp_cam.vl["SCC_CONTROL"]["ACCMode"]
