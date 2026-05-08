@@ -47,39 +47,176 @@ window.CarrotLiveRuntimeState = CARROT_LIVE_RUNTIME_STATE;
 let LIVE_RUNTIME_FETCH_T = null;
 let LIVE_RUNTIME_FETCH_IN_FLIGHT = null;
 let LIVE_RUNTIME_POLL_ACTIVE = false;
-let LAST_HUD_PAYLOAD_SIGNATURE = "";
-const RTC_STATS_POLL_MS = 2000;
-const RTC_PERF_STATE = {
-  active: false,
-  collectedAtMs: 0,
-  connectionState: "idle",
-  iceConnectionState: "new",
-  codec: "",
-  inbound: null,
-  video: null,
-  error: "",
-};
-window.CarrotRtcPerf = RTC_PERF_STATE;
-let RTC_STATS_T = null;
+const CARROT_VISION_REQUIRED_LIVE_SERVICES = Object.freeze(["roadCameraState", "modelV2"]);
+var CARROT_VISION_PHASE = window.CarrotVisionPhase;
+var CARROT_VISION_STATE = window.CarrotVisionState;
+var isCarrotVisionActive = window.isCarrotVisionActive;
+var setCarrotVisionPhase = window.CarrotVisionSetPhase;
+var setCarrotVisionState = window.CarrotVisionSetState;
+var setCarrotVisionAvailable = window.CarrotVisionSetAvailable;
+var setCarrotVisionActive = window.CarrotVisionSetActive;
+
+function isCarrotPageActive() {
+  return document.body?.dataset?.page === "carrot";
+}
 
 function isCarrotPageVisible() {
-  return document.body?.dataset?.page === "carrot" && !document.hidden;
+  return isCarrotPageActive() && !document.hidden;
 }
 
 function shouldRunCarrotHudRealtime() {
-  return isCarrotPageVisible();
+  return isCarrotPageActive();
+}
+
+function getCarrotVisionRealtimeBlockReason() {
+  if (!isCarrotPageActive() || !isCarrotVisionActive()) return "";
+
+  const runtimeState = window.CarrotLiveRuntimeState || CARROT_LIVE_RUNTIME_STATE;
+  if (!runtimeState?.ok) return "runtime-unavailable";
+
+  const runtime = runtimeState.runtime && typeof runtimeState.runtime === "object" ? runtimeState.runtime : {};
+  const serviceAlive = runtime.serviceAlive && typeof runtime.serviceAlive === "object" ? runtime.serviceAlive : null;
+  if (!serviceAlive) return "runtime-unavailable";
+
+  const missing = CARROT_VISION_REQUIRED_LIVE_SERVICES.filter((service) => serviceAlive[service] !== true);
+  return missing.length ? "services-missing" : "";
+}
+
+function isCarrotVisionRealtimeSourceReady() {
+  return !getCarrotVisionRealtimeBlockReason();
+}
+
+function getCarrotVisionRuntimeWaitDetail(reason = getCarrotVisionRealtimeBlockReason()) {
+  if (reason === "services-missing") {
+    return getUIText("vision_step_waiting_car", "Waiting for car camera services.");
+  }
+  return getUIText("vision_step_waiting_runtime", "Waiting for car runtime connection.");
 }
 
 function shouldRunCarrotVisionRealtime() {
-  return isCarrotPageVisible() && window.CARROT_VISION_ACTIVE;
+  return isCarrotPageActive() && isCarrotVisionActive() && isCarrotVisionRealtimeSourceReady();
 }
+
+function isLandscapeOrientation() {
+  if (typeof window.matchMedia === "function") {
+    try {
+      return window.matchMedia("(orientation: landscape)").matches;
+    } catch {}
+  }
+  return Number(window.innerWidth || 0) > Number(window.innerHeight || 0);
+}
+
+function isFullscreenActive() {
+  return Boolean(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement
+  );
+}
+
+async function requestCarrotFullscreen(options = {}) {
+  const quiet = Boolean(options.quiet);
+  if (!isLandscapeOrientation()) return false;
+  if (isFullscreenActive()) return true;
+
+  const root = document.documentElement || document.body;
+  if (!root) return false;
+
+  const request =
+    root.requestFullscreen ||
+    root.webkitRequestFullscreen ||
+    root.msRequestFullscreen;
+  if (typeof request !== "function") {
+    if (!quiet && typeof showAppToast === "function") {
+      showAppToast(getUIText("fullscreen_not_supported", "Fullscreen not supported on this browser."), { tone: "error" });
+    }
+    return false;
+  }
+
+  try {
+    const result = request.call(root);
+    if (result && typeof result.then === "function") {
+      await result;
+    }
+    return true;
+  } catch (error) {
+    console.log("[fullscreen] request failed", error);
+    return false;
+  }
+}
+
+async function exitCarrotFullscreen(options = {}) {
+  const quiet = Boolean(options.quiet);
+  if (!isFullscreenActive()) return true;
+
+  const exit =
+    document.exitFullscreen ||
+    document.webkitExitFullscreen ||
+    document.msExitFullscreen;
+  if (typeof exit !== "function") {
+    if (!quiet && typeof showAppToast === "function") {
+      showAppToast(getUIText("fullscreen_not_supported", "Fullscreen not supported on this browser."), { tone: "error" });
+    }
+    return false;
+  }
+
+  try {
+    const result = exit.call(document);
+    if (result && typeof result.then === "function") {
+      await result;
+    }
+    return true;
+  } catch (error) {
+    console.log("[fullscreen] exit failed", error);
+    return false;
+  }
+}
+
+async function toggleCarrotFullscreen(options = {}) {
+  if (isFullscreenActive()) {
+    return exitCarrotFullscreen(options);
+  }
+  return requestCarrotFullscreen(options);
+}
+
+function shouldKeepCarrotFullscreen() {
+  return document.body?.dataset?.page === "carrot" && isCarrotVisionActive();
+}
+
+async function syncCarrotFullscreenLifecycle() {
+  if (shouldKeepCarrotFullscreen()) return;
+  await exitCarrotFullscreen({ quiet: true }).catch(() => {});
+}
+
+window.RequestCarrotFullscreen = requestCarrotFullscreen;
+window.ExitCarrotFullscreen = exitCarrotFullscreen;
+window.ToggleCarrotFullscreen = toggleCarrotFullscreen;
+
+window.addEventListener("carrot:pagechange", () => {
+  void syncCarrotFullscreenLifecycle();
+});
+window.addEventListener("carrot:visionchange", () => {
+  void syncCarrotFullscreenLifecycle();
+});
 
 function emitCarrotRenderRequest(detail = {}) {
   window.dispatchEvent(new CustomEvent("carrot:render-request", { detail }));
 }
 
+function requestCarrotVisionRender(detail = {}) {
+  emitCarrotRenderRequest({ force: true, overlayDirty: true, hudDirty: true, ...detail });
+}
+window.requestCarrotVisionRender = requestCarrotVisionRender;
+
 function emitCarrotVisionChange(active) {
   window.dispatchEvent(new CustomEvent("carrot:visionchange", { detail: { active: Boolean(active) } }));
+}
+window.emitCarrotVisionChange = emitCarrotVisionChange;
+
+function maybeRequestCarrotFullscreenOnPageChange(detail = {}) {
+  if (String(detail?.page || "") !== "carrot") return;
+  if (!isCarrotVisionActive()) return;
+  requestCarrotFullscreen({ quiet: true }).catch(() => {});
 }
 
 function getLiveRuntimeDataSignature(payload) {
@@ -132,7 +269,11 @@ async function fetchLiveRuntimeState(force = false) {
       shouldNotifyRender = shouldNotifyRender || wasOk;
 	    } finally {
       if (shouldNotifyRender) {
+        _hudMarkDirty();
         emitCarrotRenderRequest({ force: false, overlayDirty: true, hudDirty: true });
+      }
+      if (typeof syncCarrotRealtimeLifecycle === "function") {
+        syncCarrotRealtimeLifecycle(false);
       }
 	      LIVE_RUNTIME_FETCH_IN_FLIGHT = null;
 	    }
@@ -142,7 +283,7 @@ async function fetchLiveRuntimeState(force = false) {
 }
 
 function getLiveRuntimePollMs() {
-  return shouldRunCarrotHudRealtime() ? 1000 : 3000;
+  return isCarrotPageVisible() ? 1000 : 3000;
 }
 
 function scheduleLiveRuntimeStateFetch(ms = getLiveRuntimePollMs()) {
@@ -170,874 +311,172 @@ function startLiveRuntimeStateFetch(force = false, ms = getLiveRuntimePollMs()) 
   scheduleLiveRuntimeStateFetch(ms);
 }
 
-function resetRtcPerfState() {
-  RTC_PERF_STATE.active = false;
-  RTC_PERF_STATE.collectedAtMs = Date.now();
-  RTC_PERF_STATE.connectionState = "idle";
-  RTC_PERF_STATE.iceConnectionState = "new";
-  RTC_PERF_STATE.codec = "";
-  RTC_PERF_STATE.inbound = null;
-  RTC_PERF_STATE.video = null;
-  RTC_PERF_STATE.error = "";
-  window.CarrotRtcPerf = RTC_PERF_STATE;
+setCarrotVisionAvailable(false, {
+  disabledMessage: getUIText("vision_unavailable_hint", "Available when DisableDM is 2."),
+  reason: "init",
+  updateRtcStatus: false,
+  render: false,
+});
+let carrotVisionBadgeHintTimer = null;
+
+function showCarrotVisionBadgeHint(el) {
+  if (!el) return;
+  el.classList.add("is-tooltip-visible");
+  if (carrotVisionBadgeHintTimer) clearTimeout(carrotVisionBadgeHintTimer);
+  carrotVisionBadgeHintTimer = window.setTimeout(() => {
+    el.classList.remove("is-tooltip-visible");
+    if (document.activeElement === el) el.blur();
+    carrotVisionBadgeHintTimer = null;
+  }, 1400);
 }
 
-function stopRtcPerfPolling() {
-  if (RTC_STATS_T) {
-    clearTimeout(RTC_STATS_T);
-    RTC_STATS_T = null;
-  }
+async function fetchDisableDmValue() {
+  const r = await fetch("/api/params_bulk?names=DisableDM", { cache: "no-store" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  const raw = j.values?.DisableDM;
+  const value = Number.parseInt(String(raw ?? "0"), 10);
+  return Number.isFinite(value) ? value : 0;
 }
 
-function readRtcVideoPlaybackQuality(video) {
-  if (!video || typeof video.getVideoPlaybackQuality !== "function") return null;
-  const quality = video.getVideoPlaybackQuality();
-  if (!quality) return null;
-  return {
-    totalVideoFrames: Number(quality.totalVideoFrames ?? 0),
-    droppedVideoFrames: Number(quality.droppedVideoFrames ?? 0),
-    corruptedVideoFrames: Number(quality.corruptedVideoFrames ?? 0),
-    creationTime: Number(quality.creationTime ?? 0),
-    width: Number(video.videoWidth || 0),
-    height: Number(video.videoHeight || 0),
-    readyState: Number(video.readyState || 0),
-    currentTime: Number(video.currentTime || 0),
-  };
-}
-
-function extractRtcInboundVideoStats(statsReport, statsMap) {
-  if (!statsReport) return { inbound: null, codec: "" };
-  const codecReport = statsReport.codecId ? statsMap.get(statsReport.codecId) : null;
-  return {
-    codec: codecReport?.mimeType || codecReport?.id || "",
-    inbound: {
-      framesDecoded: Number(statsReport.framesDecoded ?? 0),
-      framesDropped: Number(statsReport.framesDropped ?? 0),
-      framesPerSecond: Number(statsReport.framesPerSecond ?? 0),
-      frameWidth: Number(statsReport.frameWidth ?? 0),
-      frameHeight: Number(statsReport.frameHeight ?? 0),
-      jitter: Number(statsReport.jitter ?? 0),
-      bytesReceived: Number(statsReport.bytesReceived ?? 0),
-      packetsLost: Number(statsReport.packetsLost ?? 0),
-      decoderImplementation: statsReport.decoderImplementation || "",
-      freezeCount: Number(statsReport.freezeCount ?? 0),
-      totalFreezesDuration: Number(statsReport.totalFreezesDuration ?? 0),
-    },
-  };
-}
-
-async function collectRtcPerfStats() {
-  const pc = RTC_PC;
-  if (!pc) return;
-
-  try {
-    const stats = await pc.getStats(null);
-    let inboundVideoReport = null;
-    stats.forEach((report) => {
-      if (inboundVideoReport) return;
-      if (report?.type === "inbound-rtp" && report.kind === "video" && !report.isRemote) {
-        inboundVideoReport = report;
-      }
-    });
-
-    const video = document.getElementById("rtcVideo");
-    const inbound = extractRtcInboundVideoStats(inboundVideoReport, stats);
-    RTC_PERF_STATE.active = shouldRunCarrotVisionRealtime();
-    RTC_PERF_STATE.collectedAtMs = Date.now();
-    RTC_PERF_STATE.connectionState = pc.connectionState || "unknown";
-    RTC_PERF_STATE.iceConnectionState = pc.iceConnectionState || "unknown";
-    RTC_PERF_STATE.codec = inbound.codec;
-    RTC_PERF_STATE.inbound = inbound.inbound;
-    RTC_PERF_STATE.video = readRtcVideoPlaybackQuality(video);
-    RTC_PERF_STATE.error = "";
-    window.CarrotRtcPerf = RTC_PERF_STATE;
-  } catch (error) {
-    RTC_PERF_STATE.active = shouldRunCarrotVisionRealtime();
-    RTC_PERF_STATE.collectedAtMs = Date.now();
-    RTC_PERF_STATE.connectionState = pc.connectionState || "unknown";
-    RTC_PERF_STATE.iceConnectionState = pc.iceConnectionState || "unknown";
-    RTC_PERF_STATE.error = error?.message || String(error);
-    window.CarrotRtcPerf = RTC_PERF_STATE;
-  }
-}
-
-function scheduleRtcPerfPolling(ms = RTC_STATS_POLL_MS) {
-  if (RTC_STATS_T || !shouldRunCarrotVisionRealtime()) return;
-  RTC_STATS_T = setTimeout(async () => {
-    RTC_STATS_T = null;
-    if (!shouldRunCarrotVisionRealtime()) return;
-    await collectRtcPerfStats().catch(() => {});
-    scheduleRtcPerfPolling(RTC_STATS_POLL_MS);
-  }, ms);
-}
-
-function startRtcPerfPolling(force = false) {
-  if (force) collectRtcPerfStats().catch(() => {});
-  scheduleRtcPerfPolling(force ? 500 : RTC_STATS_POLL_MS);
-}
-
-
-// ===== WebRTC (auto) =====
-let RTC_PC = null;
-let RTC_RETRY_T = null;
-let RTC_WAIT_TRACK_T = null;
-let RTC_FAIL_COUNT = 0;
-function rtcHasLiveTrack() {
-  const video = document.getElementById("rtcVideo");
-  return Boolean(video && video.srcObject);
-}
-
-function rtcStatusSet(s) {
-  const el = document.getElementById("rtcStatus");
-  if (el) el.textContent = String(s);
-}
-
-function rtcCancelRetry() {
-  if (RTC_RETRY_T) {
-    clearTimeout(RTC_RETRY_T);
-    RTC_RETRY_T = null;
-  }
-}
-
-async function rtcDisconnect() {
-  rtcCancelRetry();
-  rtcDisarmTrackTimeout();
-  stopRtcPerfPolling();
-  try { if (RTC_PC) RTC_PC.close(); } catch {}
-  RTC_PC = null;
-  resetRtcPerfState();
-
-  const video = document.getElementById("rtcVideo");
-  if (video) {
-    video.srcObject = null;
-    video.style.display = "none";
-  }
-}
-
-function rtcScheduleRetry(ms = 2000) {
-  if (!shouldRunCarrotVisionRealtime()) return;
-  rtcCancelRetry();
-  const backoff = Math.min(ms * Math.pow(1.5, RTC_FAIL_COUNT), 30000);
-  RTC_FAIL_COUNT = Math.min(RTC_FAIL_COUNT + 1, 20);
-  RTC_RETRY_T = setTimeout(async () => {
-    RTC_RETRY_T = null;
-    if (!shouldRunCarrotVisionRealtime()) return;
-    await rtcConnectOnce().catch(() => {});
-  }, backoff);
-}
-
-function rtcArmTrackTimeout(ms = 5000) {
-  if (RTC_WAIT_TRACK_T) clearTimeout(RTC_WAIT_TRACK_T);
-  RTC_WAIT_TRACK_T = setTimeout(async () => {
-    RTC_WAIT_TRACK_T = null;
-    rtcStatusSet("no track, retry...");
-    await rtcDisconnect();
-    rtcScheduleRetry(2000);
-  }, ms);
-}
-
-function rtcDisarmTrackTimeout() {
-  if (RTC_WAIT_TRACK_T) {
-    clearTimeout(RTC_WAIT_TRACK_T);
-    RTC_WAIT_TRACK_T = null;
-  }
-}
-
-async function waitIceComplete(pc, timeoutMs = 8000) {
-  if (pc.iceGatheringState === "complete") return;
-  await new Promise((resolve) => {
-    const t = setTimeout(resolve, timeoutMs);
-    function onchg() {
-      if (pc.iceGatheringState === "complete") {
-        pc.removeEventListener("icegatheringstatechange", onchg);
-        clearTimeout(t);
-        resolve();
-      }
-    }
-    pc.addEventListener("icegatheringstatechange", onchg);
+function updateCarrotVisionAvailabilityUi(available, message = window.CARROT_VISION_DISABLED_MESSAGE) {
+  const nextAvailable = Boolean(available);
+  const wasActive = isCarrotVisionActive();
+  const button = document.getElementById("btnStartVision");
+  const messageEl = document.getElementById("visionDisabledMessage");
+  const unavailableHint = getUIText("vision_unavailable_hint", "Available when DisableDM is 2.");
+  const disabledMessage = nextAvailable ? "" : (message || unavailableHint);
+  setCarrotVisionAvailable(nextAvailable, {
+    disabledMessage,
+    reason: "availability ui",
+    updateRtcStatus: false,
   });
+  if (button) {
+    button.disabled = !nextAvailable;
+    button.setAttribute("aria-disabled", nextAvailable ? "false" : "true");
+    button.title = nextAvailable ? "" : unavailableHint;
+  }
+  if (messageEl) {
+    messageEl.hidden = Boolean(nextAvailable);
+    messageEl.replaceChildren();
+    if (!nextAvailable) {
+      const hint = unavailableHint;
+      messageEl.textContent = "!";
+      messageEl.dataset.tooltip = hint;
+      messageEl.title = hint;
+      messageEl.setAttribute("aria-label", hint);
+      messageEl.setAttribute("role", "button");
+      messageEl.tabIndex = 0;
+      messageEl.onclick = () => showCarrotVisionBadgeHint(messageEl);
+      messageEl.ontouchstart = () => showCarrotVisionBadgeHint(messageEl);
+      messageEl.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          showCarrotVisionBadgeHint(messageEl);
+        }
+      };
+    } else {
+      messageEl.classList.remove("is-tooltip-visible");
+      messageEl.removeAttribute("data-tooltip");
+      messageEl.removeAttribute("title");
+      messageEl.removeAttribute("aria-label");
+      messageEl.removeAttribute("role");
+      messageEl.removeAttribute("tabindex");
+      messageEl.onclick = null;
+      messageEl.ontouchstart = null;
+      messageEl.onkeydown = null;
+      if (carrotVisionBadgeHintTimer) {
+        clearTimeout(carrotVisionBadgeHintTimer);
+        carrotVisionBadgeHintTimer = null;
+      }
+    }
+  }
+  if (nextAvailable) {
+    if (!isCarrotVisionActive()) {
+      setCarrotVisionPhase(CARROT_VISION_PHASE.INACTIVE, {
+        reason: "vision available",
+        updateRtcStatus: false,
+      });
+      rtcStatusSet(getUIText("start_vision_hint", "Tap the start button to enable drive vision."));
+    }
+  } else {
+    if (wasActive) {
+      syncCarrotRealtimeLifecycle(true);
+    }
+    rtcStatusSet(disabledMessage);
+  }
 }
 
-let _rtcConnecting = false;
-
-async function rtcConnectOnce() {
-  if (!shouldRunCarrotVisionRealtime()) return;
-  if (_rtcConnecting) return;
-  if (RTC_PC && (RTC_PC.connectionState === "connected" || RTC_PC.connectionState === "connecting")) return;
-
-  _rtcConnecting = true;
+async function syncCarrotVisionAvailability() {
   try {
-    await rtcDisconnect();
-    rtcStatusSet("connecting...");
-
-    const pc = new RTCPeerConnection({
-      iceServers: [],
-      sdpSemantics: "unified-plan",
-      iceCandidatePoolSize: 1,
-    });
-    RTC_PC = pc;
-    startRtcPerfPolling(true);
-
-    const video = document.getElementById("rtcVideo");
-    if (video) {
-      video.muted = true;
-      video.playsInline = true;
-    }
-
-    pc.addTransceiver("video", { direction: "recvonly" });
-
-    pc.ontrack = async (ev) => {
-      const videoEl = document.getElementById("rtcVideo");
-      if (!videoEl) return;
-
-      let stream = ev.streams && ev.streams[0];
-      if (!stream) {
-        stream = new MediaStream([ev.track]);
-      }
-
-      videoEl.srcObject = stream;
-      videoEl.style.display = "block";
-      try { await videoEl.play(); } catch (e) { console.log("[RTC] play() failed", e); }
-      rtcStatusSet("track: " + ev.track.kind);
-      rtcDisarmTrackTimeout();
-      RTC_FAIL_COUNT = 0;
-      collectRtcPerfStats().catch(() => {});
-    };
-
-    pc.onconnectionstatechange = () => {
-      const state = pc.connectionState;
-      rtcStatusSet("conn: " + state);
-      if (state === "connected") RTC_FAIL_COUNT = 0;
-      collectRtcPerfStats().catch(() => {});
-      if (state === "failed" || state === "disconnected" || state === "closed") {
-        rtcDisconnect();
-        rtcScheduleRetry(2000);
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      const state = pc.iceConnectionState;
-      rtcStatusSet("ice: " + state);
-      collectRtcPerfStats().catch(() => {});
-      if (state === "failed" || state === "disconnected" || state === "closed") {
-        rtcDisconnect();
-        rtcScheduleRetry(2000);
-      }
-    };
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitIceComplete(pc, 8000);
-
-    const body = {
-      sdp: pc.localDescription.sdp,
-      cameras: ["road"],
-      bridge_services_in: [],
-      bridge_services_out: [],
-    };
-
-    const response = await fetch("/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error("stream http " + response.status + " " + text);
-    }
-
-    const answer = await response.json();
-    if (!answer || !answer.sdp) throw new Error("bad answer");
-
-    await pc.setRemoteDescription({ type: answer.type || "answer", sdp: answer.sdp });
-    rtcStatusSet("connected (waiting track...)");
-    rtcArmTrackTimeout(6000);
+    const disableDm = await fetchDisableDmValue();
+    const available = disableDm === 2;
+    updateCarrotVisionAvailabilityUi(available);
+    return available;
   } catch (e) {
-    rtcStatusSet("error: " + e.message);
-    await rtcDisconnect();
-    rtcScheduleRetry(2000);
-  } finally {
-    _rtcConnecting = false;
+    updateCarrotVisionAvailabilityUi(false, getUIText("disable_dm_check_failed", "Could not check DisableDM status."));
+    return false;
   }
 }
 
-async function waitServerReady(timeoutMs = 8000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < timeoutMs) {
-    try {
-      const r = await fetch("/api/settings", { cache: "no-store" });
-      if (r.ok) return true;
-    } catch {}
-    await new Promise(res => setTimeout(res, 300));
-  }
-  return false;
+async function reconnectCarrotVisionRealtime(reason = "manual reconnect") {
+  if (!isCarrotVisionActive()) return;
+  console.warn("[vision] reconnect requested", reason);
+  rtcStatusSet(getUIText("reconnecting", "Reconnecting..."));
+  setCarrotVisionPhase(CARROT_VISION_PHASE.RECOVERING, {
+    reason,
+    updateRtcStatus: false,
+  });
+  rtcCaptureVideoHoldFrame();
+  stopCarrotVisionHealthWatch();
+  await rawOverlayDisconnectAll().catch(() => {});
+  await rtcDisconnect({ keepVideo: true }).catch(() => {});
+  _carrotVisionRealtimeActive = false;
+  syncCarrotRealtimeLifecycle(true);
+  startCarrotVisionHealthWatch();
+  requestCarrotVisionRender();
 }
 
-window.CARROT_VISION_ACTIVE = false;
+window.CarrotVisionReconnect = reconnectCarrotVisionRealtime;
 
 window.CarrotVisionStart = async function() {
-  if (window.CARROT_VISION_ACTIVE) return;
-  window.CARROT_VISION_ACTIVE = true;
-  emitCarrotVisionChange(true);
+  if (isCarrotVisionActive()) {
+    await reconnectCarrotVisionRealtime("start button while active");
+    return;
+  }
+  if (!CARROT_VISION_STATE.available && !(await syncCarrotVisionAvailability())) {
+    if (typeof showAppToast === "function") showAppToast(window.CARROT_VISION_DISABLED_MESSAGE, { tone: "error" });
+    return;
+  }
+  requestCarrotFullscreen({ quiet: false }).catch(() => {});
+  setCarrotVisionActive(true, {
+    phase: CARROT_VISION_PHASE.STARTING,
+    reason: "user start",
+  });
   
   const btn = document.getElementById("visionStartOverlay");
   if (btn) btn.style.display = "none";
-  
-  rtcStatusSet("waiting server...");
-  await waitServerReady(8000);
+
+  rtcStatusSet(getUIText("connecting", "Connecting..."));
   syncCarrotRealtimeLifecycle(true);
 };
 
 function rtcInitAuto() {
   const btn = document.getElementById("btnStartVision");
   if (btn) btn.onclick = window.CarrotVisionStart;
+  syncCarrotVisionAvailability().catch(() => {});
+  rtcBindVideoEvents();
 }
 
-const RAW_HUD_LOG_PREFIX = "[raw hud]";
-const RAW_HUD_MUX_LOG_PREFIX = "[raw hud mux]";
-const RAW_HUD_SERVICES = window.CarrotRawCapnp?.HUD_SERVICES || [];
-const RAW_HUD_WS = Object.create(null);
-const RAW_HUD_RETRY_T = Object.create(null);
-const RAW_HUD_STATE = Object.create(null);
-window.CarrotHudState = RAW_HUD_STATE;
-const RAW_HUD_OVERLAY_DIRTY_SERVICES = new Set(["carState", "controlsState"]);
-const RAW_OVERLAY_LOG_PREFIX = "[raw overlay]";
-const RAW_OVERLAY_MUX_LOG_PREFIX = "[raw overlay mux]";
-const RAW_OVERLAY_SERVICES = window.CarrotRawCapnp?.OVERLAY_SERVICES || [];
-const RAW_OVERLAY_WS = Object.create(null);
-const RAW_OVERLAY_RETRY_T = Object.create(null);
-const RAW_OVERLAY_STATE = Object.create(null);
-window.CarrotOverlayState = RAW_OVERLAY_STATE;
-const RAW_OVERLAY_HUD_ONLY_SERVICES = new Set(["roadCameraState", "liveDelay", "liveTorqueParameters", "liveParameters"]);
-const RAW_MULTIPLEX_MODE = "raw-capnp-multiplex-relay";
-const RAW_TEXT_DECODER = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
-let RAW_HUD_MUX_WS = null;
-let RAW_HUD_MUX_RETRY_T = null;
-let RAW_HUD_MUX_DISABLED = false;
-let RAW_OVERLAY_MUX_WS = null;
-let RAW_OVERLAY_MUX_RETRY_T = null;
-let RAW_OVERLAY_MUX_DISABLED = false;
-const RAW_DECODE_WORKER_URL = "/js/raw_capnp_worker.js";
-let RAW_DECODE_WORKER = null;
-let RAW_DECODE_WORKER_FAILED = false;
-let RAW_DECODE_REQ_ID = 0;
-const RAW_DECODE_PENDING = new Map();
-const RAW_DECODE_SEQ = {
-  hud: Object.create(null),
-  overlay: Object.create(null),
-};
+window.addEventListener("carrot:paramchange", (ev) => {
+  if (ev?.detail?.name !== "DisableDM") return;
+  syncCarrotVisionAvailability().catch(() => {});
+});
 
-function rejectPendingRawDecodeRequests(message) {
-  for (const [requestId, pending] of RAW_DECODE_PENDING.entries()) {
-    RAW_DECODE_PENDING.delete(requestId);
-    pending.reject(new Error(message));
-  }
-}
-
-function handleRawDecodeWorkerMessage(event) {
-  const payload = event?.data || {};
-  const requestId = Number(payload.requestId);
-  const pending = RAW_DECODE_PENDING.get(requestId);
-  if (!pending) return;
-  RAW_DECODE_PENDING.delete(requestId);
-  if (!payload.ok) {
-    pending.reject(new Error(payload.error || "raw decode failed"));
-    return;
-  }
-  pending.resolve(payload.decoded);
-}
-
-function handleRawDecodeWorkerFailure(error) {
-  console.log("[raw decode] worker disabled", error);
-  RAW_DECODE_WORKER_FAILED = true;
-  if (RAW_DECODE_WORKER) {
-    try { RAW_DECODE_WORKER.terminate(); } catch {}
-    RAW_DECODE_WORKER = null;
-  }
-  rejectPendingRawDecodeRequests(error?.message || "raw decode worker failed");
-}
-
-function ensureRawDecodeWorker() {
-  if (RAW_DECODE_WORKER || RAW_DECODE_WORKER_FAILED || typeof Worker === "undefined") return RAW_DECODE_WORKER;
-  try {
-    const worker = new Worker(RAW_DECODE_WORKER_URL);
-    worker.onmessage = handleRawDecodeWorkerMessage;
-    worker.onerror = handleRawDecodeWorkerFailure;
-    worker.onmessageerror = handleRawDecodeWorkerFailure;
-    RAW_DECODE_WORKER = worker;
-  } catch (error) {
-    RAW_DECODE_WORKER_FAILED = true;
-    console.log("[raw decode] worker unavailable", error);
-  }
-  return RAW_DECODE_WORKER;
-}
-
-async function normalizeRawMessageBuffer(data) {
-  if (data instanceof ArrayBuffer) return data;
-  if (ArrayBuffer.isView(data)) {
-    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-  }
-  if (data instanceof Blob) return data.arrayBuffer();
-  throw new Error(`unsupported raw payload: ${Object.prototype.toString.call(data)}`);
-}
-
-function decodeRawMessageSync(streamKind, service, buffer) {
-  if (streamKind === "hud") {
-    return window.CarrotRawCapnp?.decodeHudEvent?.(service, buffer);
-  }
-  if (streamKind === "overlay") {
-    return window.CarrotRawCapnp?.decodeOverlayEvent?.(service, buffer);
-  }
-  return null;
-}
-
-async function decodeRawMessage(streamKind, service, data) {
-  const buffer = await normalizeRawMessageBuffer(data);
-  const worker = ensureRawDecodeWorker();
-  if (!worker) {
-    return decodeRawMessageSync(streamKind, service, buffer);
-  }
-
-  return new Promise((resolve, reject) => {
-    const requestId = ++RAW_DECODE_REQ_ID;
-    RAW_DECODE_PENDING.set(requestId, { resolve, reject });
-    try {
-      worker.postMessage({ requestId, streamKind, service, buffer }, [buffer]);
-    } catch (error) {
-      RAW_DECODE_PENDING.delete(requestId);
-      reject(error);
-    }
-  });
-}
-
-function nextRawDecodeSeq(streamKind, service) {
-  const bucket = RAW_DECODE_SEQ[streamKind];
-  const next = Number(bucket[service] || 0) + 1;
-  bucket[service] = next;
-  return next;
-}
-
-function isLatestRawDecodeSeq(streamKind, service, seq) {
-  return RAW_DECODE_SEQ[streamKind]?.[service] === seq;
-}
-
-function buildRawMultiplexUrl(services) {
-  const wsProto = (location.protocol === "https:") ? "wss" : "ws";
-  const params = new URLSearchParams();
-  params.set("services", services.join(","));
-  return `${wsProto}://${location.host}/ws/raw_multiplex?${params.toString()}`;
-}
-
-async function parseRawMultiplexFrame(data) {
-  const buffer = await normalizeRawMessageBuffer(data);
-  const bytes = new Uint8Array(buffer);
-  if (bytes.length < 2) {
-    throw new Error("bad raw multiplex frame");
-  }
-  const serviceNameLength = bytes[0];
-  const serviceNameEnd = 1 + serviceNameLength;
-  if (bytes.length <= serviceNameEnd) {
-    throw new Error("truncated raw multiplex frame");
-  }
-  const service = RAW_TEXT_DECODER
-    ? RAW_TEXT_DECODER.decode(bytes.subarray(1, serviceNameEnd))
-    : String.fromCharCode(...bytes.subarray(1, serviceNameEnd));
-  return {
-    service,
-    payload: buffer.slice(serviceNameEnd),
-  };
-}
-
-async function handleHudDecodedMessage(service, data) {
-  const seq = nextRawDecodeSeq("hud", service);
-  const decoded = await decodeRawMessage("hud", service, data);
-  if (!decoded) return;
-  if (!isLatestRawDecodeSeq("hud", service, seq)) return;
-  RAW_HUD_STATE[service] = decoded;
-  window.CarrotHudState = RAW_HUD_STATE;
-  _hudMarkDirty();
-  emitCarrotRenderRequest({
-    hudDirty: true,
-    overlayDirty: RAW_HUD_OVERLAY_DIRTY_SERVICES.has(service),
-  });
-}
-
-async function handleOverlayDecodedMessage(service, data) {
-  const seq = nextRawDecodeSeq("overlay", service);
-  const decoded = await decodeRawMessage("overlay", service, data);
-  if (!decoded) return;
-  if (!isLatestRawDecodeSeq("overlay", service, seq)) return;
-  RAW_OVERLAY_STATE[service] = decoded;
-  window.CarrotOverlayState = RAW_OVERLAY_STATE;
-  emitCarrotRenderRequest({
-    hudDirty: true,
-    overlayDirty: !RAW_OVERLAY_HUD_ONLY_SERVICES.has(service),
-  });
-}
-
-function drivingHudUpdateFromCarPayload(j) {
-  if (!window.DrivingHud || !j) return;
-
-  const vEgoKph = (typeof j.vEgo === "number" && isFinite(j.vEgo)) ? j.vEgo * 3.6 : null;
-  const payload = {
-    cpuTempC: j.cpuTempC,
-    memPct: j.memPct,
-    diskPct: j.diskPct,
-    diskLabel: j.diskLabel,
-    vEgoKph,
-    vSetKph: j.vSetKph,
-    temp: j.temp,
-    redDot: j.redDot,
-    tlight: j.tlight,
-    tfGap: j.tfGap,
-    tfBars: j.tfBars,
-    gear: j.gear,
-    gpsOk: j.gpsOk,
-    driveMode: j.driveMode,
-    speedLimitKph: j.speedLimitKph,
-    speedLimitOver: j.speedLimitOver,
-    speedLimitBlink: j.speedLimitBlink,
-    apm: j.apm,
-  };
-
-  const payloadSignature = [
-    typeof LANG === "string" ? LANG : "",
-    payload.cpuTempC ?? "-",
-    payload.memPct ?? "-",
-    payload.diskPct ?? "-",
-    payload.vEgoKph ?? "-",
-    payload.vSetKph ?? "-",
-    payload.temp?.source ?? "-",
-    payload.temp?.speed ?? "-",
-    payload.temp?.is_decel ? 1 : 0,
-    payload.redDot ?? "-",
-    payload.tlight ?? "-",
-    payload.tfGap ?? "-",
-    payload.tfBars ?? "-",
-    payload.gear ?? "-",
-    payload.gpsOk ?? "-",
-    payload.driveMode?.name ?? "-",
-    payload.driveMode?.kind ?? "-",
-    payload.speedLimitKph ?? "-",
-    payload.speedLimitOver ? 1 : 0,
-    payload.speedLimitBlink ? 1 : 0,
-    payload.apm ?? "-",
-  ].join("|");
-  if (payloadSignature === LAST_HUD_PAYLOAD_SIGNATURE) return;
-  LAST_HUD_PAYLOAD_SIGNATURE = payloadSignature;
-  window.DrivingHud.update(payload);
-}
-
-function drivingHudUpdateFromRawState() {
-  const payload = window.CarrotRawCapnp?.deriveHudPayload?.(RAW_HUD_STATE);
-  if (!payload) return;
-  drivingHudUpdateFromCarPayload(payload);
-}
-
-let _hudRenderDirty = false;
-let _hudRafId = null;
-
-function _hudMarkDirty() {
-  _hudRenderDirty = true;
-  _hudScheduleRender();
-}
-
-function _hudScheduleRender() {
-  if (_hudRafId != null || !_hudRenderDirty) return;
-  if (!shouldRunCarrotHudRealtime()) return;
-  _hudRafId = requestAnimationFrame(() => {
-    _hudRafId = null;
-    if (!_hudRenderDirty || !shouldRunCarrotHudRealtime()) return;
-    _hudRenderDirty = false;
-    drivingHudUpdateFromRawState();
-  });
-}
-
-function _hudStopRenderLoop() {
-  if (_hudRafId != null) {
-    cancelAnimationFrame(_hudRafId);
-    _hudRafId = null;
-  }
-  _hudRenderDirty = false;
-}
-
-function rawHudScheduleReconnect(service, ms = 1000) {
-  if (!shouldRunCarrotHudRealtime()) return;
-  if (RAW_HUD_RETRY_T[service]) return;
-  RAW_HUD_RETRY_T[service] = setTimeout(() => {
-    RAW_HUD_RETRY_T[service] = null;
-    if (!shouldRunCarrotHudRealtime()) return;
-    rawHudConnectService(service);
-  }, ms);
-}
-
-function rawHudScheduleMultiplexReconnect(ms = 1000) {
-  if (!shouldRunCarrotHudRealtime() || RAW_HUD_MUX_DISABLED) return;
-  if (RAW_HUD_MUX_RETRY_T) return;
-  RAW_HUD_MUX_RETRY_T = setTimeout(() => {
-    RAW_HUD_MUX_RETRY_T = null;
-    if (!shouldRunCarrotHudRealtime() || RAW_HUD_MUX_DISABLED) return;
-    rawHudConnectMultiplex();
-  }, ms);
-}
-
-function rawHudConnectService(service) {
-  if (!shouldRunCarrotHudRealtime()) return;
-  const current = RAW_HUD_WS[service];
-  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
-
-  const wsProto = (location.protocol === "https:") ? "wss" : "ws";
-  const ws = new WebSocket(`${wsProto}://${location.host}/ws/raw/${service}`);
-  ws.binaryType = "arraybuffer";
-  RAW_HUD_WS[service] = ws;
-
-  ws.onopen = () => {
-    console.log(RAW_HUD_LOG_PREFIX, service, "open");
-  };
-
-  ws.onmessage = async (ev) => {
-    try {
-      if (typeof ev.data === "string") {
-        const hello = JSON.parse(ev.data);
-        console.log(RAW_HUD_LOG_PREFIX, service, "hello", hello);
-        return;
-      }
-      await handleHudDecodedMessage(service, ev.data);
-    } catch (e) {
-      console.log(RAW_HUD_LOG_PREFIX, service, "bad msg", e);
-    }
-  };
-
-  ws.onerror = (e) => {
-    console.log(RAW_HUD_LOG_PREFIX, service, "error", e);
-  };
-
-  ws.onclose = () => {
-    console.log(RAW_HUD_LOG_PREFIX, service, "close -> reconnect");
-    RAW_HUD_WS[service] = null;
-    rawHudScheduleReconnect(service, 1000);
-  };
-}
-
-function rawHudConnectAllLegacy() {
-  for (const service of RAW_HUD_SERVICES) {
-    rawHudConnectService(service);
-  }
-  _hudMarkDirty();
-}
-
-function rawHudConnectMultiplex() {
-  if (!shouldRunCarrotHudRealtime() || RAW_HUD_MUX_DISABLED) return;
-  const current = RAW_HUD_MUX_WS;
-  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
-
-  let helloReceived = false;
-  const ws = new WebSocket(buildRawMultiplexUrl(RAW_HUD_SERVICES));
-  ws.binaryType = "arraybuffer";
-  RAW_HUD_MUX_WS = ws;
-
-  ws.onopen = () => {
-    console.log(RAW_HUD_MUX_LOG_PREFIX, "open");
-  };
-
-  ws.onmessage = async (ev) => {
-    try {
-      if (typeof ev.data === "string") {
-        const hello = JSON.parse(ev.data);
-        console.log(RAW_HUD_MUX_LOG_PREFIX, "hello", hello);
-        helloReceived = hello?.mode === RAW_MULTIPLEX_MODE;
-        return;
-      }
-      const frame = await parseRawMultiplexFrame(ev.data);
-      if (!RAW_HUD_SERVICES.includes(frame.service)) return;
-      await handleHudDecodedMessage(frame.service, frame.payload);
-    } catch (e) {
-      console.log(RAW_HUD_MUX_LOG_PREFIX, "bad msg", e);
-    }
-  };
-
-  ws.onerror = (e) => {
-    console.log(RAW_HUD_MUX_LOG_PREFIX, "error", e);
-  };
-
-  ws.onclose = () => {
-    console.log(RAW_HUD_MUX_LOG_PREFIX, "close");
-    RAW_HUD_MUX_WS = null;
-    if (!shouldRunCarrotHudRealtime()) return;
-    if (!helloReceived) {
-      RAW_HUD_MUX_DISABLED = true;
-      rawHudConnectAllLegacy();
-      return;
-    }
-    rawHudScheduleMultiplexReconnect(1000);
-  };
-}
-
-function rawHudConnectAll() {
-  if (!RAW_HUD_MUX_DISABLED) {
-    rawHudConnectMultiplex();
-    if (RAW_HUD_MUX_WS) {
-      _hudMarkDirty();
-      return;
-    }
-  }
-  rawHudConnectAllLegacy();
-}
-
-function rawOverlayScheduleReconnect(service, ms = 1000) {
-  if (!shouldRunCarrotVisionRealtime()) return;
-  if (RAW_OVERLAY_RETRY_T[service]) return;
-  RAW_OVERLAY_RETRY_T[service] = setTimeout(() => {
-    RAW_OVERLAY_RETRY_T[service] = null;
-    if (!shouldRunCarrotVisionRealtime()) return;
-    rawOverlayConnectService(service);
-  }, ms);
-}
-
-function rawOverlayScheduleMultiplexReconnect(ms = 1000) {
-  if (!shouldRunCarrotVisionRealtime() || RAW_OVERLAY_MUX_DISABLED) return;
-  if (RAW_OVERLAY_MUX_RETRY_T) return;
-  RAW_OVERLAY_MUX_RETRY_T = setTimeout(() => {
-    RAW_OVERLAY_MUX_RETRY_T = null;
-    if (!shouldRunCarrotVisionRealtime() || RAW_OVERLAY_MUX_DISABLED) return;
-    rawOverlayConnectMultiplex();
-  }, ms);
-}
-
-function rawOverlayConnectService(service) {
-  if (!shouldRunCarrotVisionRealtime()) return;
-  const current = RAW_OVERLAY_WS[service];
-  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
-
-  const wsProto = (location.protocol === "https:") ? "wss" : "ws";
-  const ws = new WebSocket(`${wsProto}://${location.host}/ws/raw/${service}`);
-  ws.binaryType = "arraybuffer";
-  RAW_OVERLAY_WS[service] = ws;
-
-  ws.onopen = () => {
-    console.log(RAW_OVERLAY_LOG_PREFIX, service, "open");
-  };
-
-  ws.onmessage = async (ev) => {
-    try {
-      if (typeof ev.data === "string") {
-        const hello = JSON.parse(ev.data);
-        console.log(RAW_OVERLAY_LOG_PREFIX, service, "hello", hello);
-        return;
-      }
-      await handleOverlayDecodedMessage(service, ev.data);
-    } catch (e) {
-      console.log(RAW_OVERLAY_LOG_PREFIX, service, "bad msg", e);
-    }
-  };
-
-  ws.onerror = (e) => {
-    console.log(RAW_OVERLAY_LOG_PREFIX, service, "error", e);
-  };
-
-  ws.onclose = () => {
-    console.log(RAW_OVERLAY_LOG_PREFIX, service, "close -> reconnect");
-    RAW_OVERLAY_WS[service] = null;
-    rawOverlayScheduleReconnect(service, 1000);
-  };
-}
-
-function rawOverlayConnectAllLegacy() {
-  for (const service of RAW_OVERLAY_SERVICES) {
-    rawOverlayConnectService(service);
-  }
-}
-
-function rawOverlayConnectMultiplex() {
-  if (!shouldRunCarrotVisionRealtime() || RAW_OVERLAY_MUX_DISABLED) return;
-  const current = RAW_OVERLAY_MUX_WS;
-  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return;
-
-  let helloReceived = false;
-  const ws = new WebSocket(buildRawMultiplexUrl(RAW_OVERLAY_SERVICES));
-  ws.binaryType = "arraybuffer";
-  RAW_OVERLAY_MUX_WS = ws;
-
-  ws.onopen = () => {
-    console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "open");
-  };
-
-  ws.onmessage = async (ev) => {
-    try {
-      if (typeof ev.data === "string") {
-        const hello = JSON.parse(ev.data);
-        console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "hello", hello);
-        helloReceived = hello?.mode === RAW_MULTIPLEX_MODE;
-        return;
-      }
-      const frame = await parseRawMultiplexFrame(ev.data);
-      if (!RAW_OVERLAY_SERVICES.includes(frame.service)) return;
-      await handleOverlayDecodedMessage(frame.service, frame.payload);
-    } catch (e) {
-      console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "bad msg", e);
-    }
-  };
-
-  ws.onerror = (e) => {
-    console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "error", e);
-  };
-
-  ws.onclose = () => {
-    console.log(RAW_OVERLAY_MUX_LOG_PREFIX, "close");
-    RAW_OVERLAY_MUX_WS = null;
-    if (!shouldRunCarrotVisionRealtime()) return;
-    if (!helloReceived) {
-      RAW_OVERLAY_MUX_DISABLED = true;
-      rawOverlayConnectAllLegacy();
-      return;
-    }
-    rawOverlayScheduleMultiplexReconnect(1000);
-  };
-}
-
-function rawOverlayConnectAll() {
-  if (!RAW_OVERLAY_MUX_DISABLED) {
-    rawOverlayConnectMultiplex();
-    if (RAW_OVERLAY_MUX_WS) return;
-  }
-  rawOverlayConnectAllLegacy();
-}
-
-async function rawHudDisconnectAll() {
-  _hudStopRenderLoop();
-  if (RAW_HUD_MUX_RETRY_T) {
-    clearTimeout(RAW_HUD_MUX_RETRY_T);
-    RAW_HUD_MUX_RETRY_T = null;
-  }
-  try { if (RAW_HUD_MUX_WS) RAW_HUD_MUX_WS.close(); } catch {}
-  RAW_HUD_MUX_WS = null;
-  for (const service of RAW_HUD_SERVICES) {
-    if (RAW_HUD_RETRY_T[service]) {
-      clearTimeout(RAW_HUD_RETRY_T[service]);
-      RAW_HUD_RETRY_T[service] = null;
-    }
-    try { if (RAW_HUD_WS[service]) RAW_HUD_WS[service].close(); } catch {}
-    RAW_HUD_WS[service] = null;
-  }
-}
-
-async function rawOverlayDisconnectAll() {
-  if (RAW_OVERLAY_MUX_RETRY_T) {
-    clearTimeout(RAW_OVERLAY_MUX_RETRY_T);
-    RAW_OVERLAY_MUX_RETRY_T = null;
-  }
-  try { if (RAW_OVERLAY_MUX_WS) RAW_OVERLAY_MUX_WS.close(); } catch {}
-  RAW_OVERLAY_MUX_WS = null;
-  for (const service of RAW_OVERLAY_SERVICES) {
-    if (RAW_OVERLAY_RETRY_T[service]) {
-      clearTimeout(RAW_OVERLAY_RETRY_T[service]);
-      RAW_OVERLAY_RETRY_T[service] = null;
-    }
-    try { if (RAW_OVERLAY_WS[service]) RAW_OVERLAY_WS[service].close(); } catch {}
-    RAW_OVERLAY_WS[service] = null;
-  }
-}
+window.addEventListener("carrot:pagechange", (ev) => {
+  if (ev?.detail?.page !== "carrot") return;
+  syncCarrotVisionAvailability().catch(() => {});
+});
 
 async function syncServerTimeOnConnect() {
   try {
@@ -1064,9 +503,14 @@ async function syncServerTimeOnConnect() {
   }
 }
 
-function startAll() {
+async function startAll() {
+  if (typeof syncWebLanguageFromDeviceDefault === "function") {
+    await syncWebLanguageFromDeviceDefault();
+  }
   renderUIText();
-  showPage("carrot", false);
+  if (typeof window.bootstrapWebStartPage === "function") {
+    window.bootstrapWebStartPage("realtime");
+  }
   console.log("[time_sync] syncing server time on page load");
   syncServerTimeOnConnect().catch(() => {});
   rtcInitAuto();
@@ -1081,21 +525,33 @@ function startAll() {
 
 let _carrotHudRealtimeActive = false;
 let _carrotVisionRealtimeActive = false;
+let _carrotVisionRealtimeBlockReason = "";
 
 function syncCarrotRealtimeLifecycle(forceFetch = false) {
   const nextHudActive = shouldRunCarrotHudRealtime();
-  const nextVisionActive = shouldRunCarrotVisionRealtime();
+  const nextVisionWanted = isCarrotPageActive() && isCarrotVisionActive();
+  const nextVisionBlockReason = getCarrotVisionRealtimeBlockReason();
+  const nextVisionActive = nextVisionWanted && !nextVisionBlockReason;
 
-  if (nextHudActive === _carrotHudRealtimeActive && nextVisionActive === _carrotVisionRealtimeActive && !forceFetch) {
-    if (nextVisionActive && !_rtcConnecting && !rtcHasLiveTrack()) {
+  if (
+    nextHudActive === _carrotHudRealtimeActive &&
+    nextVisionActive === _carrotVisionRealtimeActive &&
+    nextVisionBlockReason === _carrotVisionRealtimeBlockReason &&
+    !forceFetch
+  ) {
+    if (nextVisionActive) startCarrotVisionHealthWatch();
+    else stopCarrotVisionHealthWatch();
+    if (nextVisionActive && rtcShouldConnect()) {
       rtcConnectOnce().catch(() => {});
     }
+    if (nextVisionActive) scheduleRtcPerfPolling();
     if (nextHudActive) _hudScheduleRender();
     return;
   }
 
   _carrotHudRealtimeActive = nextHudActive;
   _carrotVisionRealtimeActive = nextVisionActive;
+  _carrotVisionRealtimeBlockReason = nextVisionBlockReason;
 
   if (nextHudActive) {
     console.log("[perf] carrot hud realtime -> active");
@@ -1112,16 +568,42 @@ function syncCarrotRealtimeLifecycle(forceFetch = false) {
 
   if (nextVisionActive) {
     console.log("[perf] carrot vision realtime -> active");
+    startCarrotVisionHealthWatch();
+    setCarrotVisionPhase(CARROT_VISION_PHASE.STARTING, {
+      reason: "vision lifecycle active",
+      updateRtcStatus: false,
+    });
+    requestCarrotFullscreen({ quiet: true }).catch(() => {});
     ensureRawDecodeWorker();
     rawOverlayConnectAll();
     startRtcPerfPolling(true);
-    if (!_rtcConnecting && !rtcHasLiveTrack()) {
+    if (rtcShouldConnect()) {
       rtcCancelRetry();
-      RTC_FAIL_COUNT = 0;
+      rtcResetFailCount();
       rtcConnectOnce().catch(() => {});
     }
   } else {
-    console.log("[perf] carrot vision realtime -> idle");
+    if (nextVisionWanted && nextVisionBlockReason) {
+      console.log("[perf] carrot vision realtime -> waiting", nextVisionBlockReason);
+      setCarrotVisionPhase(CARROT_VISION_PHASE.STARTING, {
+        reason: nextVisionBlockReason,
+        statusText: getUIText("connecting", "Connecting..."),
+        detailText: getCarrotVisionRuntimeWaitDetail(nextVisionBlockReason),
+        updateRtcStatus: false,
+      });
+      rtcCancelRetry();
+      rtcCancelRecovery();
+      rtcDisarmTrackTimeout();
+      rtcCancelResumeCheck();
+    } else {
+      console.log("[perf] carrot vision realtime -> idle");
+      setCarrotVisionPhase(CARROT_VISION_STATE.available ? CARROT_VISION_PHASE.INACTIVE : CARROT_VISION_PHASE.UNAVAILABLE, {
+        reason: "vision lifecycle idle",
+        updateRtcStatus: false,
+        render: false,
+      });
+    }
+    stopCarrotVisionHealthWatch();
     stopRtcPerfPolling();
     rawOverlayDisconnectAll();
     rtcDisconnect().catch(() => {});
@@ -1130,8 +612,24 @@ function syncCarrotRealtimeLifecycle(forceFetch = false) {
   emitCarrotRenderRequest({ force: true, overlayDirty: true, hudDirty: true });
 }
 
-document.addEventListener("visibilitychange", () => syncCarrotRealtimeLifecycle(false));
-window.addEventListener("carrot:pagechange", () => syncCarrotRealtimeLifecycle(false));
+document.addEventListener("visibilitychange", () => {
+  rtcHandleVisibilityChange();
+  syncCarrotRealtimeLifecycle(false);
+});
+
+window.addEventListener("offline", () => {
+  rtcStatusSet("offline");
+});
+
+window.addEventListener("online", () => {
+  syncCarrotRealtimeLifecycle(false);
+  rtcScheduleResumeIfConnected("network resumed");
+});
+window.addEventListener("pagehide", rtcExitPictureInPicture);
+window.addEventListener("carrot:pagechange", (event) => {
+  maybeRequestCarrotFullscreenOnPageChange(event?.detail || {});
+  syncCarrotRealtimeLifecycle(false);
+});
 
 
 
