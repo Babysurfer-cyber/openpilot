@@ -456,7 +456,7 @@ def create_spas_messages(packer, CAN, frame, left_blink, right_blink, reverse):
   
   if reverse:
     blink = 1  # 후진 시 비상깜빡이 (우선순위 1등)
-  if left_blink:
+  elif left_blink:
     blink = 3
   elif right_blink:
     blink = 4
