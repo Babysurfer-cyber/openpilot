@@ -3215,6 +3215,12 @@ public:
         // bottom_left
         QString gitBranch = QString::fromStdString(params.get("GitBranch"));
         QString drivingModelName = QString::fromStdString(params.get("DrivingModelName"));
+
+        // 👇 [이 부분 추가!] 화면에 그리기 전에 (Installing...) 꼬리표가 있으면 잘라냅니다.
+        if (drivingModelName.endsWith(" (Installing...)")) {
+            drivingModelName.chop(16);
+        }
+
         if (drivingModelName.isEmpty()) {
             drivingModelName = DEFAULT_MODEL_NAME;
         }
