@@ -6,6 +6,7 @@ from opendbc.car.hyundai.values import HyundaiFlags, HyundaiExtFlags
 from openpilot.common.params import Params
 from opendbc.car.common.conversions import Conversions as CV
 from cereal import log
+from cereal import car
 
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
