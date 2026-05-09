@@ -354,6 +354,12 @@ void ModelManagerDialog::setupUI() {
 
 void ModelManagerDialog::showCurrentModelInfo() {
   QString modelName = QString::fromStdString(Params().get("DrivingModelName")).trimmed();
+
+  // 👇 [이 부분 추가!] 화면 상단 라벨에 띄우기 전에 꼬리표를 잘라냅니다.
+  if (modelName.endsWith(" (Installing...)")) {
+    modelName.chop(16);
+  }
+
   if (modelName.isEmpty()) {
     modelName = DEFAULT_MODEL_NAME;
   }
