@@ -310,9 +310,13 @@ class CarController(CarControllerBase):
         addr, bus = 0x730, self.CAN.ECAN
       can_sends.append(make_tester_present_msg(addr, bus, suppress_response=True))
 
-      # for blinkers
-      if self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        can_sends.append(make_tester_present_msg(0x7b1, self.CAN.ECAN, suppress_response=True))
+      # blinkers (수정된 코드)
+      if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
+        # 1. 현재 기어가 후진(Reverse) 상태인지 확인합니다.
+        is_reverse = CS.out.gearShifter == car.CarState.GearShifter.reverse
+        
+        # 2. 함수 호출 시 맨 마지막에 is_reverse 인자를 추가합니다.
+        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker, is_reverse))
 
     camera_scc = self.CP.flags & HyundaiFlags.CAMERA_SCC
     # CAN-FD platforms
