@@ -359,6 +359,9 @@ def car_parser_result(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMast
   results = Params().get("CanParserResult")
   if results is None:
     results = ""
+  else:  # <--- [이 부분 추가 필수!]
+    results = results.decode('utf-8', 'replace') # <--- [이 부분 추가 필수!]
+    
   return Alert(
     "CAN 오류: Check Connections",
     results,
