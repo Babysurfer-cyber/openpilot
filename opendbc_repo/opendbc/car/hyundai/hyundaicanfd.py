@@ -444,14 +444,18 @@ def create_acc_control(packer, CAN, enabled, accel_last, accel, stopping, gas_ov
   return packer.make_can_msg("SCC_CONTROL", CAN.ECAN, values)
 
 
-def create_spas_messages(packer, CAN, frame, left_blink, right_blink):
+def create_spas_messages(packer, CAN, frame, left_blink, right_blink, reverse):
   ret = []
 
-  values = {
-  }
+  # 1. SPAS1 메시지
+  values = {}
   ret.append(packer.make_can_msg("SPAS1", CAN.ECAN, values))
 
+  # 2. 깜빡이 제어 로직
   blink = 0
+  
+  if reverse:
+    blink = 1  # 후진 시 비상깜빡이 (우선순위 1등)
   if left_blink:
     blink = 3
   elif right_blink:
