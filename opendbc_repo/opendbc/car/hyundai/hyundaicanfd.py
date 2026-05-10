@@ -386,7 +386,11 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
 
   values["DriverAlert"] = 0   # 1: SCC Disengaged, 2: No SCC Engage condition, 3: SCC Disenganed when the vehicle stops
 
-  values["TARGET_DISTANCE"] = CS.out.vEgo * 1.0 + 4.0
+  # 앞차 인식 여부에 따른 타겟 거리 가변 설정
+  if hud_control.leadVisible:
+    values["TARGET_DISTANCE"] = CS.out.vEgo * 1.7 + 4.0
+  else:
+    values["TARGET_DISTANCE"] = 0
 
   soft_hold_info = 1 if CS.softHoldActive > 1 and enabled else 0
 
