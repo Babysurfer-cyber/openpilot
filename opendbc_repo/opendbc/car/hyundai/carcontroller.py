@@ -1,6 +1,5 @@
 import numpy as np
 from opendbc.can import CANPacker
-from cereal import car
 from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs, apply_std_steer_angle_limits
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
@@ -336,13 +335,9 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
-      # blinkers (수정된 코드)
+      # blinkers (기존에 이미 있던 코드)
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        # 1. 현재 기어가 후진(Reverse) 상태인지 확인합니다.
-        is_reverse = CS.out.gearShifter == car.CarState.GearShifter.reverse
-        
-        # 2. 함수 호출 시 맨 마지막에 is_reverse 인자를 추가합니다.
-        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker, is_reverse))
+        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
 
       if self.camera_scc_params in [2, 3]:
         self.canfd_toggle_adas(CC, CS)
