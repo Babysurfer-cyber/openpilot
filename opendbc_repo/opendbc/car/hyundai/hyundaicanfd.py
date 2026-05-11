@@ -386,10 +386,10 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
 
   values["DriverAlert"] = 0   # 1: SCC Disengaged, 2: No SCC Engage condition, 3: SCC Disenganed when the vehicle stops
 
-  # 앞차 인식 여부에 따른 타겟 거리 설정 (실제 거리 반영 + 150m 제한)
+  # 앞차 인식 여부에 따른 타겟 거리 설정 (실제 거리 반영 + 100m 제한)
   if hud_control.leadVisible:
     # 콤마가 인식한 실제 거리(leadDistance)를 넣되, min 함수를 써서 150을 넘지 않게 합니다.
-    values["TARGET_DISTANCE"] = min(hud_control.leadDistance, 150.0)
+    values["TARGET_DISTANCE"] = min(hud_control.leadDistance, 100.0)
   else:
     values["TARGET_DISTANCE"] = 0
 
