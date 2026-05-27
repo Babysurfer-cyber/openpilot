@@ -610,7 +610,7 @@ def _get_desire_and_lane_changing(md):
   return desire, lane_changing
 
 def _apply_lane_desire(values, desire):
-  #values['LANE_CHANGING'] = 0
+  values['LANE_CHANGING'] = 0
 
   #if desire == 1:  # 좌회전
     #values['LANE_CHANGING'] = 1
