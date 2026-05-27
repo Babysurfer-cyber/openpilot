@@ -612,17 +612,17 @@ def _get_desire_and_lane_changing(md):
 def _apply_lane_desire(values, desire):
   #values['LANE_CHANGING'] = 0
 
-  if desire == 1:  # 좌회전
-    values['LANE_CHANGING'] = 1
-    values["LANELINE_CURVATURE"] = 15
-    values["LANELINE_CURVATURE_DIRECTION"] = 0
+  #if desire == 1:  # 좌회전
+    #values['LANE_CHANGING'] = 1
+    #values["LANELINE_CURVATURE"] = 15
+    #values["LANELINE_CURVATURE_DIRECTION"] = 0
 
-  elif desire == 2:  # 우회전
-    values['LANE_CHANGING'] = 2
-    values["LANELINE_CURVATURE"] = 15
-    values["LANELINE_CURVATURE_DIRECTION"] = 1
+  #elif desire == 2:  # 우회전
+    #values['LANE_CHANGING'] = 2
+    #values["LANELINE_CURVATURE"] = 15
+    #values["LANELINE_CURVATURE_DIRECTION"] = 1
 
-  elif desire == 3:  # 좌차선변경
+  if desire == 3:  # 좌차선변경
     values['LANE_CHANGING'] = 3
 
   elif desire == 4:  # 우차선변경
