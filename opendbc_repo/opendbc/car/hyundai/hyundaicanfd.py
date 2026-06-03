@@ -866,8 +866,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
         # blinker hold
-        #values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
-        #values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
+        values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
+        values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
         values['HDA_MODE2'] = 1
 
