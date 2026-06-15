@@ -629,19 +629,10 @@ class RadarD:
       if self.enable_radar_tracks >= 3:
         self._pick_lead_one_from_state()
 
-      # ▼▼▼ [수정] 앞앞차(Lead Two) 인식 강제 취소 (안정화/히스테리시스 적용) ▼▼▼
-      v_ego_kph = self.v_ego * 3.6
-
-      if not hasattr(self, 'lead_two_active'):
-        self.lead_two_active = True
-
-      if v_ego_kph <= 55.0:
-        self.lead_two_active = False
-      elif v_ego_kph > 60.0:
-        self.lead_two_active = True
-
-      if not self.lead_two_active:
-        self.radar_state.leadTwo = empty_lead()
+      # ▼▼▼ [추가] 시속 60km 이하에서는 앞앞차(Lead Two) 인식 강제 취소! ▼▼▼
+      # self.v_ego는 m/s 단위이므로 3.6을 곱해 km/h로 변환하여 비교합니다.
+      if self.v_ego * 3.6 <= 60.0:
+        self.radar_state.leadTwo = {'status': False}
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def publish(self, pm: messaging.PubMaster):
