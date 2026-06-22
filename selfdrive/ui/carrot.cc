@@ -1393,40 +1393,42 @@ public:
         if (!make_data(s)) return;
 
         NVGcolor color = nvgRGBA(255, 59, 59, 120);
-        NVGcolor color2 = nvgRGBA(255, 149, 0, 0);
+        NVGcolor color2 = nvgRGBA(255, 149, 0, 120); 
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
         bool left_blindspot = car_state.getLeftBlindspot();
         bool right_blindspot = car_state.getRightBlindspot();
 
-        auto lead_left = sm["radarState"].getRadarState().getLeadLeft();
-        auto lead_right = sm["radarState"].getRadarState().getLeadRight();
-        auto meta = sm["modelV2"].getModelV2().getMeta();
-        auto laneChangeState = meta.getLaneChangeState();
-        auto laneChangeDirection = meta.getLaneChangeDirection();
-        bool rightLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
-            (laneChangeDirection == cereal::LaneChangeDirection::RIGHT);
-        bool leftLaneChange = (laneChangeState == cereal::LaneChangeState::PRE_LANE_CHANGE) &&
-            (laneChangeDirection == cereal::LaneChangeDirection::LEFT);
+        // ▼▼▼ 깜빡이 상태와 차선 실선(20 이상) 여부 확인 ▼▼▼
+        bool left_blinker = car_state.getLeftBlinker();
+        bool right_blinker = car_state.getRightBlinker();
+		
+        int left_line = car_state.getLeftLaneLine();
+        int right_line = car_state.getRightLaneLine();
+        // 10으로 나눈 나머지가 0이나 5가 아니면 실선으로 판단 (흰색 실선, 주황색 실선 모두 포함)
+        bool left_solid = (left_line % 10 != 0 && left_line % 10 != 5);
+        bool right_solid = (right_line % 10 != 0 && right_line % 10 != 5);
 
-#if 0
-        left_blindspot = right_blindspot = true;
-#endif
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
         if (left_blindspot) {
             ui_draw_bsd(s, lane_barrier_vertices[0], &color, false);
         }
-        else if (lead_left.getStatus() && lead_left.getDRel() < car_state.getVEgo() * 3.0 && leftLaneChange) {
+        // ▼ 왼쪽 깜빡이를 켰는데 왼쪽 차선이 실선일 때 주황색 벽 띄움
+        else if (left_blinker && left_solid) {
             ui_draw_bsd(s, lane_barrier_vertices[0], &color2, false);
         }
 
         if (right_blindspot) {
             ui_draw_bsd(s, lane_barrier_vertices[1], &color, true);
         }
-        else if (lead_right.getStatus() && lead_right.getDRel() < car_state.getVEgo() * 3.0 && rightLaneChange) {
+        // ▼ 오른쪽 깜빡이를 켰는데 오른쪽 차선이 실선일 때 주황색 벽 띄움
+        else if (right_blinker && right_solid) {
             ui_draw_bsd(s, lane_barrier_vertices[1], &color2, true);
         }
     }
+
 };
 
 
