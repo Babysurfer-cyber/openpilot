@@ -1406,16 +1406,9 @@ public:
 		
         int left_line = car_state.getLeftLaneLine();
         int right_line = car_state.getRightLaneLine();
-        
-        // 10으로 나눈 나머지(끝자리 번호)만 추출
-        int left_type = left_line % 10;
-        int right_type = right_line % 10;
-
-        // ▼ 2(실선), 4(내쪽 실선+바깥 점선), 5(이중 실선)일 때만 차단벽을 띄움
-        // (※ 차종이나 좌/우 차선 방향에 따라 3과 4의 의미가 반대일 수 있습니다. 
-        // 만약 실제 주행 테스트 시 반대로 작동한다면 4 대신 3으로 숫자를 바꿔주시면 됩니다!)
-        bool left_solid = (left_type == 2 || left_type == 4 || left_type == 5);
-        bool right_solid = (right_type == 2 || right_type == 4 || right_type == 5);
+        // 10으로 나눈 나머지가 0이나 5가 아니면 실선으로 판단 (흰색 실선, 주황색 실선 모두 포함)
+        bool left_solid = (left_line % 10 != 0 && left_line % 10 != 5);
+        bool right_solid = (right_line % 10 != 0 && right_line % 10 != 5);
 
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
