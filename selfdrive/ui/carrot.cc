@@ -1393,7 +1393,7 @@ public:
         if (!make_data(s)) return;
 
         NVGcolor color = nvgRGBA(255, 59, 59, 120);
-        NVGcolor color2 = nvgRGBA(255, 149, 0, 120); 
+        NVGcolor color2 = nvgRGBA(255, 149, 0, 0);
 
         SubMaster& sm = *(s->sm);
         auto car_state = sm["carState"].getCarState();
