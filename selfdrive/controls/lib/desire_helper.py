@@ -394,11 +394,8 @@ class DesireHelper:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
-            if desire_enabled:
-              self.lane_change_state = LaneChangeState.preLaneChange
-              self.next_lane_change = True
-            else:
-              self.lane_change_state = LaneChangeState.off
+            self.lane_change_state = LaneChangeState.off
+            self.next_lane_change = False
 
     # timer
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
