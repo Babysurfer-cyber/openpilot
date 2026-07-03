@@ -424,7 +424,7 @@ class DesireHelper:
             self.lane_change_direction = LaneChangeDirection.none
             if desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
-              self.next_lane_change = True
+              self.next_lane_change = False #연속 차선변경 관련인듯
             else:
               self.lane_change_state = LaneChangeState.off
               
