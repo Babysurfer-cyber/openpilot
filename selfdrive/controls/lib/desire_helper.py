@@ -396,7 +396,7 @@ class DesireHelper:
             self.lane_change_direction = LaneChangeDirection.none
             if desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
-              self.next_lane_change = False  #이중 차선변경 관련 코드인듯?
+              self.next_lane_change = True  #이중 차선변경 관련 코드인듯?
             else:
               self.lane_change_state = LaneChangeState.off
               
