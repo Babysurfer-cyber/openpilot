@@ -421,9 +421,11 @@ class DesireHelper:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
-            self.lane_change_state = LaneChangeState.off
-            self.next_lane_change = False
-
+            if desire_enabled:
+              self.lane_change_state = LaneChangeState.preLaneChange
+              self.next_lane_change = False #연속 차선변경 코드인듯?
+            else:
+              self.lane_change_state = LaneChangeState.off
     # timer
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
       self.lane_change_timer = 0.0
