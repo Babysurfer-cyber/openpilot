@@ -775,6 +775,50 @@
         <source>ATC Auto Map Change(0)</source>
         <translation>ATC 自动地图切换(0)</translation>
     </message>
+    <message>
+        <source>Share Data</source>
+        <translation>分享数据</translation>
+    </message>
+    <message>
+        <source>Hardware is C3x Lite</source>
+        <translation>硬件为 C3x Lite</translation>
+    </message>
+    <message>
+        <source>0:None, 1:TCP JSON Data(Reboot required)</source>
+        <translation>0:无, 1:TCP JSON 数据(需重启)</translation>
+    </message>
+    <message>
+        <source>Smart Speed Control(0)</source>
+        <translation>智能速度控制(0)</translation>
+    </message>
+    <message>
+        <source>0: off, 1:accel, 2:decel, 3: all</source>
+        <translation>0:关闭, 1:加速, 2:减速, 3:全部</translation>
+    </message>
+    <message>
+        <source>Model TurnSpeed Factor(0)</source>
+        <translation>模型转弯速度系数(0)</translation>
+    </message>
+    <message>
+        <source>Enable Software Menu</source>
+        <translation>启用软件菜单</translation>
+    </message>
+    <message>
+        <source>Select your car</source>
+        <translation>选择你的车型</translation>
+    </message>
+    <message>
+        <source>Wait for list...</source>
+        <translation>等待列表...</translation>
+    </message>
+    <message>
+        <source>Select Manufacturer</source>
+        <translation>选择厂商</translation>
+    </message>
+    <message>
+        <source>SELECT YOUR CAR</source>
+        <translation>选择你的车型</translation>
+    </message>
 </context>
 <context>
     <name>ConfirmationDialog</name>

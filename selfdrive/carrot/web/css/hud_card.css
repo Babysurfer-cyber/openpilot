@@ -18,6 +18,8 @@
   --hud-chip-font: 13.5px;
   --hud-gear-font: 46px;
   --hud-band-height: 34px;
+  --hud-metric-value-scale: 1.78;
+  --hud-bottom-segment-scale: 1.30;
   --hud-max-width: 428px;
   --hud-panel-top: rgba(13, 56, 38, 1);
   --hud-panel-mid: rgba(18, 65, 44, 1);
@@ -31,6 +33,7 @@
   --hud-green: #34c96e;
   --hud-amber: #ffc94a;
   --hud-red: #ff5c5c;
+  --hud-support-col-max: 44%;
   width: min(100%, var(--hud-card-width, var(--hud-max-width)));
   max-width: 100%;
   height: auto;
@@ -93,8 +96,51 @@
     linear-gradient(145deg, rgba(17,68,46,0.68), rgba(10,40,27,0.60));
   box-shadow: none;
   border-color: rgba(255,255,255,0.08);
-  transform: scale(0.58);
+  transform: none;
   transform-origin: bottom left;
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudBody {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudBottomStrip {
+  padding-inline: calc(var(--hud-section-gap) * 0.06);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudBottomSegment {
+  letter-spacing: 0.06px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudSupportKey {
+  font-size: calc(var(--hud-label-font) + 0.2px);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudSupportValue {
+  font-size: calc(var(--hud-label-font) + 0.5px);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudSupportDetail {
+  gap: calc(var(--hud-metric-gap) * 0.16);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudGapText {
+  font-size: calc(var(--hud-label-font) - 0.2px);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudGearLabel {
+  display: none;
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudGearValue {
+  margin-top: 0;
+  font-size: calc(var(--hud-secondary-font) - 5px);
+}
+
+.hudWrap[data-surface="driveOverlay"] .hudSignalSlot {
+  width: calc(var(--hud-chip-font) + 8px);
 }
 
 .hudWrap::before {
@@ -124,8 +170,9 @@
 .hudMetricBar {
   display: flex;
   align-items: stretch;
-  margin-bottom: calc(var(--hud-section-gap) * 0.28);
-  padding: 0 calc(var(--hud-section-gap) * 0.08);
+  margin-top: calc(var(--hud-padding) * -0.34);
+  margin-bottom: calc(var(--hud-section-gap) * 0.08);
+  padding: 0;
 }
 
 .hudMetricCell {
@@ -134,8 +181,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--hud-metric-gap) * 0.42);
-  padding: 0 calc(var(--hud-section-gap) * 0.30);
+  gap: calc(var(--hud-metric-gap) * 0.22);
+  padding: 0 calc(var(--hud-section-gap) * 0.12);
 }
 
 .hudMetricDivider,
@@ -169,10 +216,10 @@
 
 .hudMetricValue {
   min-width: 0;
-  font-size: calc(var(--hud-chip-font) + 2.9px);
-  font-weight: 900;
+  font-size: calc(var(--hud-chip-font) * var(--hud-metric-value-scale, 1.78));
+  font-weight: 920;
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   text-shadow: var(--hud-text-shadow-strong);
   white-space: nowrap;
 }
@@ -181,7 +228,7 @@
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 5fr) auto minmax(0, 4fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0;
   margin-bottom: calc(var(--hud-section-gap) * 0.26);
 }
@@ -192,20 +239,6 @@
   display: none;
 }
 
-.hudWrap[data-surface="homePreview"] .hudBodyDivider {
-  display: block;
-  background: rgba(255,255,255,0.12);
-}
-
-.hudWrap[data-surface="homePreview"][data-wide="1"] .hudBody {
-  grid-template-columns: minmax(0, 5fr) auto minmax(0, 5fr);
-}
-
-.hudWrap[data-surface="homePreview"][data-wide="1"][data-density="regular"] .hudBody,
-.hudWrap[data-surface="homePreview"][data-wide="1"][data-density="spacious"] .hudBody {
-  grid-template-columns: minmax(0, 6fr) auto minmax(0, 5fr);
-}
-
 .hudSpeedColumn,
 .hudSupportColumn {
   min-width: 0;
@@ -214,11 +247,17 @@
 }
 
 .hudSpeedColumn {
+  justify-self: stretch;
   padding: calc(var(--hud-padding) * 0.18) calc(var(--hud-padding) * 0.10) calc(var(--hud-padding) * 0.10) calc(var(--hud-padding) * 0.16);
 }
 
 .hudSupportColumn {
-  padding: calc(var(--hud-padding) * 0.18) calc(var(--hud-padding) * 0.12) calc(var(--hud-padding) * 0.10) calc(var(--hud-padding) * 0.10);
+  justify-self: stretch;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  padding: calc(var(--hud-padding) * 0.18) calc(var(--hud-padding) * 0.10) calc(var(--hud-padding) * 0.10) calc(var(--hud-padding) * 0.30);
+  text-align: left;
 }
 
 .hudSectionLabel {
@@ -239,7 +278,7 @@
   font-size: calc(var(--hud-speed-font) + 14px);
   font-weight: 900;
   line-height: 0.84;
-  letter-spacing: -0.06em;
+  letter-spacing: 0;
   color: #fff;
   text-shadow: var(--hud-text-shadow-strong);
   white-space: nowrap;
@@ -254,7 +293,7 @@
   font-size: calc(var(--hud-primary-font) + 8px);
   font-weight: 900;
   line-height: 0.92;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
   color: #f4f7fb;
   text-shadow: var(--hud-text-shadow-strong);
   white-space: nowrap;
@@ -293,12 +332,13 @@
   font-weight: 900;
   letter-spacing: 0.22px;
   white-space: nowrap;
-  overflow: visible;
-  text-overflow: clip;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hudSupportValue {
   flex: none;
+  min-width: 0;
   color: rgba(255,255,255,0.86);
   font-size: calc(var(--hud-label-font) + 2.4px);
   font-weight: 900;
@@ -329,6 +369,7 @@
 
 .hudGapBar {
   flex: 1 1 0;
+  min-width: 8px;
   height: 4px;
   border-radius: 999px;
   background: rgba(255,255,255,0.22);
@@ -351,11 +392,28 @@
 }
 
 .hudGearStatus {
-  flex: none;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: clamp(42px, calc(var(--hud-chip-font) * 3.1), 82px);
+  max-width: clamp(52px, calc(var(--hud-chip-font) * 4.8), 108px);
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.hudGearStep {
+  min-height: 1em;
+  margin-bottom: calc(var(--hud-metric-gap) * 0.10);
+  color: rgba(255,255,255,0.88);
+  font-size: calc(var(--hud-label-font) + 3.2px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-shadow: var(--hud-text-shadow-strong);
+  white-space: nowrap;
+  width: 100%;
+  text-align: left;
 }
 
 .hudGearLabel {
@@ -364,6 +422,8 @@
   font-weight: 800;
   letter-spacing: 0.26px;
   line-height: 1;
+  width: 100%;
+  text-align: left;
 }
 
 .hudGearValue {
@@ -373,6 +433,8 @@
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
+  width: 100%;
+  text-align: left;
 }
 
 .hudGearValue[data-unknown="1"] {
@@ -382,8 +444,10 @@
 .hudBottomStrip {
   display: flex;
   align-items: center;
-  padding: clamp(2px, calc((var(--hud-band-height) - (var(--hud-chip-font) + 4px)) / 2), 4px) calc(var(--hud-section-gap) * 0.12);
+  min-height: calc(var(--hud-band-height) + 2px);
+  padding: 0 calc(var(--hud-section-gap) * 0.04);
   margin-top: auto;
+  margin-bottom: calc(var(--hud-padding) * -0.34);
 }
 
 .hudSignalSlot {
@@ -419,10 +483,10 @@
 .hudBottomSegment {
   flex: 1 1 0;
   min-width: 0;
-  font-size: calc(var(--hud-chip-font) + 2.8px);
-  font-weight: 900;
+  font-size: calc(var(--hud-chip-font) * var(--hud-bottom-segment-scale, 1.30));
+  font-weight: 920;
   line-height: 1;
-  letter-spacing: 0.18px;
+  letter-spacing: 0.01px;
   text-align: center;
   color: rgba(255,255,255,0.92);
   text-shadow: var(--hud-text-shadow-strong);
@@ -456,6 +520,102 @@
   flex-wrap: nowrap;
 }
 
+.hudWrap[data-support-layout="compact"] .hudSupportLine {
+  flex-direction: column;
+  align-items: stretch;
+  gap: calc(var(--hud-metric-gap) * 0.10);
+}
+
+.hudWrap[data-support-layout="compact"] .hudSupportValue {
+  align-self: flex-start;
+  text-align: left;
+}
+
+.hudWrap[data-support-layout="compact"] .hudSupportDetail {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: calc(var(--hud-metric-gap) * 0.24);
+}
+
+.hudWrap[data-support-layout="compact"] .hudGapStatus {
+  width: 100%;
+}
+
+.hudWrap[data-support-layout="compact"] .hudGapBars {
+  min-width: clamp(72px, 32%, 116px);
+}
+
+.hudWrap[data-support-layout="compact"] .hudGearStatus {
+  align-self: flex-start;
+  min-width: clamp(58px, 19%, 84px);
+  max-width: clamp(68px, 27%, 100px);
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudSupportLine {
+  align-items: center;
+  gap: calc(var(--hud-metric-gap) * 0.24);
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudSupportKey {
+  font-size: calc(var(--hud-chip-font) + 0.2px);
+  letter-spacing: 0.18px;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudSupportValue {
+  max-width: 48%;
+  font-size: calc(var(--hud-chip-font) + 0.9px);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudSupportDetail {
+  gap: calc(var(--hud-metric-gap) * 0.20);
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGapStatus {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGapBars {
+  min-width: 56px;
+  gap: calc(var(--hud-metric-gap) * 0.12);
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGapBar {
+  min-width: 7px;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGapBar.is-on {
+  height: 8px;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGapText {
+  font-size: calc(var(--hud-chip-font) + 0.3px);
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGearStatus {
+  min-width: 30px;
+  max-width: 42px;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGearStep {
+  font-size: calc(var(--hud-chip-font) + 1.1px);
+  margin-bottom: calc(var(--hud-metric-gap) * 0.04);
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGearLabel {
+  display: none;
+}
+
+.hudWrap[data-support-layout="veryCompact"] .hudGearValue {
+  margin-top: 0;
+  text-align: center;
+  font-size: calc(var(--hud-secondary-font) - 4.8px);
+}
+
 .hudWrap[data-density="micro"] .hudGearLabel {
   display: none;
 }
@@ -469,41 +629,140 @@
   padding-inline: calc(var(--hud-section-gap) * 0.18);
 }
 
-.hudWrap[data-surface="homePreview"] .hudSupportLine {
-  flex-direction: column;
+.hudWrap[data-surface="homePreview"] .hudBody,
+.hudWrap[data-surface="driveInline"] .hudBody,
+.hudWrap[data-surface="driveOverlay"] .hudBody {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 0;
+}
+
+.hudWrap[data-surface="homePreview"] .hudBodyDivider,
+.hudWrap[data-surface="driveInline"] .hudBodyDivider,
+.hudWrap[data-surface="driveOverlay"] .hudBodyDivider {
+  display: none;
+}
+
+.hudWrap[data-surface="homePreview"] .hudSpeedColumn,
+.hudWrap[data-surface="homePreview"] .hudSupportColumn,
+.hudWrap[data-surface="driveInline"] .hudSpeedColumn,
+.hudWrap[data-surface="driveInline"] .hudSupportColumn,
+.hudWrap[data-surface="driveOverlay"] .hudSpeedColumn,
+.hudWrap[data-surface="driveOverlay"] .hudSupportColumn {
+  justify-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hudWrap[data-surface="homePreview"] .hudSupportColumn,
+.hudWrap[data-surface="driveInline"] .hudSupportColumn,
+.hudWrap[data-surface="driveOverlay"] .hudSupportColumn {
+  justify-self: stretch;
+  align-items: stretch;
+  padding-left: calc(var(--hud-padding) * 0.30);
+  padding-right: calc(var(--hud-padding) * 0.10);
+  text-align: left;
+}
+
+.hudWrap[data-surface="homePreview"] .hudSupportLine,
+.hudWrap[data-surface="homePreview"] .hudSupportDetail,
+.hudWrap[data-surface="driveInline"] .hudSupportLine,
+.hudWrap[data-surface="driveInline"] .hudSupportDetail,
+.hudWrap[data-surface="driveOverlay"] .hudSupportLine,
+.hudWrap[data-surface="driveOverlay"] .hudSupportDetail {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.hudWrap[data-surface="homePreview"] .hudSupportValue,
+.hudWrap[data-surface="homePreview"] .hudGapText,
+.hudWrap[data-surface="homePreview"] .hudGearStep,
+.hudWrap[data-surface="homePreview"] .hudGearLabel,
+.hudWrap[data-surface="homePreview"] .hudGearValue,
+.hudWrap[data-surface="driveInline"] .hudSupportValue,
+.hudWrap[data-surface="driveInline"] .hudGapText,
+.hudWrap[data-surface="driveInline"] .hudGearStep,
+.hudWrap[data-surface="driveInline"] .hudGearLabel,
+.hudWrap[data-surface="driveInline"] .hudGearValue,
+.hudWrap[data-surface="driveOverlay"] .hudSupportValue,
+.hudWrap[data-surface="driveOverlay"] .hudGapText,
+.hudWrap[data-surface="driveOverlay"] .hudGearStep,
+.hudWrap[data-surface="driveOverlay"] .hudGearLabel,
+.hudWrap[data-surface="driveOverlay"] .hudGearValue {
+  align-self: auto;
+  max-width: none;
+  text-align: left;
+}
+
+.hudWrap[data-surface="homePreview"] .hudGapStatus,
+.hudWrap[data-surface="driveInline"] .hudGapStatus,
+.hudWrap[data-surface="driveOverlay"] .hudGapStatus {
+  flex: 0 1 auto;
+  width: auto;
+  flex-direction: row;
+  align-items: center;
+}
+
+.hudWrap[data-surface="homePreview"] .hudGapBars,
+.hudWrap[data-surface="driveInline"] .hudGapBars,
+.hudWrap[data-surface="driveOverlay"] .hudGapBars {
+  min-width: clamp(72px, 34%, 132px);
+}
+
+.hudWrap[data-surface="homePreview"] .hudGearStatus,
+.hudWrap[data-surface="driveInline"] .hudGearStatus,
+.hudWrap[data-surface="driveOverlay"] .hudGearStatus {
+  align-self: flex-start;
   align-items: flex-start;
-  justify-content: flex-start;
-  gap: calc(var(--hud-metric-gap) * 0.10);
+  text-align: left;
 }
 
-.hudWrap[data-surface="homePreview"] .hudSupportValue {
-  align-self: flex-end;
-  text-align: right;
+.hudWrap[data-surface="homePreview"] .hudGearLabel,
+.hudWrap[data-surface="driveInline"] .hudGearLabel,
+.hudWrap[data-surface="driveOverlay"] .hudGearLabel {
+  display: block;
 }
 
-.hudWrap[data-surface="homePreview"] .hudSupportDetail {
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  gap: calc(var(--hud-metric-gap) * 0.24);
-}
-
-.hudWrap[data-surface="homePreview"] .hudGapStatus {
-  flex-direction: column;
-  align-items: stretch;
-  gap: calc(var(--hud-metric-gap) * 0.14);
-}
-
-.hudWrap[data-surface="homePreview"] .hudGapText {
-  text-align: right;
-}
-
-.hudWrap[data-surface="homePreview"] .hudGearStatus {
-  align-self: flex-end;
+.hudWrap[data-surface="homePreview"] .hudGearValue,
+.hudWrap[data-surface="driveInline"] .hudGearValue,
+.hudWrap[data-surface="driveOverlay"] .hudGearValue {
+  margin-top: 3px;
 }
 
 @media (max-width: 430px) {
   .hudWrap {
     width: min(100%, var(--hud-max-width));
   }
+}
+
+/* ── 기어 띄움(floating) — 설정속도 칼럼 우측 빈 공간(중앙)으로 이동 ──
+   기존엔 차간거리 막대 옆 디테일 영역에 끼어 어색했음. 절대배치라 다른 요소
+   레이아웃은 안 건드린다. top/right 값은 실기기 보고 미세조정. */
+.hudSupportColumn {
+  position: relative;
+}
+
+.hudWrap .hudSupportColumn > .hudGearStatus--floating {
+  position: absolute;
+  top: 40%;
+  right: calc(var(--hud-padding) * 0.20);
+  transform: translateY(-50%);
+  min-width: 0;
+  max-width: none;
+  align-items: flex-end;
+  text-align: right;
+  z-index: 1;
+}
+
+.hudWrap .hudSupportColumn > .hudGearStatus--floating .hudGearStep,
+.hudWrap .hudSupportColumn > .hudGearStatus--floating .hudGearLabel,
+.hudWrap .hudSupportColumn > .hudGearStatus--floating .hudGearValue {
+  width: auto;
+  text-align: right;
+}
+
+/* 모든 초록 HUD에서 기어 모양 동일하게 — veryCompact·micro 의 GEAR 라벨 숨김을 덮어
+   라벨을 항상 노출 (단, 0~7 단수 hudGearStep 의 hidden 동작은 그대로 둠). */
+.hudWrap .hudSupportColumn > .hudGearStatus--floating .hudGearLabel {
+  display: block;
 }

@@ -682,7 +682,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          enable_corner_radar, stopping, canfd_debug):
   ret = []
 
-  md = CS.MD
+  md = CS.modelV2
   if not hasattr(create_ccnc_messages, '_lane_line_check') or frame % 100 == 0:
     create_ccnc_messages._lane_line_check = Params().get_int("LaneLineCheck")
   lane_line_check = create_ccnc_messages._lane_line_check
@@ -761,7 +761,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["CENTERLINE"] = 1 if HDA_CntrlModSta > 0 else 0
         values["CAR_CIRCLE"] = 2 if hdp_active else 1 if cruise_enabled else 0
 
-        values["NAV_ICON"] = 2 if nav_active else 0
+        values["NAV_ICON"] = 2 if nav_active and cruise_enabled else 1 if main_enabled and nav_active else 0
         values["HDA_ICON"] = 5 if hdp_active else 2 if cruise_enabled else 1 if main_enabled else 0
         values["LFA_ICON"] = 5 if hdp_active else 2 if lat_active else 1 if lat_enabled else 0
         values["LKA_ICON"] = 4 if lat_active else 3 if lat_enabled else 0
@@ -776,7 +776,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           values["SOUNDS_2"] = 0
           values["SOUNDS_4"] = 0
 
-        if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 26, 7, 8, 9, 10]: # hide gap distance msg.(11,12,13,14)
+        if values["ALERTS_3"] in [3, 4, 11, 12, 13, 14, 17, 19, 20, 26, 27, 28, 7, 8, 9, 10]: # hide gap distance msg.(11,12,13,14), lanechange(19,20,27, 28)
           values["ALERTS_3"] = 0
           values["SOUNDS_3"] = 0
 
@@ -799,8 +799,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["LCA_LEFT_ARROW"] = 2 if CS.out.leftBlinker else 0
         values["LCA_RIGHT_ARROW"] = 2 if CS.out.rightBlinker else 0
 
-        values["LCA_LEFT_ICON"] = 1 if CS.out.leftBlindspot else 2
-        values["LCA_RIGHT_ICON"] = 1 if CS.out.rightBlindspot else 2
+        values["LCA_LEFT_ICON"] = (1 if CS.out.leftBlindspot else 2) if lat_active else 0
+        values["LCA_RIGHT_ICON"] = (1 if CS.out.rightBlindspot else 2) if lat_active else 0
 
         values["LANE_LEFT"] = 1 if desire in (1, 3) else 0
         values["LANE_RIGHT"] = 1 if desire in (2, 4) else 0
