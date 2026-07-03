@@ -423,7 +423,7 @@ class DesireHelper:
             self.lane_change_direction = LaneChangeDirection.none
             if desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
-              self.next_lane_change = True
+              self.next_lane_change = False
             else:
               self.lane_change_state = LaneChangeState.off
     
