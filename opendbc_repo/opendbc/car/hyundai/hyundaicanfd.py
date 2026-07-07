@@ -333,7 +333,7 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   
   if CS.scc_control is None:
     return None
-  enabled = (enabled or CS.softHoldActive > 0) and CS.paddle_button_prev == 0
+  enabled = (enabled or CS.softHoldActive > 0)
   
   acc_mode = 0 if not enabled else (2 if gas_override else 1)
 
