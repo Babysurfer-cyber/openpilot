@@ -852,14 +852,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         if v_ego_kph >= 30.0 and not is_changing_lane:
             
             # [왼쪽 방향]
-            if CS.out.leftBlinker and danger_left:
-                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
-            elif nudge_left and left_solid:
+            #if CS.out.leftBlinker and danger_left:
+                #alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+            if nudge_left and left_solid:
                 alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
                 
             # [오른쪽 방향]
-            elif CS.out.rightBlinker and danger_right:
-                alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+            #elif CS.out.rightBlinker and danger_right:
+                #alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             elif nudge_right and right_solid:
                 alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
 
