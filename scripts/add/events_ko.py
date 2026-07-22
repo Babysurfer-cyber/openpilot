@@ -585,8 +585,8 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.steerSaturated: {
     ET.PERMANENT: Alert(
-      "",
       "회전이 조향 한도를 초과함",
+      "",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.HIGH, VisualAlert.none, AudibleAlert.warningSoft, 2.),
   },
