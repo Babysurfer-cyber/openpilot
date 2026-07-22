@@ -12,7 +12,6 @@ from openpilot.selfdrive.selfdrived.events import Events
 
 EventName = log.OnroadEvent.EventName
 LaneChangeState = log.LaneChangeState
-GearShifter = log.CarState.GearShifter  # <--- 이 줄을 하나 쏙 넣어주세요!
 
 class XState(Enum):
   lead = 0
@@ -601,7 +600,7 @@ class CarrotPlanner:
     if self.soft_hold_active > 0:
       self.xState = XState.e2eStopped
       # ▼ 수정 1: 소프트 홀드 중일 때, 기어가 D일 때만 알림
-      if trafficState_last in [TrafficState.off, TrafficState.red] and self.trafficState == TrafficState.green and carstate.gearShifter == GearShifter.drive:
+      if trafficState_last in [TrafficState.off, TrafficState.red] and self.trafficState == TrafficState.green and carstate.gearShifter == "drive":
         self.add_event(EventName.trafficSignChanged)
     elif self.xState == XState.e2eStopped:
       if carstate.gasPressed:
@@ -613,7 +612,7 @@ class CarrotPlanner:
         if self.trafficState == TrafficState.green and not self.carrot_stay_stop and not carstate.leftBlinker:
           
           # 2. ▼ 수정 2: e2e 정지 상태일 때, 방금 전까지 빨간불이었고 기어가 D일 때만 알림!
-          if trafficState_last in [TrafficState.off, TrafficState.red] and carstate.gearShifter == GearShifter.drive:
+          if trafficState_last in [TrafficState.off, TrafficState.red] and carstate.gearShifter == "drive":
             self.events.add(EventName.trafficSignChanged)  # 기어가 D일 때만 띵동!
 
           # 3. 차가 스스로 출발하는 건 '모드 1'이 아닐 때만!
