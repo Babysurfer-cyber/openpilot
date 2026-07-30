@@ -239,6 +239,13 @@ def create_suppress_lfa(packer, CAN, CS):
   values["SET_ME_0_2"] = 0
   values["LEFT_LANE_LINE"] = 3
   values["RIGHT_LANE_LINE"] = 3
+  
+  # 차선 인식 '매우 높음(3)' + '흰색(1)' + '실선(1)' 조합
+  values["LEFT_LANE_COLOR"] = 1  
+  values["RIGHT_LANE_COLOR"] = 1 
+  values["LEFT_LANE_TYPE"] = 1 
+  values["RIGHT_LANE_TYPE"] = 1  
+
   return [packer.make_can_msg(suppress_msg, CAN.ACAN, values)]
 
 def create_buttons(packer, CP, CAN, cnt, btn):
