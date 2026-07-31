@@ -296,7 +296,7 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
     values["LFA_OptUsmSta"] = 2
     values["HDA_OptUsmSta"] = 2
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  values["HDA_LFA_SymSta"] = 2 if CS.out.carrotCruise and long_active else 1 if lat_active else 0
+  values["HDA_LFA_SymSta"] = 2 if CS.out.carrotCruise else 1 if lat_active else 0
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
 
 def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
