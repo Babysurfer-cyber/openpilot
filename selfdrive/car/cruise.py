@@ -862,13 +862,18 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
-    # ▼▼▼ [추가 2] 당근크루즈 중 10~15km/h 재가속(울컥임) 완벽 차단! ▼▼▼
+    # ▼▼▼ [추가 2] 당근크루즈 중 재가속 차단 및 타력주행(코스팅) 완벽 유지! ▼▼▼
     if getattr(self, 'carrot_cruise_active', False):
-      # 1. 속도 묶기: 목표 속도가 현재 내 차의 속도를 넘지 못하게 멱살 잡기
-      v_cruise_kph = min(v_cruise_kph, getattr(self, 'v_ego_kph_set', v_cruise_kph)) 
-      # 2. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
+      if CS.gasPressed:
+        # 1. 엑셀을 밟을 때: 목표 속도도 내 차 속도에 맞춰 같이 끌어올려줌 (브레이크 개입 완벽 차단)
+        v_cruise_kph = self.v_ego_kph_set
+      else:
+        # 2. 엑셀을 뗄 때: 목표 속도가 내 차 속도를 넘지 못하게 눌러서 타력 주행(코스팅) 유도
+        v_cruise_kph = min(v_cruise_kph, self.v_ego_kph_set) 
+      
+      # 3. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
       self._pause_auto_speed_up = True                     
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     return self._auto_speed_up(v_cruise_kph)
 
