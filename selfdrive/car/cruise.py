@@ -426,18 +426,23 @@ class VCruiseCarrot:
     for b in buttonEvents:
       bt = b.type
 
-      if bt in [ButtonType.paddleLeft, ButtonType.paddleRight] and b.pressed:
-        # Paddle: 즉시 이벤트 발생
-        button_type = bt
-        self.long_pressed = False
-        self.button_cnt = 0
-        continue
+      # ▼▼▼ [삭제] 패들 즉시 반응 로직 6줄 삭제 (또는 주석 처리) ▼▼▼
+      # if bt in [ButtonType.paddleLeft, ButtonType.paddleRight] and b.pressed:
+      #   # Paddle: 즉시 이벤트 발생
+      #   button_type = bt
+      #   self.long_pressed = False
+      #   self.button_cnt = 0
+      #   continue
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+      # ▼▼▼ [수정] 아래 리스트에 패들 버튼 2개를 추가해 줍니다 ▼▼▼
       if b.pressed and self.button_cnt == 0 and bt in [
         ButtonType.accelCruise, ButtonType.decelCruise,
         ButtonType.gapAdjustCruise, ButtonType.cancel,
-        ButtonType.lfaButton
+        ButtonType.lfaButton,
+        ButtonType.paddleLeft, ButtonType.paddleRight  # <--- 추가됨!
       ]:
+
         self.button_cnt = 1
         self.button_prev = bt
         self.button_long_time = self._cruise_button_long_delay if bt in [ButtonType.accelCruise, ButtonType.decelCruise] else self._cruise_button_long_delay + 30
@@ -653,12 +658,19 @@ class VCruiseCarrot:
         self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
 
     if self._paddle_mode > 0 and button_type in [ButtonType.paddleLeft, ButtonType.paddleRight]:  # paddle button
-      if self._paddle_mode == 3:
-        self.carrot_cruise_active = True
+      # ▼▼▼ [추가] 패들을 길게 당기고 있을 때는 오픈파일럿 정지모드를 켜지 않고 끔 ▼▼▼
+      if long_pressed:
+        self._paddle_decel_active = False
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       else:
-        self._cruise_control(-2, -1, "Cruise off & Ready (paddle)")
-        if self._paddle_mode == 2:
-          self._paddle_decel_active = True
+        # 짧게 딸깍 당겼다 뗐을 때만 정지모드 켜기
+        if self._paddle_mode == 3:
+          self.carrot_cruise_active = True
+        else:
+          self._cruise_control(-2, -1, "Cruise off & Ready (paddle)")
+          if self._paddle_mode == 2:
+            self._paddle_decel_active = True
+
     elif self._paddle_decel_active:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
