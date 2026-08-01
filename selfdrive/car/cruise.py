@@ -844,10 +844,9 @@ class VCruiseCarrot:
         if self.xState in [3]:
           self._paddle_decel_active = False
           v_cruise_kph = self.v_ego_kph_set
-        elif self.d_rel > 0:
-          self._paddle_decel_active = False
-          v_cruise_kph = self.v_ego_kph_set
-          
+        else:
+          # ▼▼▼ [수정] 앞차가 있든 없든(d_rel > 0 무시) 패들 감속 중이면 목표 속도를 0으로 설정하여 정지모드 유지 ▼▼▼
+          v_cruise_kph = 0          
 
     if self._gas_pressed_count > self._gas_tok_timer:
       if CS.aEgo < -0.5:
