@@ -612,12 +612,19 @@ class VCruiseCarrot:
           self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
         elif self._lfa_button_mode == 2:
           self.carrot_cruise_active = True
+          # ▼▼▼ [추가] 크루즈가 꺼져있을 때 LFA 버튼으로 당근크루즈 바로 켜기 ▼▼▼
+          if not CC.enabled:
+            self._cruise_control(1, -1, "Cruise on (LFA Carrot)")
+            v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min) # 현재 내 차 속도로 맞춤
+            self.is_first_activation = False  # 최초 활성화 플래그 해제
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         else:
           if False: #CC.enabled and self._paddle_decel_active:  # 수정필요...
             self._paddle_decel_active = False
           else:          
             self._paddle_decel_active = True
         print("lfaButton")
+
       elif button_type == ButtonType.cancel:
         self._paddle_decel_active = False
         if self._cancel_button_mode in [1]:
