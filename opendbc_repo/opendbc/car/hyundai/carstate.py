@@ -667,26 +667,17 @@ class CarState(CarStateBase):
 
     if self.cruise_buttons_alt2 is not None:
       if int(self.cruise_buttons_alt2.get("LFA_BTN", 0)) == 1:
-        # [추가] LFA 버튼이 눌렸는데 크루즈가 꺼져있다면 SET(-) 버튼으로 속임!
-        if not ret.cruiseState.enabled:
-          cruise_button = [Buttons.SET_DECEL]
-        else:
-          cruise_button = [Buttons.LFA_BUTTON]
+        cruise_button = [Buttons.LFA_BUTTON]
       else:
         v = int(self.cruise_buttons_alt2.get("CRUISE_BUTTONS", 0))
         cruise_button = [v if v < 5 else Buttons.NONE]
     elif cp.vl[self.cruise_btns_msg_canfd]["LFA_BTN"]:
-      # [추가] 일반 CAN-FD 차량에서도 동일하게 처리
-      if not ret.cruiseState.enabled:
-        cruise_button = [Buttons.SET_DECEL]
-      else:
-        cruise_button = [Buttons.LFA_BUTTON]
+      cruise_button = [Buttons.LFA_BUTTON]
     else:
       cruise_button = cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"]
 
     self.cruise_buttons.extend(cruise_button)
     # }} carrot
-
 
 
     #if self.cruise_btns_msg_canfd in cp.vl:
@@ -730,6 +721,15 @@ class CarState(CarStateBase):
                         *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise})]
 
     self.paddle_button_prev = paddle_button
+    
+    # ▼▼▼ [추가] 크루즈 대기 상태에서 LFA 버튼을 누르면 SET 이벤트도 동시에 쏨 ▼▼▼
+    if not ret.cruiseState.enabled and self.cruise_buttons[-1] == Buttons.LFA_BUTTON and prev_cruise_buttons != Buttons.LFA_BUTTON:
+      be = structs.CarState.ButtonEvent.new_message()
+      be.pressed = True
+      be.type = ButtonType.setCruise
+      ret.buttonEvents.append(be)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     return ret
 
   def get_can_parsers_canfd(self, CP):
