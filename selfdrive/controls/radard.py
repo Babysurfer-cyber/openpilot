@@ -897,15 +897,19 @@ class RadarD:
     left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
+    # 방향별로 끼어들기 여부와 계산된 상대속도 가져오기
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    left_ok = left_cutin and (1.2 < left_lat < 2.4) and (left_long > 0.0)
-    right_ok = right_cutin and (1.2 < right_lat < 2.4) and (right_long > 0.0)
+    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 2.9m로 확장!
+    # (어차피 먼 거리(2.2m 밖)에서는 v_lat < -0.3 조건이 있으므로 오작동 없음)
+    left_ok = left_cutin and (1.2 < left_lat < 2.9) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < right_lat < 2.9) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
 
+    # 양쪽 다 끼어들면 더 가까운(세로거리) 놈을 타겟으로 잡음
     if left_ok and right_ok:
       if left_long <= right_long:
         lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
@@ -919,13 +923,14 @@ class RadarD:
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 [핵심 보완] 정지물체 오작동 방지 (Guardrail / Parked cars)
-    # 계산된 타겟의 절대 속도가 2.0m/s (약 7km/h) 이하이고 내 차가 주행 중이라면, 
-    # 이는 끼어드는 차가 아니라 갓길의 구조물이거나 주차된 차일 확률이 99%이므로 개입 취소
-    if actual_vLead < 2.0 and CS.vEgo > 4.0:
+    # 💡 [보완 2] 초저속 끼어들기 인식 불가 방지!
+    # 정지물체(가드레일/벽)는 속도가 0이므로, 기준을 1.0m/s(약 3.6km/h) 미만으로 타이트하게 낮춤.
+    # 이제 막히는 길에서 시속 5km/h로 얌체처럼 끼어드는 차도 완벽하게 잡아냅니다.
+    if actual_vLead < 1.0 and CS.vEgo > 3.0:
       return lead_dict
 
     if lead_dict['status']:
+      # 기존 앞차가 있는데, 측면에서 파고드는 차가 기존 앞차보다 가까울 때만 갈아치움
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
         lead_dict['yRel'] = lat_dist
@@ -939,6 +944,7 @@ class RadarD:
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
     else:
+      # 앞차가 없었는데 측면에서 끼어드는 경우 새로 생성
       lead_dict['status'] = True
       lead_dict['dRel'] = long_dist
       lead_dict['yRel'] = lat_dist
@@ -953,7 +959,6 @@ class RadarD:
       lead_dict['radar'] = True
 
     return lead_dict
-
 
 
 # fuses camera and radar data for best lead detection
