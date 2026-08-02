@@ -883,10 +883,16 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_lat - past_lat) / time_diff
 
-    # 3. 동적 가로 속도 임계값 설정 (기존과 동일)
-    if cur_lat < 2.2:  
+    # 3. 동적 가로 속도 임계값 설정 (3단계 세분화)
+    if cur_lat < 1.8:
+      # 💡 [보완] 1.8m 이내(머리를 이미 내 차선에 깊숙이 들이민 상태)
+      # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
+      v_lat_threshold = 0.2  
+    elif cur_lat < 2.2:  
+      # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
       v_lat_threshold = -0.1  
     else:              
+      # 넉넉한 거리 (확 치고 들어오는 차만 감지)
       v_lat_threshold = -0.3  
 
     is_cutting_in = v_lat < v_lat_threshold
@@ -923,13 +929,18 @@ class RadarD:
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 [보완 2] 초저속 끼어들기 인식 불가 방지!
-    # 정지물체(가드레일/벽)는 속도가 0이므로, 기준을 1.0m/s(약 3.6km/h) 미만으로 타이트하게 낮춤.
-    # 이제 막히는 길에서 시속 5km/h로 얌체처럼 끼어드는 차도 완벽하게 잡아냅니다.
+    # 💡 [핵심 보완] 정지물체 필터링 + "정지 침범(Static Encroachment)" 예외 처리
+    # 거리가 1.8m 이내이면서 5m 앞쪽에 있다면, 이는 가드레일이 아니라 '머리를 들이밀고 멈춘 차'임!
+    is_deep_encroaching = (lat_dist < 1.8) and (long_dist < 5.0)
+
     if actual_vLead < 1.0 and CS.vEgo > 3.0:
-      return lead_dict
+      if not is_deep_encroaching:
+        # 깊숙이 들어온 놈이 아니면 원래대로 가드레일로 간주하고 무시
+        return lead_dict
+      # 깊숙이 들어온 놈이라면 무시하지 않고 아래 로직(타겟팅)으로 통과시킴!
 
     if lead_dict['status']:
+
       # 기존 앞차가 있는데, 측면에서 파고드는 차가 기존 앞차보다 가까울 때만 갈아치움
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
