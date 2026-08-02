@@ -466,10 +466,10 @@ class RadarD:
     self.leadTwo = None
     self.leadCutIn = empty_lead()
 
-    self._corner_lat_hist = {
+    # ▼▼▼ [수정] 가로(Y)와 세로(X)를 함께 저장하여 속도 벡터를 구하기 위함 ▼▼▼
+    self._corner_hist = {
       "L": deque(maxlen=10),
       "R": deque(maxlen=10),
-    }
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
 
 
@@ -851,107 +851,96 @@ class RadarD:
         self.radar_state.leadOne = chosen
         self.radar_detected = detected
 
-  def _corner_update_state(self, side: str, cur_lat: float, enter_lat: float = 2.8) -> int:
-    # 유효 범위 밖이면 리셋
-    if not (0.0 < cur_lat < enter_lat):
-      self._corner_lat_hist[side].clear()
-      self._corner_state[side] = 0
-      return 0
+  def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
+    # 유효 범위(너무 멀거나 너무 넓은 경우) 밖이면 리셋
+    if not (0.0 < cur_lat < enter_lat) or cur_long > 60.0:
+      self._corner_hist[side].clear()
+      return False, 0.0, 0.0
 
-    h = self._corner_lat_hist[side]
-    h.append(cur_lat)
+    h = self._corner_hist[side]
+    h.append((cur_long, cur_lat))
 
     n = len(h)
-    if n < 3:
-      # 데이터 너무 적으면 이전 상태 유지
-      return self._corner_state[side]
+    if n < 5:
+      # 데이터가 적으면 판단 보류
+      return False, 0.0, 0.0
 
-    delta = h[-1] - h[0]
-    th = 0.02 # 3 * (20 / n)
+    # 과거 시점과 현재 시점의 차이를 통해 속도 계산 (DT_MDL = 0.05초)
+    time_diff = (n - 1) * DT_MDL
+    delta_long = h[-1][0] - h[0][0]
+    delta_lat = h[-1][1] - h[0][1]
 
-    if delta < -th:
-      self._corner_state[side] = +1   # approaching
-    elif delta > th:
-      self._corner_state[side] = -1   # leaving
-    else:
-      self._corner_state[side] = 0    # maintain
+    v_long_rel = delta_long / time_diff  # 세로 상대속도 (음수면 내 차와 가까워짐)
+    v_lat = delta_lat / time_diff        # 가로 속도 (음수면 내 차선으로 좁혀짐)
 
-    return self._corner_state[side]
+    # 차선 쪽으로 빠르게 다가오고 있는지 판단 (가로 속도가 초당 0.3m 이상 차선 쪽으로)
+    # left는 lat가 줄어들면 다가오는 것(-), right도 절대값이 줄어들면 다가오는 것(-)
+    is_cutting_in = v_lat < -0.3 
+
+    return is_cutting_in, v_long_rel, v_lat
 
   def corner_radar(self, CS, lead_dict):
+    left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
+    left_long, right_long = CS.leftLongDist, CS.rightLongDist
     ENTER_LAT = 2.2
     KEEP_LAT  = 2.0
     EXIT_LAT  = 1.2
+    # 방향별로 끼어들기 여부와 계산된 상대속도 가져오기
+    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
-    left_state  = self._corner_update_state("L", left_lat)
-    right_state = self._corner_update_state("R", right_lat)
+    # 조건: 차가 내 옆에 꽤 가까이 있고(2.5m 이내) + 확실히 대각선으로 파고드는 중(cutin)일 때만 작동
+    left_ok = left_cutin and (left_lat < 2.5) and (left_long > 0.0)
+    right_ok = right_cutin and (right_lat < 2.5) and (right_long > 0.0)
 
-    # 1) left usable?
-    left_ok = False
-    if left_state > 0:
-      left_ok = left_lat < ENTER_LAT
-    elif left_state == 0:
-      left_ok = 0 < left_lat < KEEP_LAT
-    else:  # leaving
-      left_ok = left_lat <= EXIT_LAT
-
-    # 2) right usable?
-    right_ok = False
-    if right_state > 0:
-      right_ok = right_lat < ENTER_LAT
-    elif right_state == 0:
-      right_ok = 0 < right_lat < KEEP_LAT
-    else:
-      right_ok = right_lat <= EXIT_LAT
-
-    # 3) 아무도 못 쓰면 skip
     if not left_ok and not right_ok:
       return lead_dict
 
-    # 4) 둘 다 되면 longDist로 선택
+    # 양쪽 다 끼어들면 더 가까운(세로거리) 놈을 타겟으로 잡음
     if left_ok and right_ok:
-      if CS.leftLongDist <= CS.rightLongDist:
-        lat_dist, long_dist = +left_lat, CS.leftLongDist
+      if left_long <= right_long:
+        lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
       else:
-        lat_dist, long_dist = -right_lat, CS.rightLongDist
+        lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
     elif left_ok:
-      lat_dist, long_dist = +left_lat, CS.leftLongDist
+      lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
     else:
-      lat_dist, long_dist = -right_lat, CS.rightLongDist
+      lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
+
+    # 실제 계산된 끼어드는 차의 절대 속도
+    actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     if lead_dict['status']:
+      # 기존 앞차가 있는데, 측면에서 파고드는 차가 기존 앞차보다 가까울 때만 갈아치움
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
         lead_dict['yRel'] = lat_dist
-        lead_dict['vRel'] = 0.0
-        lead_dict['vLead'] = CS.vEgo if CS.vEgo < lead_dict['vLead'] else lead_dict['vLead']
-        lead_dict['vLeadK'] = lead_dict['vLead']
-        lead_dict['aLead'] = CS.aEgo if CS.aEgo < lead_dict['aLead'] else lead_dict['aLead']
-        lead_dict['aLeadK'] = lead_dict['aLead']
-        lead_dict['aLeadTau'] = _LEAD_ACCEL_TAU
-        lead_dict['jLead'] = 0.0
-        lead_dict['vLat'] = 0.0
-        lead_dict['modelProb'] = 1.0
+        lead_dict['vRel'] = v_rel             # [핵심] 0.0이 아닌 진짜 속도 적용!
+        lead_dict['vLead'] = actual_vLead 
+        lead_dict['vLeadK'] = actual_vLead
+        lead_dict['aLead'] = 0.0              # 코너 레이더는 가속도까지 정확히 잡기 힘드므로 중립
+        lead_dict['aLeadK'] = 0.0
+        lead_dict['vLat'] = v_lat
+        lead_dict['modelProb'] = 0.8
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
     else:
+      # 앞차가 없었는데 측면에서 끼어드는 경우 새로 생성
       lead_dict['status'] = True
       lead_dict['dRel'] = long_dist
       lead_dict['yRel'] = lat_dist
-      lead_dict['vRel'] = 0.0
-      lead_dict['vLead'] = CS.vEgo
-      lead_dict['vLeadK'] = CS.vEgo
-      lead_dict['aLead'] = CS.aEgo
-      lead_dict['aLeadK'] = CS.aEgo
-      lead_dict['aLeadTau'] = _LEAD_ACCEL_TAU
-      lead_dict['jLead'] = 0.0
-      lead_dict['vLat'] = 0.0
-      lead_dict['modelProb'] = 1.0
+      lead_dict['vRel'] = v_rel             # [핵심] 진짜 상대속도 적용!
+      lead_dict['vLead'] = actual_vLead
+      lead_dict['vLeadK'] = actual_vLead
+      lead_dict['aLead'] = 0.0
+      lead_dict['aLeadK'] = 0.0
+      lead_dict['vLat'] = v_lat
+      lead_dict['modelProb'] = 0.8
       lead_dict['radarTrackId'] = -1
       lead_dict['radar'] = True
 
     return lead_dict
+
 
 # fuses camera and radar data for best lead detection
 def main() -> None:
