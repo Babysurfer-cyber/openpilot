@@ -716,24 +716,12 @@ class CarState(CarStateBase):
     elif self.gear_msg_canfd == "GEAR":
       paddle_button = 1 if cp.vl["GEAR"]["LEFT_PADDLE"] == 1 else 2 if cp.vl["GEAR"]["RIGHT_PADDLE"] == 1 else 0
 
-    # 1. 먼저 파이썬 리스트(events)로 만듭니다.
-    events = [*create_button_events(self.cruise_buttons[-1], prev_cruise_buttons, BUTTONS_DICT),
-              *create_button_events(paddle_button, self.paddle_button_prev, {1: ButtonType.paddleLeft, 2: ButtonType.paddleRight}),
-              *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise})]
-    
-    # 2. 크루즈 대기 상태에서 LFA 버튼을 누르면 SET(decelCruise) 이벤트를 리스트에 추가합니다.
-    if not ret.cruiseState.enabled and self.cruise_buttons[-1] == Buttons.LFA_BUTTON and prev_cruise_buttons != Buttons.LFA_BUTTON:
-      be = structs.CarState.ButtonEvent.new_message()
-      be.pressed = True
-      be.type = ButtonType.decelCruise  # 확실한 SET 신호로 변경
-      events.append(be)
+    ret.buttonEvents = [*create_button_events(self.cruise_buttons[-1], prev_cruise_buttons, BUTTONS_DICT),
+                        *create_button_events(paddle_button, self.paddle_button_prev, {1: ButtonType.paddleLeft, 2: ButtonType.paddleRight}),
+                        *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise})]
 
-    # 3. 완성된 리스트를 한 번에 오픈파일럿 데이터(ret.buttonEvents)에 집어넣습니다.
-    ret.buttonEvents = events
     self.paddle_button_prev = paddle_button
-
     return ret
-
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
@@ -755,4 +743,4 @@ class CarState(CarStateBase):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-      }
+        }
