@@ -852,7 +852,7 @@ class RadarD:
         self.radar_state.leadOne = chosen
         self.radar_detected = detected
 
-  def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 2.2):
+  def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
     # 유효 범위(너무 멀거나 너무 넓은 경우) 밖이면 리셋
     if not (0.0 < cur_lat < enter_lat) or cur_long > 60.0:
       self._corner_hist[side].clear()
