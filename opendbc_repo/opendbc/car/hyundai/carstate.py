@@ -667,17 +667,26 @@ class CarState(CarStateBase):
 
     if self.cruise_buttons_alt2 is not None:
       if int(self.cruise_buttons_alt2.get("LFA_BTN", 0)) == 1:
-        cruise_button = [Buttons.LFA_BUTTON]
+        # [추가] LFA 버튼이 눌렸는데 크루즈가 꺼져있다면 SET(-) 버튼으로 속임!
+        if not ret.cruiseState.enabled:
+          cruise_button = [Buttons.SET_DECEL]
+        else:
+          cruise_button = [Buttons.LFA_BUTTON]
       else:
         v = int(self.cruise_buttons_alt2.get("CRUISE_BUTTONS", 0))
         cruise_button = [v if v < 5 else Buttons.NONE]
     elif cp.vl[self.cruise_btns_msg_canfd]["LFA_BTN"]:
-      cruise_button = [Buttons.LFA_BUTTON]
+      # [추가] 일반 CAN-FD 차량에서도 동일하게 처리
+      if not ret.cruiseState.enabled:
+        cruise_button = [Buttons.SET_DECEL]
+      else:
+        cruise_button = [Buttons.LFA_BUTTON]
     else:
       cruise_button = cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"]
 
     self.cruise_buttons.extend(cruise_button)
     # }} carrot
+
 
 
     #if self.cruise_btns_msg_canfd in cp.vl:
