@@ -888,9 +888,9 @@ class RadarD:
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    # 조건: 차가 내 옆에 꽤 가까이 있고(2.2m 이내) + 확실히 대각선으로 파고드는 중(cutin)일 때만 작동
-    left_ok = left_cutin and (left_lat < 2.2) and (left_long > 0.0)
-    right_ok = right_cutin and (right_lat < 2.2) and (right_long > 0.0)
+    # 조건: 차가 내 옆에 꽤 가까이 있고(2.3m 이내) + 확실히 대각선으로 파고드는 중(cutin)일 때만 작동
+    left_ok = left_cutin and (left_lat < 2.3) and (left_long > 0.0)
+    right_ok = right_cutin and (right_lat < 2.3) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
