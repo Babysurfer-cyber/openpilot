@@ -882,9 +882,7 @@ class RadarD:
   def corner_radar(self, CS, lead_dict):
     left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
-    ENTER_LAT = 2.2
-    KEEP_LAT  = 2.0
-    EXIT_LAT  = 1.2
+
     # 방향별로 끼어들기 여부와 계산된 상대속도 가져오기
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
