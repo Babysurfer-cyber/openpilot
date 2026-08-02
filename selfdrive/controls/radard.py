@@ -900,9 +900,10 @@ class RadarD:
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    # 조건: 차가 내 옆에 꽤 가까이 있고(2.4m 이내) + 확실히 대각선으로 파고드는 중(cutin)일 때만 작동
-    left_ok = left_cutin and (left_lat < 2.4) and (left_long > 0.0)
-    right_ok = right_cutin and (right_lat < 2.4) and (right_long > 0.0)
+    # 조건: 차가 (1.2m ~ 2.4m) 사이의 '끼어들기 위험 구역'에 있고 + 파고드는 중(cutin)일 때 작동!
+    # 만약 1.2m 안쪽으로 들어오면 코너 레이더 임무 종료(Exit) ➔ 전방 센서가 앞차로 추적
+    left_ok = left_cutin and (1.2 < left_lat < 2.4) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < right_lat < 2.4) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
