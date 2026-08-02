@@ -930,8 +930,8 @@ class RadarD:
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     # 💡 [핵심 보완] 정지물체 필터링 + "정지 침범(Static Encroachment)" 예외 처리
-    # 거리가 1.8m 이내이면서 5m 앞쪽에 있다면, 이는 가드레일이 아니라 '머리를 들이밀고 멈춘 차'임!
-    is_deep_encroaching = (lat_dist < 1.8) and (long_dist < 5.0)
+    # 거리가 1.8m 이내이면서 15m 앞쪽에 있다면, 이는 가드레일이 아니라 '머리를 들이밀고 멈춘 차'임!
+    is_deep_encroaching = (lat_dist < 1.8) and (long_dist < 15.0)
 
     if actual_vLead < 1.0 and CS.vEgo > 3.0:
       if not is_deep_encroaching:
