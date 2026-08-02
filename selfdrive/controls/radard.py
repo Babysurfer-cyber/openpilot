@@ -470,7 +470,7 @@ class RadarD:
     self._corner_hist = {
       "L": deque(maxlen=10),
       "R": deque(maxlen=10),
-    {
+    }
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
 
 
