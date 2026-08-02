@@ -874,9 +874,21 @@ class RadarD:
     v_long_rel = delta_long / time_diff  # 세로 상대속도 (음수면 내 차와 가까워짐)
     v_lat = delta_lat / time_diff        # 가로 속도 (음수면 내 차선으로 좁혀짐)
 
-    # 차선 쪽으로 빠르게 다가오고 있는지 판단 (가로 속도가 초당 0.3m 이상 차선 쪽으로)
-    # left는 lat가 줄어들면 다가오는 것(-), right도 절대값이 줄어들면 다가오는 것(-)
-    is_cutting_in = v_lat < -0.3 
+    # -------------------------------------------------------------------------
+    # 💡 [추천 보완 로직] 측면 거리(cur_lat)에 따른 동적 가로 속도 임계값 설정
+    # -------------------------------------------------------------------------
+    # 1. 내 차와 차체 사이의 빈 공간이 30cm 이내인 경우 (차선 기준 대략 2.1m ~ 2.2m 안쪽)
+    #    -> 바짝 붙어 있으므로 아주 느린 가로 속도(-0.1m/s, 초당 10cm)로 밀고 들어와도 감지!
+    # 2. 그 외의 넉넉한 거리인 경우
+    #    -> 노이즈나 곡선 도로 오작동을 방지하기 위해 기존처럼 묵직하게(-0.3m/s) 감지!
+    
+    if cur_lat < 2.2:  # 차체와 간격이 30cm 이내로 좁혀진 위험 구간
+      v_lat_threshold = -0.1  # 초당 10cm의 느린 접근도 끼어들기로 인정
+    else:              # 거리가 조금 여유 있는 구간
+      v_lat_threshold = -0.3  # 확실하게 훅 치고 들어오는 차만 인정
+
+    is_cutting_in = v_lat < v_lat_threshold
+    # -------------------------------------------------------------------------
 
     return is_cutting_in, v_long_rel, v_lat
 
@@ -888,9 +900,9 @@ class RadarD:
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    # 조건: 차가 내 옆에 꽤 가까이 있고(2.3m 이내) + 확실히 대각선으로 파고드는 중(cutin)일 때만 작동
-    left_ok = left_cutin and (left_lat < 2.3) and (left_long > 0.0)
-    right_ok = right_cutin and (right_lat < 2.3) and (right_long > 0.0)
+    # 조건: 차가 내 옆에 꽤 가까이 있고(2.4m 이내) + 확실히 대각선으로 파고드는 중(cutin)일 때만 작동
+    left_ok = left_cutin and (left_lat < 2.4) and (left_long > 0.0)
+    right_ok = right_cutin and (right_lat < 2.4) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
