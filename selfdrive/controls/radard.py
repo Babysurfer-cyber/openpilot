@@ -856,7 +856,7 @@ class RadarD:
 
   def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
     # 1. 값이 없거나(0.0) 너무 멀면 바로 지우지 않고 카운트를 올리며 기다림
-    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 25.0:
+    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 20.0: #전방 20m로 한정
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  # 5프레임(0.25초) 이상 연속으로 놓치면 그때서야 완전 초기화
         self._corner_hist[side].clear()
@@ -889,7 +889,7 @@ class RadarD:
       # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
       v_lat_threshold = 0.2  
     elif cur_lat < 2.4:  
-      # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
+      # 2.4m 이내 (바짝 붙어서 좁혀오는 상태)
       v_lat_threshold = -0.1  
     else:              
       # 넉넉한 거리 (확 치고 들어오는 차만 감지)
