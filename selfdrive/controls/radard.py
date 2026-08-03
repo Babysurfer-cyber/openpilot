@@ -884,13 +884,13 @@ class RadarD:
     v_lat = (curr_lat - past_lat) / time_diff
 
     # 3. 동적 가로 속도 임계값 설정 (3단계 세분화)
-    if cur_lat < 1.8:
+    if cur_lat < 1.9:
       # 💡 [보완] 1.8m 이내(머리를 이미 내 차선에 깊숙이 들이민 상태)
       # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
       v_lat_threshold = 0.2  
     elif cur_lat < 2.2:  
       # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
-      v_lat_threshold = -0.2  
+      v_lat_threshold = -0.15  
     else:              
       # 넉넉한 거리 (확 치고 들어오는 차만 감지)
       v_lat_threshold = -0.3  
@@ -907,10 +907,10 @@ class RadarD:
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 3.0m로 확장!
+    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 2.9m로 확장!
     # (어차피 먼 거리(2.2m 밖)에서는 v_lat < -0.3 조건이 있으므로 오작동 없음)
-    left_ok = left_cutin and (1.2 < left_lat < 3.0) and (left_long > 0.0)
-    right_ok = right_cutin and (1.2 < right_lat < 3.0) and (right_long > 0.0)
+    left_ok = left_cutin and (1.2 < left_lat < 2.9) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < right_lat < 2.9) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
