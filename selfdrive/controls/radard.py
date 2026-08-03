@@ -890,7 +890,7 @@ class RadarD:
       v_lat_threshold = 0.2  
     elif cur_lat < 2.4:  
       # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
-      v_lat_threshold = -0.15  
+      v_lat_threshold = -0.1  
     else:              
       # 넉넉한 거리 (확 치고 들어오는 차만 감지)
       v_lat_threshold = -0.3  
