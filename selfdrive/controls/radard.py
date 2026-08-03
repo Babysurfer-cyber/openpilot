@@ -634,7 +634,7 @@ class RadarD:
       lead_dict = get_RadarState_from_vision(md, lead_msg, v_ego, model_v_ego, lead_prob)
 
     if self.enable_corner_radar > 1:
-      lead_dict = self.corner_radar(CS, lead_dict)
+      lead_dict = self.corner_radar(CS, md, lead_dict)
 
     if low_speed_override:
       low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
@@ -899,18 +899,32 @@ class RadarD:
 
     return is_cutting_in, v_long_rel, v_lat
 
-  def corner_radar(self, CS, lead_dict):
+  def corner_radar(self, CS, md, lead_dict):
     left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
-    # 방향별로 끼어들기 여부와 계산된 상대속도 가져오기
-    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
+    # -------------------------------------------------------------------------
+    # 💡 [초간단 퓨전] 모델 신뢰도 확인 및 실시간 차로 폭 단번에 가져오기
+    # -------------------------------------------------------------------------
+    lane_reliable = (md is not None and len(md.laneLineProbs) > 2 and 
+                     md.laneLineProbs[1] > 0.5 and md.laneLineProbs[2] > 0.5 and 
+                     len(md.laneLines[1].y) > 0 and len(md.laneLines[2].y) > 0)
 
-    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 2.9m로 확장!
-    # (어차피 먼 거리(2.2m 밖)에서는 v_lat < -0.3 조건이 있으므로 오작동 없음)
-    left_ok = left_cutin and (1.2 < left_lat < 2.9) and (left_long > 0.0)
-    right_ok = right_cutin and (1.2 < right_lat < 2.9) and (right_long > 0.0)
+    if lane_reliable:
+      # 내 차 코앞(index 0)의 양쪽 차선 Y좌표 간격을 실시간 도로 폭으로 즉시 사용
+      current_lane_w = float(clamp(abs(md.laneLines[1].y[0] - md.laneLines[2].y[0]), 2.5, 4.0))
+    else:
+      current_lane_w = 2.9  # 차선이 지워졌거나 교차로일 때는 기본값 2.9m 유지
+
+    # -------------------------------------------------------------------------
+
+    # 💡 구한 도로 폭(current_lane_w)을 속도 계산 함수의 한계치로 전달
+    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat, current_lane_w)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat, current_lane_w)
+
+    # 💡 감시 경계선도 current_lane_w(실시간 차로 폭)로 유연하게 제한
+    left_ok = left_cutin and (1.2 < left_lat < current_lane_w) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < right_lat < current_lane_w) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
@@ -933,8 +947,6 @@ class RadarD:
       return lead_dict
 
     if lead_dict['status']:
-
-      # 기존 앞차가 있는데, 측면에서 파고드는 차가 기존 앞차보다 가까울 때만 갈아치움
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
         lead_dict['yRel'] = lat_dist
@@ -948,7 +960,6 @@ class RadarD:
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
     else:
-      # 앞차가 없었는데 측면에서 끼어드는 경우 새로 생성
       lead_dict['status'] = True
       lead_dict['dRel'] = long_dist
       lead_dict['yRel'] = lat_dist
