@@ -857,7 +857,7 @@ class RadarD:
   def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, lane_w: float):
     # 💡 cur_lat(가로)이 아닌 cur_long(세로)으로 차량 유무 판단!
     # 탐지 유효 범위도 고정 3.2m가 아닌, 실시간 차선폭(lane_w)의 1.2배로 동적 제한
-    if cur_long <= 0.01 or cur_lat > (lane_w * 1.2) or cur_long > 80.0:
+    if cur_long <= 0.01 or cur_lat > (lane_w * 1.2) or cur_long > 30.0:
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:
         self._corner_hist[side].clear()
