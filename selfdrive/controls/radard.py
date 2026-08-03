@@ -855,8 +855,9 @@ class RadarD:
         self.radar_detected = detected
 
   def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
-    # 1. 값이 없거나(0.0) 너무 멀면 바로 지우지 않고 카운트를 올리며 기다림
-    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 80.0:
+    # 💡 [핵심 버그 수정 1] cur_lat(가로 거리) 대신 cur_long(세로 거리)으로 차량 유무 판단!
+    # dPath를 전달받으면서 빈 트랙일 때 cur_lat이 0이 안 되는 문제를 해결합니다.
+    if cur_long <= 0.01 or cur_lat > enter_lat or cur_long > 80.0:
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  # 5프레임(0.25초) 이상 연속으로 놓치면 그때서야 완전 초기화
         self._corner_hist[side].clear()
@@ -883,16 +884,12 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_lat - past_lat) / time_diff
 
-    # 3. 동적 가로 속도 임계값 설정 (3단계 세분화)
+    # 3. 동적 가로 속도 임계값 설정 (3단계 세분화 - 유지)
     if cur_lat < 1.8:
-      # 💡 [보완] 1.8m 이내(머리를 이미 내 차선에 깊숙이 들이민 상태)
-      # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
       v_lat_threshold = 0.2  
     elif cur_lat < 2.2:  
-      # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
       v_lat_threshold = -0.1  
     else:              
-      # 넉넉한 거리 (확 치고 들어오는 차만 감지)
       v_lat_threshold = -0.3  
 
     is_cutting_in = v_lat < v_lat_threshold
@@ -904,39 +901,40 @@ class RadarD:
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
     # -------------------------------------------------------------------------
-    # 💡 [핵심 진화] 콤마 비전 모델을 이용해 '곡률이 반영된 진짜 차선 기준 거리(dPath)' 계산
+    # 💡 콤마 비전 모델을 이용해 '곡률이 반영된 진짜 차선 기준 거리(dPath)' 계산
     # -------------------------------------------------------------------------
     def get_dPath(long_dist, raw_lat, is_left):
-      # 💡 [안전장치] 차선 인식 확률이 50% 이상인지 확인 (양쪽 차선 모두 신뢰할 수 있을 때만)
+      # 💡 [핵심 버그 수정 2] 양쪽 차선 배열 길이가 모두 0보다 큰지 확실히 체크! (에러 방지)
       lane_reliable = (md is not None and 
                        len(md.laneLineProbs) > 2 and 
                        md.laneLineProbs[1] > 0.5 and 
                        md.laneLineProbs[2] > 0.5 and 
                        len(md.laneLines) > 2 and 
-                       len(md.laneLines[1].x) > 0)
+                       len(md.laneLines[1].x) > 0 and 
+                       len(md.laneLines[2].x) > 0)  # <-- 추가됨
                        
       if lane_reliable:
-        left_y = np.interp(long_dist, md.laneLines[1].x, md.laneLines[1].y)
-        right_y = np.interp(long_dist, md.laneLines[2].x, md.laneLines[2].y)
+        # 💡 [핵심 버그 수정 3] capnp 배열을 파이썬 list()로 감싸서 Numpy 에러 완벽 차단
+        left_y = np.interp(long_dist, list(md.laneLines[1].x), list(md.laneLines[1].y))
+        right_y = np.interp(long_dist, list(md.laneLines[2].x), list(md.laneLines[2].y))
         center_y = (left_y + right_y) / 2.0
         
         # 오픈파일럿 좌표계: 왼쪽은 +Y, 오른쪽은 -Y
         actual_y = raw_lat if is_left else -raw_lat
         return abs(actual_y - center_y)
         
-      # ⚠️ 비전 모델 데이터가 부정확하거나 차선이 안 보이면 기존 '직선 기준 거리(raw_lat)' 그대로 반환 (Fallback)
+      # 비전 모델 데이터가 부정확하거나 차선이 안 보이면 기존 '직선 기준 거리(raw_lat)' 그대로 반환 (Fallback)
       return raw_lat
 
     left_dPath = get_dPath(left_long, left_raw_lat, True)
     right_dPath = get_dPath(right_long, right_raw_lat, False)
     # -------------------------------------------------------------------------
 
-    # 💡 히스토리에 차선 기준 거리(dPath)를 넣어 속도를 계산!
-    # 차선을 잘 그렸을 땐 커브길 착시 방지, 못 그렸을 땐 기존의 강력한 직선 로직으로 작동
+    # 히스토리에 차선 기준 거리(dPath)를 넣어 속도를 계산!
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_dPath)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_dPath)
 
-    # 💡 타겟팅 기준도 차선 중앙 기준 거리(dPath)로 판별
+    # 타겟팅 기준도 차선 중앙 기준 거리(dPath)로 판별
     left_ok = left_cutin and (1.2 < left_dPath < 2.9) and (left_long > 0.0)
     right_ok = right_cutin and (1.2 < right_dPath < 2.9) and (right_long > 0.0)
 
@@ -961,8 +959,7 @@ class RadarD:
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 [정지물체 필터링 및 침범 예외 처리]
-    # 타겟 차량이 기준 거리에서 1.8m 이내에 있고 + 15m 앞쪽에 있다면 가드레일이 아니라 멈춘 차!
+    # [정지물체 필터링 및 침범 예외 처리]
     is_deep_encroaching = (target_dPath < 1.8) and (long_dist < 15.0)
 
     if actual_vLead < 1.0 and CS.vEgo > 3.0:
@@ -972,7 +969,6 @@ class RadarD:
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
-        # 시스템에 전달할 때는 콤마가 이해할 수 있도록 원래의 직선 기준 좌표(lat_dist)로 다시 전달
         lead_dict['yRel'] = lat_dist 
         lead_dict['vRel'] = v_rel             
         lead_dict['vLead'] = actual_vLead 
