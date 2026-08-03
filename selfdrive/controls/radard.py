@@ -856,7 +856,7 @@ class RadarD:
 
   def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
     # 1. 값이 없거나(0.0) 너무 멀면 바로 지우지 않고 카운트를 올리며 기다림
-    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 80.0:
+    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 40.0:
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  # 5프레임(0.25초) 이상 연속으로 놓치면 그때서야 완전 초기화
         self._corner_hist[side].clear()
@@ -890,7 +890,7 @@ class RadarD:
       v_lat_threshold = 0.2  
     elif cur_lat < 2.2:  
       # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
-      v_lat_threshold = -0.1  
+      v_lat_threshold = -0.2  
     else:              
       # 넉넉한 거리 (확 치고 들어오는 차만 감지)
       v_lat_threshold = -0.3  
@@ -907,10 +907,10 @@ class RadarD:
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 2.9m로 확장!
+    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 3.0m로 확장!
     # (어차피 먼 거리(2.2m 밖)에서는 v_lat < -0.3 조건이 있으므로 오작동 없음)
-    left_ok = left_cutin and (1.2 < left_lat < 2.9) and (left_long > 0.0)
-    right_ok = right_cutin and (1.2 < right_lat < 2.9) and (right_long > 0.0)
+    left_ok = left_cutin and (1.2 < left_lat < 3.0) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < right_lat < 3.0) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
