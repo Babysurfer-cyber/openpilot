@@ -888,7 +888,7 @@ class RadarD:
       # 💡 [보완] 1.8m 이내(머리를 이미 내 차선에 깊숙이 들이민 상태)
       # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
       v_lat_threshold = 0.2  
-    elif cur_lat < 2.2:  
+    elif cur_lat < 2.4:  
       # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
       v_lat_threshold = -0.15  
     else:              
