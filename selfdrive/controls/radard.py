@@ -882,22 +882,22 @@ class RadarD:
     v_lat = (curr_lat - past_lat) / time_diff
 
     # -------------------------------------------------------------------------
-    # 💡 [핵심 진화 1] 실시간 차로 폭(lane_w)에 비례하는 100% 동적 연속 임계값
+    # 💡 [복구] 실시간 차로 폭(lane_w)을 활용한 3단계 직관적 조건문(if-elif-else)
     # -------------------------------------------------------------------------
-    # 1. 차선을 살짝 밟은 상태 (차로 절반 + 0.1m 여유) 
-    #    (예: 차로 폭이 3.2m라면 1.7m 지점)
-    step_on_line = (lane_w / 2.0) + 0.1
-    
-    # 2. 내 차로로 좁혀오는 상태 (차로 절반 + 0.5m)
-    #    (예: 차로 폭이 3.2m라면 2.1m 지점)
-    close_approach = (lane_w / 2.0) + 0.5
-    
-    # 3. 옆 차로 중앙 (차로 폭의 95%)
-    #    (예: 차로 폭이 3.2m라면 3.04m 지점)
-    far_approach = lane_w * 0.95
+    # 1. 내 앞에 진입한 상태
+    in_line = 1.8m
+    # 2. 차선을 살짝 밟은 상태 (차로 절반 + 0.9m 여유) 
+    step_on_line = (lane_w / 2.0) + 0.9
 
-    # [선형 보간] 거리에 맞춰 요구되는 가로 속도(v_lat)가 물 흐르듯 연속적으로 변함
-    v_lat_threshold = float(np.interp(cur_lat, [step_on_line, close_approach, far_approach], [0.2, -0.1, -0.3]))
+    if cur_lat < in_line:
+      # 머리를 깊숙이 들이민 상태: 멈춰있거나 미세하게 뒤로 빼도 위험으로 감지
+      v_lat_threshold = 0.2  
+    elif cur_lat < step_on_line:
+      # 바짝 붙어서 좁혀오는 상태
+      v_lat_threshold = -0.1  
+    else:
+      # 넉넉한 거리: 확 치고 들어오는 차만 감지
+      v_lat_threshold = -0.3  
 
     is_cutting_in = v_lat < v_lat_threshold
 
@@ -907,7 +907,7 @@ class RadarD:
     left_raw_lat, right_raw_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
-    # 💡 [핵심 진화 2] 내 차폭 정의 (1.9m)
+    # 💡 내 차폭 정의 (1.9m)
     ego_width = 1.9
     ego_half_width = ego_width / 2.0  # 0.95m
 
@@ -942,18 +942,17 @@ class RadarD:
     right_dPath, right_lane_w = get_dPath_and_width(right_long, right_raw_lat, False)
     # -------------------------------------------------------------------------
 
-    # 💡 lane_w(실시간 차로 폭)를 속도 업데이트 함수로 함께 넘겨줍니다.
+    # lane_w(실시간 차로 폭)를 속도 업데이트 함수로 함께 넘겨줍니다.
     left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_dPath, left_lane_w)
     right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_dPath, right_lane_w)
 
     # -------------------------------------------------------------------------
-    # 💡 [핵심 진화 3] 차폭과 차로 폭이 반영된 타겟팅 최소/최대 경계선(Boundary)
+    # 💡 차폭과 차로 폭이 반영된 타겟팅 최소/최대 경계선(Boundary)
     # -------------------------------------------------------------------------
-    # 최소 진입 거리(Hand-over): 유저님 통찰대로 내 차폭(0.95m)을 가로막는 시점 1.2m 
+    # 완전 진입 거리(Hand-over): 내 차폭(0.95m)을 완전히 가로막는 시점 1.2m 
     exit_dPath = 1.2  
 
     # 최대 탐지 거리(Max Boundary): 옆 차로 폭(lane_w) 1개까지만 탐지! 
-    # (도로 폭이 3m면 3m까지만, 3.5m면 3.5m까지만 유동적으로 탐지)
     left_max_dPath = left_lane_w
     right_max_dPath = right_lane_w
 
@@ -982,7 +981,7 @@ class RadarD:
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     # 💡 [정지물체 필터링] 
-    # 1.8m 같은 고정값이 아니라 "타겟이 있는 도로의 차로 폭 절반" 안으로 들어왔는지를 판단!
+    # "타겟이 있는 도로의 차로 폭 절반" 안으로 들어왔는지를 판단!
     encroach_limit = target_lane_w / 2.0
     is_deep_encroaching = (target_dPath < encroach_limit) and (long_dist < 15.0)
 
