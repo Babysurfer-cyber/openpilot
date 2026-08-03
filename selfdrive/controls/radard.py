@@ -976,15 +976,9 @@ class RadarD:
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 [정지물체 필터링] 
-    # 💡 내 차폭 정의 (1.9m)
-    ego_width = 1.9
-    is_deep_encroaching = (target_dPath < ego_width - 0.1) and (long_dist < 15.0)
-
     if actual_vLead < 1.0 and CS.vEgo > 3.0:
-      if not is_deep_encroaching:
-        return lead_dict
-
+      return lead_dict
+      
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
