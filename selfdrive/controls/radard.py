@@ -634,7 +634,7 @@ class RadarD:
       lead_dict = get_RadarState_from_vision(md, lead_msg, v_ego, model_v_ego, lead_prob)
 
     if self.enable_corner_radar > 1:
-      lead_dict = self.corner_radar(CS, md, lead_dict)
+      lead_dict = self.corner_radar(CS, lead_dict)
 
     if low_speed_override:
       low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
@@ -854,135 +854,90 @@ class RadarD:
         self.radar_state.leadOne = chosen
         self.radar_detected = detected
 
-  def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, lane_w: float):
-    # 💡 cur_lat(가로)이 아닌 cur_long(세로)으로 차량 유무 판단!
-    # 탐지 유효 범위도 고정 3.2m가 아닌, 실시간 차선폭(lane_w)의 1.2배로 동적 제한
-    if cur_long <= 0.01 or cur_lat > (lane_w * 1.2) or cur_long > 30.0:
+  def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
+    # 1. 값이 없거나(0.0) 너무 멀면 바로 지우지 않고 카운트를 올리며 기다림
+    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 80.0:
       self._corner_missing_cnt[side] += 1
-      if self._corner_missing_cnt[side] > 5:
+      if self._corner_missing_cnt[side] > 5:  # 5프레임(0.25초) 이상 연속으로 놓치면 그때서야 완전 초기화
         self._corner_hist[side].clear()
       return False, 0.0, 0.0
     else:
-      self._corner_missing_cnt[side] = 0
+      self._corner_missing_cnt[side] = 0      # 신호가 정상으로 들어오면 카운터 리셋
       self._corner_hist[side].append((cur_long, cur_lat))
 
     h = self._corner_hist[side]
     n = len(h)
     if n < 5:
+      # 데이터가 적으면 판단 보류
       return False, 0.0, 0.0
 
+    # 2. 노이즈 방어를 위해 맨 앞 2개와 맨 뒤 2개의 '평균값'을 사용하여 속도 계산
     past_long = (h[0][0] + h[1][0]) / 2.0
     past_lat  = (h[0][1] + h[1][1]) / 2.0
     curr_long = (h[-1][0] + h[-2][0]) / 2.0
     curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
     
+    # 앞뒤 각각 2개씩 묶었으므로 인덱스 차이는 (n - 2)
     time_diff = max((n - 2) * DT_MDL, DT_MDL) 
 
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_lat - past_lat) / time_diff
 
-    # -------------------------------------------------------------------------
-    # 💡 [복구] 실시간 차로 폭(lane_w)을 활용한 3단계 직관적 조건문(if-elif-else)
-    # -------------------------------------------------------------------------
-    # 1. 내 앞에 진입한 상태
-    in_line = 1.8
-    # 2. 차선을 살짝 밟은 상태 (차로 절반 + 0.9m 여유) 
-    step_on_line = (lane_w / 2.0) + 0.9
-
-    if cur_lat < in_line:
-      # 머리를 깊숙이 들이민 상태: 멈춰있거나 미세하게 뒤로 빼도 위험으로 감지
+    # 3. 동적 가로 속도 임계값 설정 (3단계 세분화)
+    if cur_lat < 1.8:
+      # 💡 [보완] 1.8m 이내(머리를 이미 내 차선에 깊숙이 들이민 상태)
+      # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
       v_lat_threshold = 0.2  
-    elif cur_lat < step_on_line:
-      # 바짝 붙어서 좁혀오는 상태
-      v_lat_threshold = -0.2  
-    else:
-      # 넉넉한 거리: 확 치고 들어오는 차만 감지
+    elif cur_lat < 2.2:  
+      # 2.2m 이내 (바짝 붙어서 좁혀오는 상태)
+      v_lat_threshold = -0.1  
+    else:              
+      # 넉넉한 거리 (확 치고 들어오는 차만 감지)
       v_lat_threshold = -0.3  
 
     is_cutting_in = v_lat < v_lat_threshold
 
     return is_cutting_in, v_long_rel, v_lat
 
-  def corner_radar(self, CS, md, lead_dict):
-    left_raw_lat, right_raw_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
+  def corner_radar(self, CS, lead_dict):
+    left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
-    # -------------------------------------------------------------------------
-    # 💡 비전 모델을 이용해 '차선 기준 거리(dPath)'와 '실시간 차로 폭(lane_w)' 추출
-    # -------------------------------------------------------------------------
-    def get_dPath_and_width(long_dist, raw_lat, is_left):
-      lane_reliable = (md is not None and 
-                       len(md.laneLineProbs) > 2 and 
-                       md.laneLineProbs[1] > 0.5 and 
-                       md.laneLineProbs[2] > 0.5 and 
-                       len(md.laneLines) > 2 and 
-                       len(md.laneLines[1].x) > 0 and 
-                       len(md.laneLines[2].x) > 0)
-                       
-      if lane_reliable:
-        # capnp 배열 에러 방지를 위해 list()로 감싸기
-        left_y = np.interp(long_dist, list(md.laneLines[1].x), list(md.laneLines[1].y))
-        right_y = np.interp(long_dist, list(md.laneLines[2].x), list(md.laneLines[2].y))
-        center_y = (left_y + right_y) / 2.0
-        
-        # 실제 도로 폭 추출 (안전을 위해 2.5m ~ 4.0m 사이로 제한)
-        lane_w = clamp(abs(left_y - right_y), 2.5, 4.0)
-        
-        actual_y = raw_lat if is_left else -raw_lat
-        return abs(actual_y - center_y), lane_w
-        
-      # 비전 모델이 불안정하면 기존 직선 거리(raw_lat) 및 대한민국 평균 차로 폭(3.0m) 폴백
-      return raw_lat, 3.0
+    # 방향별로 끼어들기 여부와 계산된 상대속도 가져오기
+    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat)
 
-    left_dPath, left_lane_w = get_dPath_and_width(left_long, left_raw_lat, True)
-    right_dPath, right_lane_w = get_dPath_and_width(right_long, right_raw_lat, False)
-    # -------------------------------------------------------------------------
-
-    # lane_w(실시간 차로 폭)를 속도 업데이트 함수로 함께 넘겨줍니다.
-    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_dPath, left_lane_w)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_dPath, right_lane_w)
-
-    # -------------------------------------------------------------------------
-    # 💡 차폭과 차로 폭이 반영된 타겟팅 최소/최대 경계선(Boundary)
-    # -------------------------------------------------------------------------
-    # 완전 진입 거리(Hand-over): 내 차폭(0.95m)을 완전히 가로막는 시점 1.2m 
-    exit_dPath = 1.2  
-
-    # 최대 탐지 거리(Max Boundary): 옆 차로 폭(lane_w) 1개까지만 탐지! 
-    left_max_dPath = left_lane_w
-    right_max_dPath = right_lane_w
-
-    left_ok = left_cutin and (exit_dPath < left_dPath < left_max_dPath) and (left_long > 0.0)
-    right_ok = right_cutin and (exit_dPath < right_dPath < right_max_dPath) and (right_long > 0.0)
-    # -------------------------------------------------------------------------
+    # 💡 [보완 1] 고속 칼치기 조기 감지를 위해 탐지 구간을 2.4m -> 2.9m로 확장!
+    # (어차피 먼 거리(2.2m 밖)에서는 v_lat < -0.3 조건이 있으므로 오작동 없음)
+    left_ok = left_cutin and (1.2 < left_lat < 2.9) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < right_lat < 2.9) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
 
-    # 양쪽 다 끼어들면 더 가까운 놈을 잡고 해당 차선의 정보를 타겟으로 이관
+    # 양쪽 다 끼어들면 더 가까운(세로거리) 놈을 타겟으로 잡음
     if left_ok and right_ok:
       if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat = +left_raw_lat, left_long, left_vrel, left_vlat
-        target_dPath, target_lane_w = left_dPath, left_lane_w
+        lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
       else:
-        lat_dist, long_dist, v_rel, v_lat = -right_raw_lat, right_long, right_vrel, right_vlat
-        target_dPath, target_lane_w = right_dPath, right_lane_w
+        lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
     elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat = +left_raw_lat, left_long, left_vrel, left_vlat
-      target_dPath, target_lane_w = left_dPath, left_lane_w
+      lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
     else:
-      lat_dist, long_dist, v_rel, v_lat = -right_raw_lat, right_long, right_vrel, right_vlat
-      target_dPath, target_lane_w = right_dPath, right_lane_w
+      lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
 
+    # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     if actual_vLead < 1.0 and CS.vEgo > 3.0:
       return lead_dict
-      
+
     if lead_dict['status']:
+
+      # 기존 앞차가 있는데, 측면에서 파고드는 차가 기존 앞차보다 가까울 때만 갈아치움
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
-        lead_dict['yRel'] = lat_dist 
+        lead_dict['yRel'] = lat_dist
         lead_dict['vRel'] = v_rel             
         lead_dict['vLead'] = actual_vLead 
         lead_dict['vLeadK'] = actual_vLead
@@ -993,6 +948,7 @@ class RadarD:
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
     else:
+      # 앞차가 없었는데 측면에서 끼어드는 경우 새로 생성
       lead_dict['status'] = True
       lead_dict['dRel'] = long_dist
       lead_dict['yRel'] = lat_dist
