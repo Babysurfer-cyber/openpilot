@@ -907,10 +907,6 @@ class RadarD:
     left_raw_lat, right_raw_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
-    # 💡 내 차폭 정의 (1.9m)
-    ego_width = 1.9
-    ego_half_width = ego_width / 2.0  # 0.95m
-
     # -------------------------------------------------------------------------
     # 💡 비전 모델을 이용해 '차선 기준 거리(dPath)'와 '실시간 차로 폭(lane_w)' 추출
     # -------------------------------------------------------------------------
@@ -981,9 +977,9 @@ class RadarD:
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     # 💡 [정지물체 필터링] 
-    # "타겟이 있는 도로의 차로 폭 절반" 안으로 들어왔는지를 판단!
-    encroach_limit = target_lane_w / 2.0
-    is_deep_encroaching = (target_dPath < encroach_limit) and (long_dist < 15.0)
+    # 💡 내 차폭 정의 (1.9m)
+    ego_width = 1.9
+    is_deep_encroaching = (target_dPath < ego_width - 0.1) and (long_dist < 15.0)
 
     if actual_vLead < 1.0 and CS.vEgo > 3.0:
       if not is_deep_encroaching:
