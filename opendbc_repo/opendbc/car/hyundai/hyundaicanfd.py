@@ -655,10 +655,26 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      blink_pairs=None,
                      blink_t=1.0):
   if lane_line:
-    curvature = round(CS.out.steeringAngleDeg / 1.5)
-    mag = min(abs(curvature), 15)
+    # 💡 [모델 곡률 UI 연동] CS에서 비전 모델(MD) 데이터를 안전하게 가져옴
+    md = getattr(CS, 'MD', None)
+    path_reliable = (md is not None and len(md.position.x) > 20 and len(md.position.y) > 20)
+
+    if path_reliable:
+      # 유저님 요청대로 전방 30m 지점의 가로 쏠림(Y) 추출 (Numpy 에러 방지용 소독)
+      y_30m = float(np.interp(30.0, list(md.position.x), list(md.position.y)))
+      
+      # [스케일링] 오픈파일럿 Y값은 왼쪽이 양수(+), 오른쪽이 음수(-)
+      # 30m 전방에서 약 4.3m 쏠림(매우 급격한 고속도로 커브)일 때 
+      # 계기판 최대 곡률 표시값인 20를 띄우기 위해 환산 계수 '4.0'를 곱해줍니다.
+      curvature = int(round(y_30m * 4.5))
+    else:
+      # 모델이 준비되지 않았을 때는 기존 조향각 기반으로 안전하게 폴백(Fallback)
+      curvature = int(round(CS.out.steeringAngleDeg / 1.5))
+
+    mag = min(abs(curvature), 20)
     curv = mag + (-1 if curvature < 0 else 0)
     direction = 1 if curvature < 0 else 0
+    
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
     values["LANELINE_CURVATURE_DIRECTION"] = direction if lat_active else 0
     if desire:
