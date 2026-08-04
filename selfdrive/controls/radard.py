@@ -917,14 +917,37 @@ class RadarD:
       current_lane_w = 2.9  # 차선이 지워졌거나 교차로일 때는 기본값 2.9m 유지
 
     # -------------------------------------------------------------------------
+    # 💡 [곡률 보정] 비전 모델의 예측 경로(position)를 기반으로 커브길 쏠림 완벽 보정
+    # -------------------------------------------------------------------------
+    path_reliable = (md is not None and len(md.position.x) > 20 and len(md.position.y) > 20)
+    
+    def get_curve_offset(target_long):
+      if not path_reliable or target_long <= 0.0:
+        return 0.0
+      # 유저님 요청대로 전방 20m를 기준으로 하되, 
+      # 물체가 20m보다 가까우면 해당 물체의 실제 거리에 맞는 쏠림량을 정밀하게 추출
+      calc_dist = min(float(target_long), 20.0) 
+      
+      # np.interp로 해당 세로 거리(X)에서의 가로 쏠림(Y)을 구하고 float()로 Numpy 소독
+      return float(np.interp(calc_dist, list(md.position.x), list(md.position.y)))
 
-    # 💡 구한 도로 폭(current_lane_w)을 속도 계산 함수의 한계치로 전달
-    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, left_lat, current_lane_w)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, right_lat, current_lane_w)
+    left_curve_offset = get_curve_offset(left_long)
+    right_curve_offset = get_curve_offset(right_long)
 
-    # 💡 감시 경계선도 current_lane_w(실시간 차로 폭)로 유연하게 제한
-    left_ok = left_cutin and (1.2 < left_lat < current_lane_w) and (left_long > 0.0)
-    right_ok = right_cutin and (1.2 < right_lat < current_lane_w) and (right_long > 0.0)
+    # 오픈파일럿 좌표계: Y축은 왼쪽이 (+), 오른쪽이 (-)
+    # 레이더 좌표(left_lat, right_lat)는 절댓값이므로, 곡률 쏠림(offset)의 방향을 고려해 보정
+    compensated_left_lat = float(abs(left_lat - left_curve_offset))
+    compensated_right_lat = float(abs(right_lat + right_curve_offset))
+
+    # -------------------------------------------------------------------------
+
+    # 💡 보정된 가로 거리(compensated_lat)를 상태 업데이트 함수로 전달!
+    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, compensated_left_lat, current_lane_w)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, compensated_right_lat, current_lane_w)
+
+    # 감시 경계선 판단에도 보정된 거리 사용
+    left_ok = left_cutin and (1.2 < compensated_left_lat < current_lane_w) and (left_long > 0.0)
+    right_ok = right_cutin and (1.2 < compensated_right_lat < current_lane_w) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
@@ -932,13 +955,13 @@ class RadarD:
     # 양쪽 다 끼어들면 더 가까운(세로거리) 놈을 타겟으로 잡음
     if left_ok and right_ok:
       if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
+        lat_dist, long_dist, v_rel, v_lat = +compensated_left_lat, left_long, left_vrel, left_vlat
       else:
-        lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
+        lat_dist, long_dist, v_rel, v_lat = -compensated_right_lat, right_long, right_vrel, right_vlat
     elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
+      lat_dist, long_dist, v_rel, v_lat = +compensated_left_lat, left_long, left_vrel, left_vlat
     else:
-      lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
+      lat_dist, long_dist, v_rel, v_lat = -compensated_right_lat, right_long, right_vrel, right_vlat
 
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
