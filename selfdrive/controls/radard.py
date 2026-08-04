@@ -968,7 +968,7 @@ class RadarD:
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     # 💡 유저님 의도대로 '무시할 조건'을 깐깐하게 제한한 코드
-    if actual_vLead < 0.5 and CS.vEgo > 5.0 and abs(lat_dist) > 1.9 and long_dist > 5.0:
+    if actual_vLead < 0.5 and CS.vEgo > 7.0 and abs(lat_dist) > 1.9 and long_dist > 5.0:
       return lead_dict
 
     if lead_dict['status']:
