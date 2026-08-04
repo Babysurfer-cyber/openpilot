@@ -664,13 +664,13 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      len(md.position.x) > 20 and len(md.position.y) > 20)
 
     if lane_reliable:
-      # 💡 [수정] 1. 전방 50m 기준 경로(Path) 예측
-      y_50m = float(np.interp(50.0, list(md.position.x), list(md.position.y)))
+      # 💡 [수정] 1. 전방 40m 기준 경로(Path) 예측
+      y_40m = float(np.interp(40.0, list(md.position.x), list(md.position.y)))
       
       # 💡 [수정] 2. 방향 반전(-) 및 스케일링 조정(2.0)
       # 모델이 인식한 Y값 부호를 뒤집기 위해 마이너스(-)를 곱해줍니다.
-      # 50m 거리는 30m보다 Y값(쏠림)이 훨씬 크므로, 계수를 4.5에서 2.0으로 낮춰 비율을 맞춥니다.
-      target_curve = -y_50m * 5.0
+      # 40m 거리는 30m보다 Y값(쏠림)이 훨씬 크므로, 계수를 4.5에서 2.0으로 낮춰 비율을 맞춥니다.
+      target_curve = -y_40m * 6.0
     else:
       # 차선이 지워졌을 때: 조향각 폴백 (이 값은 부호가 잘 맞으므로 그대로 유지)
       target_curve = CS.out.steeringAngleDeg / 1.4
