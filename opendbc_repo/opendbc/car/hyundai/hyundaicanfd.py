@@ -655,8 +655,8 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      blink_pairs=None,
                      blink_t=1.0):
   if lane_line:
-    curvature = round(CS.out.steeringAngleDeg / 1.3)
-    mag = min(abs(curvature), 20)
+    curvature = round(CS.out.steeringAngleDeg / 1.5)
+    mag = min(abs(curvature), 15)
     curv = mag + (-1 if curvature < 0 else 0)
     direction = 1 if curvature < 0 else 0
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
