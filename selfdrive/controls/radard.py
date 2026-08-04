@@ -952,16 +952,17 @@ class RadarD:
     if not left_ok and not right_ok:
       return lead_dict
 
-    # 양쪽 다 끼어들면 더 가까운(세로거리) 놈을 타겟으로 잡음
+    # 💡 [수정됨] 방어 판정(ok)은 보정된 값으로 완벽하게 마쳤으니, 
+    # 오픈파일럿 시스템에 넘겨줄 위치(lat_dist)는 화면(UI)이 깨지지 않도록 실제 물리 좌표(raw)로 복원!
     if left_ok and right_ok:
       if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat = +compensated_left_lat, left_long, left_vrel, left_vlat
+        lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
       else:
-        lat_dist, long_dist, v_rel, v_lat = -compensated_right_lat, right_long, right_vrel, right_vlat
+        lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
     elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat = +compensated_left_lat, left_long, left_vrel, left_vlat
+      lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
     else:
-      lat_dist, long_dist, v_rel, v_lat = -compensated_right_lat, right_long, right_vrel, right_vlat
+      lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
 
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
