@@ -655,10 +655,42 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      blink_pairs=None,
                      blink_t=1.0):
   if lane_line:
-    curvature = round(CS.out.steeringAngleDeg / 1.4)
+    md = getattr(CS, 'MD', None)
+    
+    # 💡 [신뢰도 조건] 좌우 차선 인식 확률 50% 이상
+    lane_reliable = (md is not None and 
+                     len(md.laneLineProbs) > 2 and 
+                     md.laneLineProbs[1] > 0.5 and md.laneLineProbs[2] > 0.5 and 
+                     len(md.position.x) > 20 and len(md.position.y) > 20)
+
+    if lane_reliable:
+      # 💡 [수정] 1. 전방 50m 기준 경로(Path) 예측
+      y_50m = float(np.interp(50.0, list(md.position.x), list(md.position.y)))
+      
+      # 💡 [수정] 2. 방향 반전(-) 및 스케일링 조정(2.0)
+      # 모델이 인식한 Y값 부호를 뒤집기 위해 마이너스(-)를 곱해줍니다.
+      # 50m 거리는 30m보다 Y값(쏠림)이 훨씬 크므로, 계수를 4.5에서 2.0으로 낮춰 비율을 맞춥니다.
+      target_curve = -y_50m * 3.0
+    else:
+      # 차선이 지워졌을 때: 조향각 폴백 (이 값은 부호가 잘 맞으므로 그대로 유지)
+      target_curve = CS.out.steeringAngleDeg / 1.4
+
+    # -------------------------------------------------------------------------
+    # 💡 [완충 장치 (Low-Pass Filter)] 차선이 바르르 떨리지 않게 부드럽게 렌더링
+    # -------------------------------------------------------------------------
+    if not hasattr(_make_ccnc_values, '_filt_curve'):
+      _make_ccnc_values._filt_curve = target_curve
+
+    alpha = 0.15  
+    _make_ccnc_values._filt_curve = (alpha * target_curve) + ((1.0 - alpha) * _make_ccnc_values._filt_curve)
+
+    curvature = int(round(_make_ccnc_values._filt_curve))
+    # -------------------------------------------------------------------------
+
     mag = min(abs(curvature), 15)
     curv = mag + (-1 if curvature < 0 else 0)
     direction = 1 if curvature < 0 else 0
+    
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
     values["LANELINE_CURVATURE_DIRECTION"] = direction if lat_active else 0
     if desire:
