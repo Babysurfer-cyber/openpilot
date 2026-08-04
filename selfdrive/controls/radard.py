@@ -967,7 +967,7 @@ class RadarD:
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    if actual_vLead < 0.5 and CS.vEgo > 8.3: #내 차가 시속 약 30 이상일 경우
+    if actual_vLead < 0.5 and CS.vEgo > 5.0: #내 차가 시속 약 18 이상일 경우
       return lead_dict
 
     if lead_dict['status']:
