@@ -655,43 +655,10 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      blink_pairs=None,
                      blink_t=1.0):
   if lane_line:
-    md = getattr(CS, 'MD', None)
-    
-    # 💡 [신뢰도 조건] 좌우 차선 인식 확률 50% 이상
-    lane_reliable = (md is not None and 
-                     len(md.laneLineProbs) > 2 and 
-                     md.laneLineProbs[1] > 0.5 and md.laneLineProbs[2] > 0.5 and 
-                     len(md.position.x) > 20 and len(md.position.y) > 20)
-
-    if lane_reliable:
-      # 차선을 명확히 인식했을 때: 모델 예측 경로
-      y_30m = float(np.interp(30.0, list(md.position.x), list(md.position.y)))
-      target_curve = y_30m * 3.5
-    else:
-      # 차선이 지워졌을 때: 조향각 폴백
-      target_curve = CS.out.steeringAngleDeg / 1.5
-
-    # -------------------------------------------------------------------------
-    # 💡 [완충 장치 (Low-Pass Filter)] 차선이 바르르 떨리지 않게 부드럽게 렌더링
-    # -------------------------------------------------------------------------
-    # 함수에 '_filt_curve'라는 저장공간이 없으면 현재 값으로 초기화 (최초 1회 실행)
-    if not hasattr(_make_ccnc_values, '_filt_curve'):
-      _make_ccnc_values._filt_curve = target_curve
-
-    # alpha 값 (0.0 ~ 1.0) : 작을수록 움직임이 더 무겁고 부드러워짐 (댐핑 강함)
-    # 0.15면 너무 굼뜨지 않으면서도 미세한 노이즈 떨림을 잡아주는 아주 적당한 값입니다.
-    alpha = 0.15  
-    _make_ccnc_values._filt_curve = (alpha * target_curve) + ((1.0 - alpha) * _make_ccnc_values._filt_curve)
-
-    # 부드럽게 필터링된 최종 값을 정수로 변환
-    curvature = int(round(_make_ccnc_values._filt_curve))
-    # -------------------------------------------------------------------------
-
-    # 💡 [최대값 수정] 한계값을 유저님 요청대로 20 -> 15로 수정
+    curvature = round(CS.out.steeringAngleDeg / 1.4)
     mag = min(abs(curvature), 15)
     curv = mag + (-1 if curvature < 0 else 0)
     direction = 1 if curvature < 0 else 0
-    
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
     values["LANELINE_CURVATURE_DIRECTION"] = direction if lat_active else 0
     if desire:
