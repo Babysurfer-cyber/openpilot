@@ -655,26 +655,10 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      blink_pairs=None,
                      blink_t=1.0):
   if lane_line:
-    md = getattr(CS, 'MD', None)
-    
-    # 💡 [신뢰도 조건 추가] 좌우 차선의 인식 확률이 모두 50%를 넘고 데이터가 정상일 때만 True
-    lane_reliable = (md is not None and 
-                     len(md.laneLineProbs) > 2 and 
-                     md.laneLineProbs[1] > 0.5 and md.laneLineProbs[2] > 0.5 and 
-                     len(md.position.x) > 20 and len(md.position.y) > 20)
-
-    if lane_reliable:
-      # 차선을 명확히 인식했을 때: 모델이 예측한 전방 30m 경로(Path) 사용
-      y_30m = float(np.interp(30.0, list(md.position.x), list(md.position.y)))
-      curvature = int(round(y_30m * 4.5))
-    else:
-      # 차선이 지워졌거나 교차로를 지날 때: 기존 조향각(Steering Angle) 기반으로 폴백
-      curvature = int(round(CS.out.steeringAngleDeg / 1.5))
-
+    curvature = round(CS.out.steeringAngleDeg / 1.3)
     mag = min(abs(curvature), 20)
     curv = mag + (-1 if curvature < 0 else 0)
     direction = 1 if curvature < 0 else 0
-    
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
     values["LANELINE_CURVATURE_DIRECTION"] = direction if lat_active else 0
     if desire:
