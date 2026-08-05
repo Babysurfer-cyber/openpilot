@@ -854,7 +854,7 @@ class RadarD:
         self.radar_state.leadOne = chosen
         self.radar_detected = detected
 
-  def _corner_update_state(self, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
+  def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
     # 1. 값이 없거나(0.0) 너무 멀면 바로 지우지 않고 카운트를 올리며 기다림
     if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 20.0: #전방 20m로 한정
       self._corner_missing_cnt[side] += 1
