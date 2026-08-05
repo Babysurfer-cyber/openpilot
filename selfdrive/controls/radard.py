@@ -942,8 +942,8 @@ class RadarD:
     # -------------------------------------------------------------------------
 
     # 💡 보정된 가로 거리(compensated_lat)를 상태 업데이트 함수로 전달!
-    left_cutin, left_vrel, left_vlat = self._corner_update_state("L", left_long, compensated_left_lat, current_lane_w)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state("R", right_long, compensated_right_lat, current_lane_w)
+    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, current_lane_w)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, current_lane_w)
 
     # 감시 경계선 판단에도 보정된 거리 사용
     left_ok = left_cutin and (1.2 < compensated_left_lat < current_lane_w) and (left_long > 0.0)
