@@ -681,8 +681,11 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     if not hasattr(_make_ccnc_values, '_filt_curve'):
       _make_ccnc_values._filt_curve = target_curve
 
-    alpha = 0.2 
-    _make_ccnc_values._filt_curve = (alpha * target_curve) + ((1.0 - alpha) * _make_ccnc_values._filt_curve)
+    # 💡 [핵심 수정] desire(차선 변경)가 없을 때만 곡률을 업데이트합니다.
+    # 차선 변경 중(desire > 0)일 때는 이 구문을 건너뛰어 직전 _filt_curve 값이 그대로 유지(Freeze)됩니다.
+    if not desire:
+      alpha = 0.4 
+      _make_ccnc_values._filt_curve = (alpha * target_curve) + ((1.0 - alpha) * _make_ccnc_values._filt_curve)
 
     curvature = int(round(_make_ccnc_values._filt_curve))
     # -------------------------------------------------------------------------
