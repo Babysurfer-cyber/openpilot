@@ -968,7 +968,7 @@ class RadarD:
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     # 💡 고속(>7.0)에선 전방레이더를 믿고 모두 무시, 저속(>4.0)에선 깐깐하게 무시!
-    if (actual_vLead < 1.0 and CS.vEgo > 9.0) or (actual_vLead < 0.5 and CS.vEgo > 5.0 and abs(lat_dist) > 2.0):
+    if (actual_vLead < 1.0 and CS.vEgo > 7.0) or (actual_vLead < 0.5 and CS.vEgo > 4.0 and abs(lat_dist) > 2.0):
       return lead_dict
 
     if lead_dict['status']:
