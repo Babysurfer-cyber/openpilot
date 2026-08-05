@@ -967,8 +967,8 @@ class RadarD:
     # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 고속(>7.0)에선 전방레이더를 믿고 모두 무시, 저속(>4.0)에선 차선 밖(>1.9m)만 깐깐하게 무시!
-    if (actual_vLead < 0.5 and CS.vEgo > 7.0) or (actual_vLead < 0.3 and CS.vEgo > 4.0 and abs(lat_dist) > 1.9):
+    # 💡 고속(>7.0)에선 전방레이더를 믿고 모두 무시, 저속(>4.0)에선 깐깐하게 무시!
+    if (actual_vLead < 0.5 and CS.vEgo > 7.0) or (actual_vLead < 0.3 and CS.vEgo > 4.0):
       return lead_dict
 
     if lead_dict['status']:
