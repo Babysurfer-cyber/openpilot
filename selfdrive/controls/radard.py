@@ -880,16 +880,19 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_lat - past_lat) / time_diff
 
-    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 3단계 맞춤형 정밀 방어!
+    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어!
     if cur_lat <= 0.95:
       # ① 초근접 구역 (내 위치 + 0.95m 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
-    elif cur_lat <= (lane_edge + 0.1) and CS.vEgo < 7.0:  
-      # ② 중간 구역 (0.95m 초과 ~ 차선 반폭 + 0.1m): 슬금슬금 좁혀오는 차량 방어
+    elif cur_lat <= (lane_edge) and CS.vEgo < 10.0:  
+      # ② 중간 구역 (0.95m 초과 ~ 차선 반폭): 슬금슬금 좁혀오는 차량 방어
       v_lat_threshold = -0.1  
-    else:              
-      # ③ 외곽 구역 (차선 반폭 + 0.1m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
+    elif cur_lat <= (lane_edge + 0.5):  
+      # ③ 외곽 구역 (차선 반폭 ~ 차선 반폭 + 0.5m): 훅 좁혀오는 차량 방어
       v_lat_threshold = -0.3  
+    else:              
+      # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
+      v_lat_threshold = -0.6  
 
     is_cutting_in = v_lat < v_lat_threshold
 
@@ -1028,3 +1031,4 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
+ 
