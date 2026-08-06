@@ -864,6 +864,11 @@ class RadarD:
     else:
       self._corner_missing_cnt[side] = 0      
       self._corner_hist[side].append((cur_long, cur_lat))
+      
+      # 💡 이 로직이 없으면 오래 추적한 차량의 급격한 움직임을 절대 감지할 수 없습니다.
+      # DT_MDL이 0.05라면, 10프레임 유지 시 최근 0.5초 동안의 변화율(순간 속도)을 구하게 됨
+      if len(self._corner_hist[side]) > 10: 
+        self._corner_hist[side].pop(0)
 
     h = self._corner_hist[side]
     n = len(h)
