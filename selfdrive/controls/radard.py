@@ -912,7 +912,7 @@ class RadarD:
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
         calc_dist = min(float(target_long), 20.0) if target_long > 0.0 else 0.0
         lane_y = float(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y)))
-        return float(abs(lane_y))
+        return float(abs(lane_y)) + 0.9  #상대 차량의 반폭
       
       return 1.5
 
