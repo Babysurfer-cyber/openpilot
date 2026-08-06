@@ -911,7 +911,7 @@ class RadarD:
     def get_lane_edge(target_long, is_left):
       # 모델 데이터가 없으면 3.0m 도로 기준 반폭인 1.5m를 기본값으로 사용
       if md is None or len(md.laneLineProbs) < 3:
-        return 1.5
+        return 2.4
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -919,7 +919,7 @@ class RadarD:
         lane_y = float(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y)))
         return float(abs(lane_y)) + 0.9  #상대 차량의 반폭
       
-      return 1.5
+      return 2.4
 
     left_lane_edge = get_lane_edge(left_long, True)
     right_lane_edge = get_lane_edge(right_long, False)
