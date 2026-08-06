@@ -854,84 +854,73 @@ class RadarD:
         self.radar_state.leadOne = chosen
         self.radar_detected = detected
 
-  def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, enter_lat: float = 3.2):
-    # 1. 값이 없거나(0.0) 너무 멀면 바로 지우지 않고 카운트를 올리며 기다림
-    if cur_lat <= 0.01 or cur_lat > enter_lat or cur_long > 25.0: #전방 25m로 한정
+  def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float):
+    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 차선 밖 1.2m까지 넉넉하게 둡니다) 전방 25m 까지 감시
+    if cur_lat <= 0.01 or cur_lat > (lane_edge + 1.2) or cur_long > 25.0: 
       self._corner_missing_cnt[side] += 1
-      if self._corner_missing_cnt[side] > 5:  # 5프레임(0.25초) 이상 연속으로 놓치면 그때서야 완전 초기화
+      if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
       return False, 0.0, 0.0
     else:
-      self._corner_missing_cnt[side] = 0      # 신호가 정상으로 들어오면 카운터 리셋
+      self._corner_missing_cnt[side] = 0      
       self._corner_hist[side].append((cur_long, cur_lat))
 
     h = self._corner_hist[side]
     n = len(h)
     if n < 5:
-      # 데이터가 적으면 판단 보류
       return False, 0.0, 0.0
 
-    # 2. 노이즈 방어를 위해 맨 앞 2개와 맨 뒤 2개의 '평균값'을 사용하여 속도 계산
     past_long = (h[0][0] + h[1][0]) / 2.0
     past_lat  = (h[0][1] + h[1][1]) / 2.0
     curr_long = (h[-1][0] + h[-2][0]) / 2.0
     curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
     
-    # 앞뒤 각각 2개씩 묶었으므로 인덱스 차이는 (n - 2)
     time_diff = max((n - 2) * DT_MDL, DT_MDL) 
 
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_lat - past_lat) / time_diff
 
-    # 3. 동적 가로 속도 임계값 설정 (3단계 세분화)
-    if cur_lat < 1.9:
-      # 💡 [보완] 1.8m 이내(머리를 이미 내 차선에 깊숙이 들이민 상태)
-      # 가만히 있거나(0.0) 아주 미세하게 뒤로 빼더라도(+0.1) 무조건 위험으로 감지!
+    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 3단계 맞춤형 정밀 방어!
+    if cur_lat <= 0.95:
+      # ① 초근접 구역 (내 위치 + 0.95m 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
-    elif cur_lat < 2.4 and CS.vEgo < 7.0:  
-      # 2.4m 이내 (바짝 붙어서 좁혀오는 상태), 내차 시속이 약 25 이하일 경우 타이트하게 감시
+    elif cur_lat <= (lane_edge + 0.1) and CS.vEgo < 7.0:  
+      # ② 중간 구역 (0.95m 초과 ~ 차선 반폭 + 0.1m): 슬금슬금 좁혀오는 차량 방어
       v_lat_threshold = -0.1  
     else:              
-      # 넉넉한 거리 (확 치고 들어오는 차만 감지)
+      # ③ 외곽 구역 (차선 반폭 + 0.1m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
       v_lat_threshold = -0.3  
 
     is_cutting_in = v_lat < v_lat_threshold
 
     return is_cutting_in, v_long_rel, v_lat
 
+
   def corner_radar(self, CS, md, lead_dict):
     left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
     left_long, right_long = CS.leftLongDist, CS.rightLongDist
 
     # -------------------------------------------------------------------------
-    # 💡 [초정밀 퓨전] 양쪽 차선 각각의 인식값을 독립적으로 평가하여 동적 한계(limit) 설정
+    # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge) 자체를 실시간으로 추출
     # -------------------------------------------------------------------------
-    def get_lane_limit(target_long, is_left):
-      # 1. 모델 데이터가 없거나 배열 길이가 짧으면 기존 로직(2.9m) 유지
+    def get_lane_edge(target_long, is_left):
+      # 모델 데이터가 없으면 3.0m 도로 기준 반폭인 1.5m를 기본값으로 사용
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.9
+        return 1.5
       
-      # 2. 파악하려는 방향의 차선 인덱스 (왼쪽=1, 오른쪽=2)
       idx = 1 if is_left else 2
-      
-      # 3. 해당 방향 차선의 인식 확률이 50% 이상이고 데이터가 있을 때만 계산!
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
         calc_dist = min(float(target_long), 20.0) if target_long > 0.0 else 0.0
-        
-        # 모델 데이터(X거리)에 매칭되는 내 차선 경계선(Y위치)을 즉각 추출
         lane_y = float(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y)))
-        
-        # 💡 차선 경계선(절대값) + 상대차 절반 폭 마진(0.9m) = 완벽한 선 밟음 판정 기준
-        return float(abs(lane_y)) + 0.9
+        return float(abs(lane_y))
       
-      # 4. 차선이 지워졌거나 흐릿해서 판단할 수 없다면 안전하게 2.9m 적용 (기존 폴백)
-      return 2.9
+      return 1.5
 
-    left_limit = get_lane_limit(left_long, True)
-    right_limit = get_lane_limit(right_long, False)
+    left_lane_edge = get_lane_edge(left_long, True)
+    right_lane_edge = get_lane_edge(right_long, False)
 
     # -------------------------------------------------------------------------
-    # 💡 [곡률 보정] 비전 모델의 예측 경로(position)를 기반으로 커브길 쏠림 완벽 보정
+    # 💡 [곡률 보정] 
     # -------------------------------------------------------------------------
     path_reliable = (md is not None and len(md.position.x) > 20 and len(md.position.y) > 20)
     
@@ -948,43 +937,41 @@ class RadarD:
     compensated_right_lat = float(abs(right_lat + right_curve_offset))
 
     # -------------------------------------------------------------------------
-    # 💡 보정된 가로 거리(compensated_lat)와 각 방향의 '동적 차선 한계(limit)'를 전달!
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_limit)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_limit)
+    # 💡 [방어 구역 적용] 보정된 거리와 '실제 차선 반폭(lane_edge)'을 넘겨서 감지!
+    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_lane_edge)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge)
 
-    # 감시 경계선 판단: 2.9 고정 대신 동적으로 계산된 left_limit / right_limit 적용!
-    left_ok = left_cutin and (1.2 < compensated_left_lat < left_limit) and (left_long > 0.0)
-    right_ok = right_cutin and (1.2 < compensated_right_lat < right_limit) and (right_long > 0.0)
+    # 💡 [핵심 반영] 정면 0~0.5m는 전방 센서에 양보하고, 코너 레이더는 0.5m 이상부터만 엄격하게 감시!
+    left_ok = left_cutin and (0.5 < compensated_left_lat < left_lane_edge + 1.2) and (left_long > 0.0)
+    right_ok = right_cutin and (0.5 < compensated_right_lat < right_lane_edge + 1.2) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
 
-    # 💡 오픈파일럿 시스템에 넘겨줄 위치는 실제 물리 좌표(raw)로 복원!
+    # 시스템에 넘겨줄 위치 결정
     if left_ok and right_ok:
       if left_long <= right_long:
         lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
-        target_limit = left_limit
+        target_lane_edge = left_lane_edge
       else:
         lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
-        target_limit = right_limit
+        target_lane_edge = right_lane_edge
     elif left_ok:
       lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
-      target_limit = left_limit
+      target_lane_edge = left_lane_edge
     else:
       lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
-      target_limit = right_limit
+      target_lane_edge = right_lane_edge
 
-    # 실제 계산된 끼어드는 차의 절대 속도
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 무시 조건(Skip)도 동적 타겟 리밋을 반영하여 완벽하게 호환!
-    # fallback으로 2.9가 적용되었을 땐 2.9 - 0.9 = 2.0으로 기존 하드코딩 수치와 완벽히 100% 동일하게 작동!
-    skip_dist = target_limit - 0.9
+    # 💡 [무시 조건 완벽 호환] 외곽 구역 시작점(차선 반폭 + 0.1m) 바깥에 정지해있는 차량만 무시!
+    skip_dist = target_lane_edge + 0.1
 
-    # 💡 고속(>7.0)에선 전방레이더를 믿고 모두 무시, 저속(>4.0)에선 깐깐하게 무시!
     if (actual_vLead < 1.0 and CS.vEgo > 7.0) or (actual_vLead < 0.5 and CS.vEgo > 4.0 and abs(lat_dist) > skip_dist):
       return lead_dict
 
+    # (이하 상태 덮어쓰기 로직 동일)
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
