@@ -965,8 +965,8 @@ class RadarD:
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 💡 [무시 조건 완벽 호환] 외곽 구역 시작점(차선 반폭 + 0.1m) 바깥에 정지해있는 차량만 무시!
-    skip_dist = target_lane_edge + 0.1
+    # 💡 [무시 조건 완벽 호환] 외곽 구역 시작점(차선 반폭) 바깥에 정지해있는 차량만 무시!
+    skip_dist = target_lane_edge
 
     if (actual_vLead < 1.0 and CS.vEgo > 7.0) or (actual_vLead < 0.5 and CS.vEgo > 4.0 and abs(lat_dist) > skip_dist):
       return lead_dict
