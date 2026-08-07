@@ -881,8 +881,8 @@ class RadarD:
     v_lat = (curr_lat - past_lat) / time_diff
 
     # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어!
-    if cur_lat <= 0.95:
-      # ① 초근접 구역 (내 위치 + 0.95m 이내): 이미 내 차와 겹침/충돌 임박
+    if cur_lat <= 1.8:
+      # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
     elif cur_lat <= (lane_edge) and CS.vEgo < 10.0:  
       # ② 중간 구역 (0.95m 초과 ~ 차선 반폭): 슬금슬금 좁혀오는 차량 방어
