@@ -907,9 +907,9 @@ class RadarD:
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge) 자체를 실시간으로 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 모델 데이터가 없으면 넉넉히 내차량 반폭(1.0m) + 상대차량 반폭(0.9m) + 조금의 여유분
+      # 모델 데이터가 없으면 최소 도로 반폭(1.3m) + 상대차량 반폭(0.9m)
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.0
+        return 2.2
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -917,7 +917,7 @@ class RadarD:
         lane_y = float(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y)))
         return float(abs(lane_y)) + 0.9  #상대 차량의 반폭
       
-      return 2.0
+      return 2.2
 
     left_lane_edge = get_lane_edge(left_long, True)
     right_lane_edge = get_lane_edge(right_long, False)
