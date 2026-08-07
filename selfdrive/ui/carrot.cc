@@ -1442,7 +1442,7 @@ private:
     int     show_path_mode_lane = 13;
     int     show_path_color_lane = 14;
     int     show_path_color_cruise_off = 14;
-    float   show_path_width = 1.0;
+    float   show_path_width = 1.05; // 👈 1.05로 변경 (1.9m 폭으로 확장)
     Params  params;
     int     params_count = 0;
     bool    active_lane_line = false;
