@@ -715,7 +715,7 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
 
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          disp_angle, left_lane_warning, right_lane_warning,
-                         enable_corner_radar, stopping, canfd_debug):
+                         enable_corner_radar, stopping, canfd_debug, sm=None):
   ret = []
 
   md = CS.MD
@@ -864,7 +864,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
         is_changing_lane = lane_changing in [3, 4]
         
-        # 2. 유저님이 발견하신 완벽한 패턴! (계기판 주황색 라인 연동 로직)
+        # 2. 계기판 주황색 라인 연동 로직
         left_solid = False
         right_solid = False
 
@@ -872,32 +872,37 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         right_raw = getattr(CS.out, 'rightLaneLine', 0)
 
         if lane_line_check >= 1:
-            # 옵션 ON: 끝자리가 0이나 5가 아니면 실선으로 간주 (흰색/주황색 모두 커버!)
             left_solid = (left_raw % 10) not in (0, 5)
             right_solid = (right_raw % 10) not in (0, 5)
         else:
-            # 옵션 OFF: 기존처럼 값이 20 이상이면 황색 실선/경계석으로 간주
             left_solid = left_raw >= 20
             right_solid = right_raw >= 20
 
-        # 3. 전측방/후측방 종합 위험 판단
-        danger_left = CS.out.leftBlindspot or left_lane_warning
-        danger_right = CS.out.rightBlindspot or right_lane_warning
-        
-        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
+        # 3. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
         if v_ego_kph >= 30.0 and not is_changing_lane:
-            
-            # [왼쪽 방향]
-            #if CS.out.leftBlinker and danger_left:
-                #alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
             if nudge_left and left_solid:
-                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
-                
-            # [오른쪽 방향]
-            #elif CS.out.rightBlinker and danger_right:
-                #alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
+                alc_msg = 10 
             elif nudge_right and right_solid:
-                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
+                alc_msg = 10 
+
+        # ----------------------------------------------------------
+        # 💡 4. [최종 똥침 방어] 좌/우 코너 레이더 교차 검증 (AND 조건)
+        # ----------------------------------------------------------
+        # sm 객체가 정상적으로 넘어왔고, 레이더 데이터가 업데이트 되었을 때만 실행
+        if v_ego_kph >= 80.0 and sm is not None and 'radarState' in sm.updated:
+            radar_state = sm['radarState']
+            
+            # 파이썬의 any() 함수를 쓰면 리스트를 돌면서 조건이 하나라도 맞으면 즉시 True를 반환합니다.
+            # 좌측 레이더: 30m 이내 AND 가로 위치 1.2m(내 차선 폭) 이내인 타겟이 있는가?
+            left_detected = any(l.status and 0.1 <= abs(l.dRel) <= 30.0 and abs(l.yRel) <= 1.2 for l in radar_state.leadsLeft)
+            
+            # 우측 레이더: 30m 이내 AND 가로 위치 1.2m(내 차선 폭) 이내인 타겟이 있는가?
+            right_detected = any(r.status and 0.1 <= abs(r.dRel) <= 30.0 and abs(r.yRel) <= 1.2 for r in radar_state.leadsRight)
+
+            # 💡 좌측 AND 우측 레이더 모두 내 차선 폭 이내에서 차를 감지했을 때만 1번 팝업!
+            # (1, 3차로 차량은 어느 한쪽 레이더에서만 yRel <= 1.2 조건을 만족하므로 완벽히 무시됨)
+            if left_detected and right_detected:
+                alc_msg = 1
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
