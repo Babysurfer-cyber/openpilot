@@ -855,8 +855,8 @@ class RadarD:
         self.radar_detected = detected
 
   def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float, max_lat_dist: float):
-    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 동적으로 계산된 max_lat_dist 적용) 전방 25m 까지 감시
-    if cur_lat <= 0.01 or cur_lat > max_lat_dist or cur_long > 25.0: 
+    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 동적으로 계산된 max_lat_dist 적용) 전방 30m 까지 감시
+    if cur_lat <= 0.01 or cur_lat > max_lat_dist or cur_long > 30.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
@@ -907,9 +907,9 @@ class RadarD:
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 모델 데이터가 없으면: 기본 엣지(2.2m) + 최대 감시폭은 엣지+1.3m(3.5m)
+      # 모델 데이터가 없으면: 기본 엣지(2.2m) + 0.4m = 2.6m 감시
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.2, 3.5
+        return 2.2, 2.6
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -917,12 +917,18 @@ class RadarD:
         # 모델이 인식한 순수 차선 반폭 (lane_y)
         lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
         
-        lane_edge = lane_y + 0.9         # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
-        max_search_dist = lane_edge + lane_y # 최대 감시폭 = 엣지 + 차선 반폭
+        lane_edge = lane_y + 0.9               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
+        lane_width = lane_y * 2.0              # 차선폭 = 차선 반폭의 2배
+        
+        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m) / 2
+        max_search_dist = lane_edge + (lane_width - 1.8) / 2.0
+        
+        # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
+        max_search_dist = max(lane_edge, max_search_dist)
         
         return lane_edge, max_search_dist
       
-      return 2.2, 3.5
+      return 2.2, 2.6
 
     left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
@@ -998,7 +1004,6 @@ class RadarD:
       lead_dict['radar'] = True
 
     return lead_dict
-
 
 
 # fuses camera and radar data for best lead detection
