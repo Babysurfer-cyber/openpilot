@@ -929,6 +929,9 @@ class RadarD:
           lane_width = left_y + right_y  # 좌측 거리 + 우측 거리 = 모델이 계산한 실제 차선폭!
         else:
           lane_width = lane_y * 2.0      # 한쪽만 보일 때는 반폭의 2배 예비 적용
+          
+        # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
+        lane_width = min(lane_width, 3.6)
         
         # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m) / 2
         max_search_dist = lane_edge + (lane_width - 1.8) / 2.0
