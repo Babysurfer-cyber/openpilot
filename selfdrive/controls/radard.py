@@ -892,7 +892,7 @@ class RadarD:
       v_lat_threshold = -0.3  
     else:              
       # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
-      v_lat_threshold = -1.0  
+      v_lat_threshold = -0.6  
 
     is_cutting_in = v_lat < v_lat_threshold
 
