@@ -855,8 +855,8 @@ class RadarD:
         self.radar_detected = detected
 
   def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float):
-    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 차선 밖 1.2m까지 넉넉하게 둡니다) 전방 30m 까지 감시
-    if cur_lat <= 0.01 or cur_lat > (lane_edge + 1.2) or cur_long > 30.0: 
+    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 차선 밖 1.2m까지 넉넉하게 둡니다) 전방 25m 까지 감시
+    if cur_lat <= 0.01 or cur_lat > (lane_edge + 1.2) or cur_long > 25.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
