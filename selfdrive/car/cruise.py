@@ -870,16 +870,15 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
-    # ▼▼▼ [추가 2] 당근크루즈 중 스스로 가속 차단 (수동 가속만 허용) ▼▼▼
+    # ▼▼▼ [추가 2] 당근크루즈 중 재가속 차단 및 타력주행(코스팅) 완벽 유지! ▼▼▼
     if getattr(self, 'carrot_cruise_active', False):
       if CS.gasPressed:
-        # 1. 엑셀을 밟을 때: 목표 속도를 내 차 속도에 맞춰 올려줌 (수동 가속 허용)
+        # 1. 엑셀을 밟을 때: 목표 속도도 내 차 속도에 맞춰 같이 끌어올려줌 
         v_cruise_kph = self.v_ego_kph_set
       else:
-        # 2. 엑셀을 뗄 때: 목표 속도가 현재 속도를 넘지 못하도록 잠금(Lock).
-        # 이렇게 하면 앞차가 멀어지거나 길이 뚫려도 오픈파일럿이 스스로 속도를 올리지 않습니다.
-        # (기존 -2를 뺌으로써 발생하던 강제 브레이킹 현상을 완벽히 제거하여 부드러운 주행 유지)
-        v_cruise_kph = min(v_cruise_kph, self.v_ego_kph_set)
+        # 2. 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
+        # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 엑셀 개입을 완벽히 차단합니다.
+        v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 1)) 
       
       # 3. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
       self._pause_auto_speed_up = True                     
