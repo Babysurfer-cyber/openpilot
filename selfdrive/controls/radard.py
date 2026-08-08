@@ -907,9 +907,9 @@ class RadarD:
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 모델 데이터가 없으면: 기본 엣지(2.2m) + 최대 감시폭은 엣지+1.5m(3.7m)
+      # 모델 데이터가 없으면: 기본 엣지(2.2m) + 최대 감시폭은 엣지+1.3m(3.5m)
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.2, 3.7
+        return 2.2, 3.5
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -922,7 +922,7 @@ class RadarD:
         
         return lane_edge, max_search_dist
       
-      return 2.2, 3.7
+      return 2.2, 3.5
 
     left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
