@@ -878,7 +878,7 @@ class VCruiseCarrot:
       else:
         # 2. 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
         # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 엑셀 개입을 완벽히 차단합니다.
-        v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 1)) 
+        v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 2)) 
       
       # 3. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
       self._pause_auto_speed_up = True                     
