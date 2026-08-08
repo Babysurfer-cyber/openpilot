@@ -607,6 +607,7 @@ private:
     float   lead_two_xr = 0.0;
     float   lead_two_y = 0.0;
     int     lead_two_status = 0;
+    bool    is_corner_radar = false; // 💡 [추가] 코너 레이더 감지 여부
 
 protected:
     bool make_data(const UIState* s) {
@@ -642,11 +643,15 @@ protected:
             y = -lead_one.getYRel();
             radarTrackId = lead_one.getRadarTrackId();
             radarDist = (lead_one.getRadar()) ? lead_one.getDRel() : 0;
+            
+            // 💡 [핵심] 레이더 True & TrackId -1 이면 코너 레이더(끼어들기)로 간주!
+            is_corner_radar = (lead_one.getRadar() && radarTrackId == -1);
         }
         else {
             radarTrackId = -1;
             radarDist = 0;
-        }
+            is_corner_radar = false;
+		}
         _model->mapToScreen(max_distance, y - 1.2, z + 1.22, &path_end_left_vertex);
         _model->mapToScreen(max_distance, y + 1.2, z + 1.22, &path_end_right_vertex);
 
@@ -784,19 +789,22 @@ public:
         else draw_dist = true;
 
         if (draw_dist) {
-            //float dist = (getRadarDist() > 0.0) ? getRadarDist() : getVisionDist();
-            //if (dist < 10.0) sprintf(str, "%.1f", dist);
-            //else sprintf(str, "%.0f", dist);
-            //ui_draw_text(s, x, disp_y, str, disp_size, COLOR_WHITE, BOLD);
             int wStr = 0, w = 80;
             float dist = radarDist * (s->scene.is_metric ? 1 : METER_TO_FOOT);
             NVGcolor text_color = (xState==0) ? COLOR_WHITE : (xState==1) ? COLOR_GREY : COLOR_GREEN;
             if (dist > 0.0) {
                 sprintf(str, "%.1f", dist);
                 wStr = 32 * (strlen(str) + 0);
-                ui_fill_rect(s->vg, { (int)(x - w - wStr / 2), (int)(disp_y - 35), wStr, 42 }, isLeadSCC() ? COLOR_RED : COLOR_ORANGE, 15);
+                
+                // 💡 [거리 박스 색상 변경] 코너=회색, SCC=빨강, 트랙=주황
+                NVGcolor dist_bg_color = COLOR_ORANGE;
+                if (is_corner_radar) dist_bg_color = COLOR_GREY;
+                else if (radarTrackId == 0) dist_bg_color = COLOR_RED;
+
+                ui_fill_rect(s->vg, { (int)(x - w - wStr / 2), (int)(disp_y - 35), wStr, 42 }, dist_bg_color, 15);
                 ui_draw_text(s, x - w, disp_y, str, 40, text_color, BOLD);
             }
+
             dist = visionDist * (s->scene.is_metric ? 1 : METER_TO_FOOT);
             if (dist > 0.0) {
                 sprintf(str, "%.1f", dist);
@@ -848,7 +856,18 @@ public:
                 30, 10, &radar_stroke
               );
             }
-            radar_stroke = isRadarDetected() ? rcolor : COLOR_BLUE;
+            
+            // 💡 [네모 박스 테두리 색상 완벽 분리]
+            if (is_corner_radar) {
+                radar_stroke = COLOR_GREY;       // 1. 코너 레이더 (끼어들기) -> 회색
+            } else if (radarTrackId == 0) {
+                radar_stroke = COLOR_RED;        // 2. SCC -> 빨간색
+            } else if (radarTrackId > 0) {
+                radar_stroke = COLOR_ORANGE;     // 3. 전방 레이더 트랙 -> 주황색
+            } else {
+                radar_stroke = COLOR_BLUE;       // 4. 비전 감지 -> 파란색
+            }
+
             ui_fill_rect(s->vg, { (int)(path_x - path_width / 2 - 10), (int)(path_y - path_width * 0.8), (int)(path_width + 20), (int)(path_width * 0.8) }, COLOR_BLACK_ALPHA(20), 30, 10, &radar_stroke);
 #if 0
             px[0] = path_x - path_width / 2 - 10;
