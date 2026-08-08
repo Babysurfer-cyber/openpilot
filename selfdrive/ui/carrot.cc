@@ -796,10 +796,8 @@ public:
                 sprintf(str, "%.1f", dist);
                 wStr = 32 * (strlen(str) + 0);
                 
-                // 💡 [거리 박스 색상 변경] 코너=회색, SCC=빨강, 트랙=주황
-                NVGcolor dist_bg_color = COLOR_ORANGE;
-                if (is_corner_radar) dist_bg_color = COLOR_GREY;
-                else if (radarTrackId == 0) dist_bg_color = COLOR_RED;
+                // 하단 거리 박스는 코너 레이더 감지 여부와 상관없이 원래 색상 유지 (SCC=빨강, 그 외=주황)
+                NVGcolor dist_bg_color = (radarTrackId == 0) ? COLOR_RED : COLOR_ORANGE;
 
                 ui_fill_rect(s->vg, { (int)(x - w - wStr / 2), (int)(disp_y - 35), wStr, 42 }, dist_bg_color, 15);
                 ui_draw_text(s, x - w, disp_y, str, 40, text_color, BOLD);
