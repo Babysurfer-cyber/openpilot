@@ -918,7 +918,17 @@ class RadarD:
         lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
         
         lane_edge = lane_y + 0.9               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
-        lane_width = lane_y * 2.0              # 차선폭 = 차선 반폭의 2배
+        
+        # 💡 [핵심] 모델이 계산한 내 실제 차선폭(좌우 차선 거리 합산) 구하기
+        has_left = md.laneLineProbs[1] > 0.5 and len(md.laneLines[1].y) > 0
+        has_right = md.laneLineProbs[2] > 0.5 and len(md.laneLines[2].y) > 0
+        
+        if has_left and has_right:
+          left_y = float(abs(np.interp(calc_dist, list(md.laneLines[1].x), list(md.laneLines[1].y))))
+          right_y = float(abs(np.interp(calc_dist, list(md.laneLines[2].x), list(md.laneLines[2].y))))
+          lane_width = left_y + right_y  # 좌측 거리 + 우측 거리 = 모델이 계산한 실제 차선폭!
+        else:
+          lane_width = lane_y * 2.0      # 한쪽만 보일 때는 반폭의 2배 예비 적용
         
         # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m) / 2
         max_search_dist = lane_edge + (lane_width - 1.8) / 2.0
