@@ -710,6 +710,34 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       if values[det_key] >= 4 and values[dist_key] != 0:
         values[det_key] = 1
 
+    # ==========================================================
+    # 💡 [천재적 아이디어] 1차선 똥침(Tailgater) 차량 정밀 감지 로직
+    # ==========================================================
+    v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
+    if v_ego_kph >= 70.0:
+      # 1. 1차선(추월차로) 판단: 좌측이 실선이거나 엣지(Edge)인지 확인
+      left_raw = getattr(CS.out, 'leftLaneLine', 0)
+      lane_line_check = getattr(create_ccnc_messages, '_lane_line_check', 0)
+      
+      if lane_line_check >= 1:
+        left_solid = (left_raw % 10) not in (0, 5)
+      else:
+        left_solid = left_raw >= 20
+        
+      if left_solid:
+        # 2. 좌/우 후방 레이더의 '가로(Lateral) 거리'를 직접 참조
+        # (getattr로 안전하게 가져옵니다. 값이 아예 없으면 99.0으로 처리)
+        left_lat = abs(getattr(CS, 'leftLatDist', 99.0))
+        right_lat = abs(getattr(CS, 'rightLatDist', 99.0))
+        
+        # 3. 양쪽 레이더 감지 거리가 모두 내 차 중앙 기준 1.3m 이내일 때 (내 차선 안으로 들어옴)
+        # (0.0인 경우는 미감지 상태이므로 0보다 클 때만 취급)
+        if (0.0 < left_lat <= 1.3) and (0.0 < right_lat <= 1.3):
+          # 왼쪽 슬롯은 '위험/가까움(2)' 값으로 변경하여 내 차 바로 뒤에 띄움
+          values['LR_DETECT'] = 2
+          # 우측(RR_DETECT)은 지우지 않고 그대로 둡니다. (정상적으로 우측에 표시됨)
+    # ==========================================================
+    
     if blink_pairs:
       _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
 
