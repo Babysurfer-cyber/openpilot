@@ -712,10 +712,11 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
 
     # ==========================================================
     # 💡 [천재적 아이디어] 1차선 똥침(Tailgater) 차량 정밀 감지 로직
+    # 조건: 엣지 OR (실선 AND 주황색), 속도 70km/h 이상, 좌우 가로거리 1.3m 이내
     # ==========================================================
     v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
     if v_ego_kph >= 70.0:
-      # 1. 1차선(추월차로) 판단: 좌측이 실선이거나 엣지(Edge)인지 확인
+      # 1. 실선 여부 판단
       left_raw = getattr(CS.out, 'leftLaneLine', 0)
       lane_line_check = getattr(create_ccnc_messages, '_lane_line_check', 0)
       
@@ -724,18 +725,33 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       else:
         left_solid = left_raw >= 20
         
-      if left_solid:
-        # 2. 좌/우 후방 레이더의 '가로(Lateral) 거리'를 직접 참조
-        # (getattr로 안전하게 가져옵니다. 값이 아예 없으면 99.0으로 처리)
-        left_lat = abs(getattr(CS, 'leftLatDist', 99.0))
-        right_lat = abs(getattr(CS, 'rightLatDist', 99.0))
+      # 2. 모델 데이터(md)에서 주황색 차선 및 도로 엣지(Edge) 판별
+      md = getattr(CS, 'MD', None)
+      left_is_yellow = False
+      left_is_edge = False
+      
+      if md is not None:
+        # 주황색/노란색 차선 색상 확인
+        if len(md.laneLineColors) > 1:
+          left_color = md.laneLineColors[1]
+          left_is_yellow = (left_color == 1) or (hasattr(left_color, 'raw') and left_color.raw == 1)
+          
+        # 도로 엣지(Road Edge) 인식 여부 확인
+        if hasattr(md, 'roadEdgeLeft') and len(md.roadEdgeLeft.y) > 0:
+          calc_dist = min(float(CS.leftLongDist), 20.0) if CS.leftLongDist > 0.0 else 10.0
+          edge_y = float(abs(np.interp(calc_dist, list(md.roadEdgeLeft.x), list(md.roadEdgeLeft.y))))
+          left_is_edge = (edge_y < 3.0)
+
+      # 3. 최종 조건 결합: [엣지]이거나, 또는 [(실선) 이면서 (주황색)]일 때 성립
+      is_target_lane = left_is_edge or (left_solid and left_is_yellow)
         
-        # 3. 양쪽 레이더 감지 거리가 모두 내 차 중앙 기준 1.3m 이내일 때 (내 차선 안으로 들어옴)
-        # (0.0인 경우는 미감지 상태이므로 0보다 클 때만 취급)
-        if (0.0 < left_lat <= 1.3) and (0.0 < right_lat <= 1.3):
-          # 왼쪽 슬롯은 '위험/가까움(2)' 값으로 변경하여 내 차 바로 뒤에 띄움
+      if is_target_lane:
+        # 4. 좌/우 후방 레이더의 '가로(Lateral) 거리' 확인
+        left_lat = abs(getattr(CS, 'leftLatDist', 99.0))
+        
+        # 5. 양쪽 레이더 감지 거리가 모두 내 차 중앙 기준 1.3m 이내일 때
+        if (0.0 < left_lat <= 1.3):
           values['LR_DETECT'] = 2
-          # 우측(RR_DETECT)은 지우지 않고 그대로 둡니다. (정상적으로 우측에 표시됨)
     # ==========================================================
     
     if blink_pairs:
