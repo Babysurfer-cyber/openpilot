@@ -884,7 +884,7 @@ class RadarD:
     if cur_lat <= 1.6:
       # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
-    elif cur_lat <= (lane_edge) and CS.vEgo < 10.0:  
+    elif cur_lat <= (lane_edge):  
       # ② 중간 구역 (0.95m 초과 ~ 차선 반폭): 슬금슬금 좁혀오는 차량 방어
       v_lat_threshold = -0.1  
     elif cur_lat <= (lane_edge + 0.5):  
@@ -907,9 +907,9 @@ class RadarD:
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 모델 데이터가 없으면: 기본 엣지(2.2m) + 0.4m = 2.6m 감시
+      # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.2, 2.7
+        return 2.25, 2.75
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -917,7 +917,7 @@ class RadarD:
         # 모델이 인식한 순수 차선 반폭 (lane_y)
         lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
         
-        lane_edge = lane_y + 0.9               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
+        lane_edge = lane_y + 0.95               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
         
         # 💡 [핵심] 모델이 계산한 내 실제 차선폭(좌우 차선 거리 합산) 구하기
         has_left = md.laneLineProbs[1] > 0.5 and len(md.laneLines[1].y) > 0
@@ -933,15 +933,15 @@ class RadarD:
         # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
         lane_width = min(lane_width, 3.6)
         
-        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m) / 2
-        max_search_dist = lane_edge + (lane_width - 1.8) / 2.0 + 0.1
+        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.9m) / 2 + 여유분
+        max_search_dist = lane_edge + (lane_width - 1.9) / 2.0 + 0.1
         
         # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
         max_search_dist = max(lane_edge, max_search_dist)
         
         return lane_edge, max_search_dist
       
-      return 2.2, 2.7
+      return 2.25, 2.75
 
     left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
