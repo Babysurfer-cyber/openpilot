@@ -889,10 +889,10 @@ class RadarD:
       v_lat_threshold = -0.1  
     elif cur_lat <= (lane_edge + 0.5):  
       # ③ 외곽 구역 (차선 반폭 ~ 차선 반폭 + 0.5m): 훅 좁혀오는 차량 방어
-      v_lat_threshold = -0.3  
+      v_lat_threshold = -0.5  
     else:              
       # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
-      v_lat_threshold = -1.0  
+      v_lat_threshold = -1.5  
 
     is_cutting_in = v_lat < v_lat_threshold
 
