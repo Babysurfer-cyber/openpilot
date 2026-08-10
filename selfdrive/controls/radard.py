@@ -889,10 +889,10 @@ class RadarD:
       v_lat_threshold = -0.1  
     elif cur_lat <= (lane_edge + 0.5):  
       # ③ 외곽 구역 (차선 반폭 ~ 차선 반폭 + 0.5m): 훅 좁혀오는 차량 방어
-      v_lat_threshold = -0.5  
+      v_lat_threshold = -0.3  
     else:              
       # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
-      v_lat_threshold = -1.5  
+      v_lat_threshold = -1.0  
 
     is_cutting_in = v_lat < v_lat_threshold
 
@@ -934,7 +934,7 @@ class RadarD:
         lane_width = min(lane_width, 3.6)
         
         # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m)
-        max_search_dist = lane_edge + (lane_width - 1.8)
+        max_search_dist = lane_edge + (lane_width - 1.8) / 2.0
         
         # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
         max_search_dist = max(lane_edge, max_search_dist)
