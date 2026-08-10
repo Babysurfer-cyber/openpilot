@@ -909,7 +909,7 @@ class RadarD:
     def get_lane_edge(target_long, is_left):
       # 모델 데이터가 없으면: 기본 엣지(2.2m) + 0.4m = 2.6m 감시
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.2, 2.9
+        return 2.2, 2.6
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -933,7 +933,7 @@ class RadarD:
         # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
         lane_width = min(lane_width, 3.6)
         
-        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m)
+        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.8m) / 2
         max_search_dist = lane_edge + (lane_width - 1.8) / 2.0
         
         # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
@@ -941,7 +941,7 @@ class RadarD:
         
         return lane_edge, max_search_dist
       
-      return 2.2, 2.9
+      return 2.2, 2.6
 
     left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
