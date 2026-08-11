@@ -604,8 +604,8 @@ class CarState(CarStateBase):
       ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
       corner = True
     if corner:
-      left_block = True if 0 < ret.leftLongDist < 5.0 or 0 < self.lr_distance < 5.0 else False
-      right_block = True if 0 < ret.rightLongDist < 5.0 or 0 < self.rr_distance < 5.0 else False
+      left_block = True if 0 < ret.leftLongDist < 3.0 or 0 < self.lr_distance < 3.0 else False
+      right_block = True if 0 < ret.rightLongDist < 3.0 or 0 < self.rr_distance < 3.0 else False
       if left_block:
         ret.leftBlindspot = True
       if right_block:
