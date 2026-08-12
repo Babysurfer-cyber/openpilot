@@ -1499,7 +1499,8 @@ protected:
         QPolygonF left_points, right_points;
         left_points.reserve(40 + 1);
         right_points.reserve(40 + 1);
-        float idxs[line_x.size()], line_xs[line_x.size()], line_ys[line_x.size()], line_zs[line_x.size()];
+        // ✅ 수정 제안
+        std::vector<float> idxs(line_x.size()), line_xs(line_x.size()), line_ys(line_x.size()), line_zs(line_x.size());
         float   x_prev = 0;
         for (int i = 0; i < line_x.size(); i++) {
             idxs[i] = (float)i;
