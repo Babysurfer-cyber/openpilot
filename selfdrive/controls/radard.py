@@ -854,169 +854,178 @@ class RadarD:
         self.radar_state.leadOne = chosen
         self.radar_detected = detected
 
-  def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float, max_lat_dist: float):
-    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 동적으로 계산된 max_lat_dist 적용) 전방 30m 까지 감시
-    if cur_lat <= 0.01 or cur_lat > max_lat_dist or cur_long > 30.0: 
-      self._corner_missing_cnt[side] += 1
-      if self._corner_missing_cnt[side] > 5:  
-        self._corner_hist[side].clear()
-      return False, 0.0, 0.0
-    else:
-      self._corner_missing_cnt[side] = 0      
-      self._corner_hist[side].append((cur_long, cur_lat))
-
-    h = self._corner_hist[side]
-    n = len(h)
-    if n < 5:
-      return False, 0.0, 0.0
-
-    past_long = (h[0][0] + h[1][0]) / 2.0
-    past_lat  = (h[0][1] + h[1][1]) / 2.0
-    curr_long = (h[-1][0] + h[-2][0]) / 2.0
-    curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
-    
-    time_diff = max((n - 2) * DT_MDL, DT_MDL) 
-
-    v_long_rel = (curr_long - past_long) / time_diff
-    v_lat = (curr_lat - past_lat) / time_diff
-
-    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어!
-    if cur_lat <= 1.6:
-      # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
-      v_lat_threshold = 0.2  
-    elif cur_lat <= (lane_edge):  
-      # ② 중간 구역 (0.95m 초과 ~ 차선 반폭): 슬금슬금 좁혀오는 차량 방어
-      v_lat_threshold = -0.1  
-    elif cur_lat <= (lane_edge + 0.5):  
-      # ③ 외곽 구역 (차선 반폭 ~ 차선 반폭 + 0.5m): 훅 좁혀오는 차량 방어
-      v_lat_threshold = -0.3  
-    else:              
-      # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
-      v_lat_threshold = -1.0  
-
-    is_cutting_in = v_lat < v_lat_threshold
-
-    return is_cutting_in, v_long_rel, v_lat
-
-
-  def corner_radar(self, CS, md, lead_dict):
-    left_lat, right_lat = abs(CS.leftLatDist), abs(CS.rightLatDist)
-    left_long, right_long = CS.leftLongDist, CS.rightLongDist
-
-    # -------------------------------------------------------------------------
-    # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
-    # -------------------------------------------------------------------------
-    def get_lane_edge(target_long, is_left):
-      # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
-      if md is None or len(md.laneLineProbs) < 3:
-        return 2.25, 2.75
-      
-      idx = 1 if is_left else 2
-      if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
-        calc_dist = min(float(target_long), 20.0) if target_long > 0.0 else 0.0
-        # 모델이 인식한 순수 차선 반폭 (lane_y)
-        lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
-        
-        lane_edge = lane_y + 0.95               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
-        
-        # 💡 [핵심] 모델이 계산한 내 실제 차선폭(좌우 차선 거리 합산) 구하기
-        has_left = md.laneLineProbs[1] > 0.5 and len(md.laneLines[1].y) > 0
-        has_right = md.laneLineProbs[2] > 0.5 and len(md.laneLines[2].y) > 0
-        
-        if has_left and has_right:
-          left_y = float(abs(np.interp(calc_dist, list(md.laneLines[1].x), list(md.laneLines[1].y))))
-          right_y = float(abs(np.interp(calc_dist, list(md.laneLines[2].x), list(md.laneLines[2].y))))
-          lane_width = left_y + right_y  # 좌측 거리 + 우측 거리 = 모델이 계산한 실제 차선폭!
+    def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float, max_lat_dist: float):
+        # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 동적으로 계산된 max_lat_dist 적용) 전방 30m 까지 감시
+        if cur_lat <= 0.01 or cur_lat > max_lat_dist or cur_long > 30.0: 
+            self._corner_missing_cnt[side] += 1
+            if self._corner_missing_cnt[side] > 5:  
+                self._corner_hist[side].clear()
+            return False, 0.0, 0.0
         else:
-          lane_width = lane_y * 2.0      # 한쪽만 보일 때는 반폭의 2배 예비 적용
-          
-        # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
-        lane_width = min(lane_width, 3.6)
+            self._corner_missing_cnt[side] = 0      
+            self._corner_hist[side].append((cur_long, cur_lat))
+
+        h = self._corner_hist[side]
+        n = len(h)
+        if n < 5:
+            return False, 0.0, 0.0
+
+        past_long = (h[0][0] + h[1][0]) / 2.0
+        past_lat  = (h[0][1] + h[1][1]) / 2.0
+        curr_long = (h[-1][0] + h[-2][0]) / 2.0
+        curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
         
-        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.9m) / 2 + 여유분
-        max_search_dist = lane_edge + (lane_width - 1.9) / 2.0 + 0.1
+        time_diff = max((n - 2) * DT_MDL, DT_MDL) 
+
+        v_long_rel = (curr_long - past_long) / time_diff
+        v_lat = (curr_lat - past_lat) / time_diff
+
+        # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어!
+        if cur_lat <= 1.6:
+            # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
+            v_lat_threshold = 0.2  
+        elif cur_lat <= (lane_edge):  
+            # ② 중간 구역 (0.95m 초과 ~ 차선 반폭): 슬금슬금 좁혀오는 차량 방어
+            v_lat_threshold = -0.1  
+        elif cur_lat <= (lane_edge + 0.5):  
+            # ③ 외곽 구역 (차선 반폭 ~ 차선 반폭 + 0.5m): 훅 좁혀오는 차량 방어
+            v_lat_threshold = -0.3  
+        else:              
+            # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
+            v_lat_threshold = -1.0  
+
+        is_cutting_in = v_lat < v_lat_threshold
+
+        return is_cutting_in, v_long_rel, v_lat
+
+
+    def corner_radar(self, CS, md, lead_dict):
+        # 💡 [수정] 원본 부호 유지: 왼쪽은 양수(+), 오른쪽은 음수(-) 좌표계를 그대로 살림
+        raw_left_lat = CS.leftLatDist
+        raw_right_lat = CS.rightLatDist
+        left_long = CS.leftLongDist
+        right_long = CS.rightLongDist
+
+        # -------------------------------------------------------------------------
+        # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
+        # -------------------------------------------------------------------------
+        def get_lane_edge(target_long, is_left):
+            # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
+            if md is None or len(md.laneLineProbs) < 3:
+                return 2.25, 2.75
+            
+            idx = 1 if is_left else 2
+            if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
+                # 💡 [수정] 감시망이 30m이므로 보정 한계치도 30.0으로 동일하게 상향
+                calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
+                # 모델이 인식한 순수 차선 반폭 (lane_y)
+                lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
+                
+                lane_edge = lane_y + 0.95               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
+                
+                # 💡 [핵심] 모델이 계산한 내 실제 차선폭(좌우 차선 거리 합산) 구하기
+                has_left = md.laneLineProbs[1] > 0.5 and len(md.laneLines[1].y) > 0
+                has_right = md.laneLineProbs[2] > 0.5 and len(md.laneLines[2].y) > 0
+                
+                if has_left and has_right:
+                    left_y = float(abs(np.interp(calc_dist, list(md.laneLines[1].x), list(md.laneLines[1].y))))
+                    right_y = float(abs(np.interp(calc_dist, list(md.laneLines[2].x), list(md.laneLines[2].y))))
+                    lane_width = left_y + right_y  # 좌측 거리 + 우측 거리 = 모델이 계산한 실제 차선폭!
+                else:
+                    lane_width = lane_y * 2.0      # 한쪽만 보일 때는 반폭의 2배 예비 적용
+                    
+                # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
+                lane_width = min(lane_width, 3.6)
+                
+                # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.9m) / 2 + 여유분
+                max_search_dist = lane_edge + (lane_width - 1.9) / 2.0 + 0.1
+                
+                # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
+                max_search_dist = max(lane_edge, max_search_dist)
+                
+                return lane_edge, max_search_dist
+            
+            return 2.25, 2.75
+
+        left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
+        right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
+
+        # -------------------------------------------------------------------------
+        # 💡 [곡률 보정] 
+        # -------------------------------------------------------------------------
+        path_reliable = (md is not None and len(md.position.x) > 20 and len(md.position.y) > 20)
         
-        # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
-        max_search_dist = max(lane_edge, max_search_dist)
-        
-        return lane_edge, max_search_dist
-      
-      return 2.25, 2.75
+        def get_curve_offset(target_long):
+            if not path_reliable or target_long <= 0.0:
+                return 0.0
+            # 💡 [수정] 감시망이 30m이므로 커브 보정치 한계도 30.0으로 동일하게 상향
+            calc_dist = min(float(target_long), 30.0) 
+            return float(np.interp(calc_dist, list(md.position.x), list(md.position.y)))
 
-    left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
-    right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
+        left_curve_offset = get_curve_offset(left_long)
+        right_curve_offset = get_curve_offset(right_long)
 
-    # -------------------------------------------------------------------------
-    # 💡 [곡률 보정] 
-    # -------------------------------------------------------------------------
-    path_reliable = (md is not None and len(md.position.x) > 20 and len(md.position.y) > 20)
-    
-    def get_curve_offset(target_long):
-      if not path_reliable or target_long <= 0.0:
-        return 0.0
-      calc_dist = min(float(target_long), 20.0) 
-      return float(np.interp(calc_dist, list(md.position.x), list(md.position.y)))
+        # 💡 [수정] 좌표계(Y) 원본 부호를 유지한 채로 곡률을 먼저 빼고 마지막에 절댓값(거리) 처리
+        compensated_left_lat = float(abs(raw_left_lat - left_curve_offset))
+        compensated_right_lat = float(abs(raw_right_lat - right_curve_offset))
 
-    left_curve_offset = get_curve_offset(left_long)
-    right_curve_offset = get_curve_offset(right_long)
+        # -------------------------------------------------------------------------
+        # 💡 [방어 구역 적용] 보정된 거리, 실제 차선 엣지, 최대 감시폭을 모두 넘겨서 감지!
+        left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_lane_edge, left_max_dist)
+        right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge, right_max_dist)
 
-    compensated_left_lat = float(abs(left_lat - left_curve_offset))
-    compensated_right_lat = float(abs(right_lat + right_curve_offset))
+        # 💡 [핵심 반영] 0.5m 미만은 무시하고, 동적으로 계산된 최대 감시폭(max_dist)까지만 엄격하게 감시!
+        left_ok = left_cutin and (0.5 < compensated_left_lat < left_max_dist) and (left_long > 0.0)
+        right_ok = right_cutin and (0.5 < compensated_right_lat < right_max_dist) and (right_long > 0.0)
 
-    # -------------------------------------------------------------------------
-    # 💡 [방어 구역 적용] 보정된 거리, 실제 차선 엣지, 최대 감시폭을 모두 넘겨서 감지!
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge, right_max_dist)
+        if not left_ok and not right_ok:
+            return lead_dict
 
-    # 💡 [핵심 반영] 0.5m 미만은 무시하고, 동적으로 계산된 최대 감시폭(max_dist)까지만 엄격하게 감시!
-    left_ok = left_cutin and (0.5 < compensated_left_lat < left_max_dist) and (left_long > 0.0)
-    right_ok = right_cutin and (0.5 < compensated_right_lat < right_max_dist) and (right_long > 0.0)
+        # 시스템에 넘겨줄 위치 결정 (기존 로직 유지용 절댓값 변수 선언)
+        abs_left_lat = abs(raw_left_lat)
+        abs_right_lat = abs(raw_right_lat)
 
-    if not left_ok and not right_ok:
-      return lead_dict
+        if left_ok and right_ok:
+            if left_long <= right_long:
+                lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
+            else:
+                lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
+        elif left_ok:
+            lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
+        else:
+            lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
 
-    # 시스템에 넘겨줄 위치 결정
-    if left_ok and right_ok:
-      if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
-      else:
-        lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
-    elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat = +left_lat, left_long, left_vrel, left_vlat
-    else:
-      lat_dist, long_dist, v_rel, v_lat = -right_lat, right_long, right_vrel, right_vlat
+        actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    actual_vLead = max(0.0, CS.vEgo + v_rel)
+        # 이하 상태 덮어쓰기 로직 동일
+        if lead_dict['status']:
+            if lead_dict['dRel'] > long_dist:
+                lead_dict['dRel'] = long_dist
+                lead_dict['yRel'] = lat_dist
+                lead_dict['vRel'] = v_rel             
+                lead_dict['vLead'] = actual_vLead 
+                lead_dict['vLeadK'] = actual_vLead
+                lead_dict['aLead'] = 0.0              
+                lead_dict['aLeadK'] = 0.0
+                lead_dict['vLat'] = v_lat
+                lead_dict['modelProb'] = 0.8
+                lead_dict['radarTrackId'] = -1
+                lead_dict['radar'] = True
+        else:
+            lead_dict['status'] = True
+            lead_dict['dRel'] = long_dist
+            lead_dict['yRel'] = lat_dist
+            lead_dict['vRel'] = v_rel             
+            lead_dict['vLead'] = actual_vLead
+            lead_dict['vLeadK'] = actual_vLead
+            lead_dict['aLead'] = 0.0
+            lead_dict['aLeadK'] = 0.0
+            lead_dict['vLat'] = v_lat
+            lead_dict['modelProb'] = 0.8
+            lead_dict['radarTrackId'] = -1
+            lead_dict['radar'] = True
 
-    # (이하 상태 덮어쓰기 로직 동일)
-    if lead_dict['status']:
-      if lead_dict['dRel'] > long_dist:
-        lead_dict['dRel'] = long_dist
-        lead_dict['yRel'] = lat_dist
-        lead_dict['vRel'] = v_rel             
-        lead_dict['vLead'] = actual_vLead 
-        lead_dict['vLeadK'] = actual_vLead
-        lead_dict['aLead'] = 0.0              
-        lead_dict['aLeadK'] = 0.0
-        lead_dict['vLat'] = v_lat
-        lead_dict['modelProb'] = 0.8
-        lead_dict['radarTrackId'] = -1
-        lead_dict['radar'] = True
-    else:
-      lead_dict['status'] = True
-      lead_dict['dRel'] = long_dist
-      lead_dict['yRel'] = lat_dist
-      lead_dict['vRel'] = v_rel             
-      lead_dict['vLead'] = actual_vLead
-      lead_dict['vLeadK'] = actual_vLead
-      lead_dict['aLead'] = 0.0
-      lead_dict['aLeadK'] = 0.0
-      lead_dict['vLat'] = v_lat
-      lead_dict['modelProb'] = 0.8
-      lead_dict['radarTrackId'] = -1
-      lead_dict['radar'] = True
-
-    return lead_dict
+        return lead_dict
 
 
 # fuses camera and radar data for best lead detection
