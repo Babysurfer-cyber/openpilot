@@ -843,7 +843,7 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_lat - past_lat) / time_diff
 
-    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어!
+    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어! (감시용)
     if cur_lat <= 1.6:
       # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
@@ -860,6 +860,7 @@ class RadarD:
     is_cutting_in = v_lat < v_lat_threshold
 
     return is_cutting_in, v_long_rel, v_lat
+
 
   def corner_radar(self, CS, md, lead_dict):
     # 💡 [수정] 원본 부호 유지: 왼쪽은 양수(+), 오른쪽은 음수(-) 좌표계를 그대로 살림
@@ -933,12 +934,15 @@ class RadarD:
 
     # -------------------------------------------------------------------------
     # 💡 [방어 구역 적용] 보정된 거리, 실제 차선 엣지, 최대 감시폭을 모두 넘겨서 감지!
+    # (감시 자체는 max_dist까지 진행하여 상태값 업데이트)
     left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_lane_edge, left_max_dist)
     right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge, right_max_dist)
 
-    # 💡 [핵심 반영] 0.5m 미만은 무시하고, 동적으로 계산된 최대 감시폭(max_dist)까지만 엄격하게 감시!
-    left_ok = left_cutin and (0.5 < compensated_left_lat < left_max_dist) and (left_long > 0.0)
-    right_ok = right_cutin and (0.5 < compensated_right_lat < right_max_dist) and (right_long > 0.0)
+    # -------------------------------------------------------------------------
+    # 💡 [핵심 반영] 감속 개입 조건: max_dist 대신 lane_edge 이내로 들어왔을 때만 제어권 인가!
+    # 차선이 없을 경우 get_lane_edge에서 기본값(2.25m)을 반환하므로 동일하게 처리됨.
+    left_ok = left_cutin and (0.5 < compensated_left_lat <= left_lane_edge) and (left_long > 0.0)
+    right_ok = right_cutin and (0.5 < compensated_right_lat <= right_lane_edge) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
