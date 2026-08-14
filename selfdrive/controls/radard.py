@@ -855,7 +855,7 @@ class RadarD:
       v_lat_threshold = -0.3  
     else:              
       # 최외곽 구역 (차선 반폭 + 0.5m 초과): 멀리서 훅 치고 들어오는 칼치기 저격
-      v_lat_threshold = -0.6  
+      v_lat_threshold = -0.5  
 
     is_cutting_in = v_lat < v_lat_threshold
 
@@ -941,8 +941,8 @@ class RadarD:
     # -------------------------------------------------------------------------
     # 💡 [핵심 반영] 감속 개입 조건: max_dist 대신 lane_edge 이내로 들어왔을 때만 제어권 인가!
     # 차선이 없을 경우 get_lane_edge에서 기본값(2.25m)을 반환하므로 동일하게 처리됨.
-    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge) and (left_long > 0.0)
-    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge) and (right_long > 0.0)
+    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.1) and (left_long > 0.0)
+    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.1) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
