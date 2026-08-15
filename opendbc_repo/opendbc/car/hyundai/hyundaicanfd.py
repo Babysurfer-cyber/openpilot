@@ -630,17 +630,28 @@ def _apply_lane_desire(values, desire):
     values['LANE_CHANGING'] = 4
 
 def _apply_radar_blink(values, radar_pairs, frame, *,
-                      disp_dist=30.0, min_dist=14.0,
+                      disp_dist=30.0, min_dist=14.0, max_dist=40.0,
                       max_interval=100, t=1.0):
   """
   거리 > min_dist 일 때만 깜빡임.
   거리 멀수록 interval 커짐(느리게).
   """
   for det_key, dist_key in radar_pairs:
+    # 💡 1. 신호가 없어서 꺼진(0) 경우 무시 (허공에서 깜빡이는 오류 방지)
+    if values.get(det_key, 0) == 0:
+      continue
+
     dist = values[dist_key]
+    
+    # 💡 2. 40m 초과 시 깜빡이지 않고 0(미표시)으로 강제 처리
+    if dist > max_dist:
+      values[det_key] = 0
+      continue
+
     if dist <= min_dist:
       continue
 
+    # 기존 로직 (disp_dist(30m)까지는 거리에 비례해 느려지고, 그 이후론 40m까지 가장 느리게 깜빡임)
     d = min(dist, disp_dist)
     interval = int((1 + (max_interval - 1) * (d / disp_dist)) * t)
     interval = _clip_int(interval, 1, max_interval)
@@ -648,6 +659,7 @@ def _apply_radar_blink(values, radar_pairs, frame, *,
     blink = (frame // interval) & 1
     values[det_key] = 1 - blink
     values[dist_key] = min_dist
+
 
 def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
                      lane_line=True, corner_radar=True,
@@ -657,36 +669,24 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
   if lane_line:
     md = getattr(CS, 'MD', None)
     
-    # 💡 [신뢰도 조건 수정] 좌(1), 우(2) 차선 중 '하나라도(or)' 인식 확률 50% 이상이면 신뢰!
+    # [신뢰도 조건] 좌(1), 우(2) 차선 중 하나라도 50% 이상이면 신뢰
     lane_reliable = (md is not None and 
                      len(md.laneLineProbs) > 2 and 
                      (md.laneLineProbs[1] > 0.5 or md.laneLineProbs[2] > 0.5) and 
                      len(md.position.x) > 20 and len(md.position.y) > 20)
 
     if lane_reliable:
-      # 💡 1. 전방 40m 기준 경로(Path) 예측
       y_40m = float(np.interp(40.0, list(md.position.x), list(md.position.y)))
-      
-      # 💡 2. 방향 반전(-) 및 스케일링 조정(2.0)
-      # 모델이 인식한 Y값 부호를 뒤집기 위해 마이너스(-)를 곱해줍니다.
-      # 40m 거리는 30m보다 Y값(쏠림)이 훨씬 크므로, 계수를 4.5에서 2.0으로 낮춰 비율을 맞춥니다.
       target_curve = -y_40m * 6.0
     else:
-      # 차선이 양쪽 다 지워졌을 때(둘 다 50% 미만): 조향각 폴백 (이 값은 부호가 잘 맞으므로 그대로 유지)
       target_curve = CS.out.steeringAngleDeg / 1.4
 
-    # -------------------------------------------------------------------------
-    # 💡 [완충 장치 (Low-Pass Filter)] 차선이 바르르 떨리지 않게 부드럽게 렌더링
-    # -------------------------------------------------------------------------
     if not hasattr(_make_ccnc_values, '_filt_curve'):
       _make_ccnc_values._filt_curve = target_curve
 
-    # 차선 변경(desire) 여부와 상관없이 항상 곡률 업데이트
     alpha = 0.4 
     _make_ccnc_values._filt_curve = (alpha * target_curve) + ((1.0 - alpha) * _make_ccnc_values._filt_curve)
-
     curvature = int(round(_make_ccnc_values._filt_curve))
-    # -------------------------------------------------------------------------
 
     mag = min(abs(curvature), 15)
     curv = mag + (-1 if curvature < 0 else 0)
@@ -705,7 +705,11 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       ('RR_DETECT', 'RR_DETECT_DISTANCE'),
     ]
     for det_key, dist_key in radar_all:
-      if values[det_key] >= 4 and values[dist_key] != 0:
+      # 💡 3. 베이스 로직에서도 후방 레이더 40m 초과 시 즉시 0 처리
+      is_rear = det_key.startswith(('LR', 'RR'))
+      if is_rear and values[dist_key] > 40.0:
+        values[det_key] = 0
+      elif values[det_key] >= 4 and values[dist_key] != 0:
         values[det_key] = 1
 
     if blink_pairs:
