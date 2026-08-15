@@ -705,7 +705,11 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       ('RR_DETECT', 'RR_DETECT_DISTANCE'),
     ]
     for det_key, dist_key in radar_all:
-      if values[det_key] >= 4 and values[dist_key] != 0:
+      # 💡 후측방 코너레이더(LR, RR) 세로거리 30m 제한 추가
+      is_rear = det_key.startswith(('LR', 'RR'))
+      if is_rear and values[dist_key] > 30.0:
+        values[det_key] = 0
+      elif values[det_key] >= 4 and values[dist_key] != 0:
         values[det_key] = 1
 
     if blink_pairs:
