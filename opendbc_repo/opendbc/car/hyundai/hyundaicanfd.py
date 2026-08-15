@@ -631,22 +631,24 @@ def _apply_lane_desire(values, desire):
 
 def _apply_radar_blink(values, radar_pairs, frame, *,
                       disp_dist=30.0, min_dist=14.0,
-                      max_interval=20, t=1.0):
+                      max_interval=100, t=1.0):
   """
-  거리 > min_dist 및 <= disp_dist 일 때만 깜빡임.
+  거리 > min_dist 일 때만 깜빡임.
+  거리 멀수록 interval 커짐(느리게).
   """
   for det_key, dist_key in radar_pairs:
-    # 💡 1. 차량이 감지되지 않았거나 30m 초과로 꺼진(0) 경우 깜빡이지 않음
+    # 💡 [핵심 보완] 차가 없거나 30m 초과로 0 처리된 경우 깜빡이지 않음 (유령 차량 방지)
     if values.get(det_key, 0) == 0:
       continue
 
-    dist = values.get(dist_key, 0)
-    # 💡 2. 14m 이하(상시 점등)이거나 30m 초과 시 깜빡이지 않음
-    if dist <= min_dist or dist > disp_dist:
+    dist = values[dist_key]
+    if dist <= min_dist:
       continue
 
-    # 💡 3. 인터벌 떨림 방지: 안정적인 깜빡임 주기 적용 (기본 20프레임)
-    interval = _clip_int(int(max_interval * t), 1, 100)
+    # 💡 기존 거리별 가변 인터벌 수식 유지 (멀수록 천천히 깜빡임)
+    d = min(dist, disp_dist)
+    interval = int((1 + (max_interval - 1) * (d / disp_dist)) * t)
+    interval = _clip_int(interval, 1, max_interval)
 
     blink = (frame // interval) & 1
     values[det_key] = 1 - blink
@@ -698,13 +700,12 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     ]
     for det_key, dist_key in radar_all:
       is_rear = det_key.startswith(('LR', 'RR'))
-      # 💡 후측방 30m 초과 시 즉시 0 처리
+      # 💡 후측방 코너레이더 세로거리 30m 초과 시 미표시(0)
       if is_rear and values[dist_key] > 30.0:
         values[det_key] = 0
       elif values[det_key] >= 4 and values[dist_key] != 0:
         values[det_key] = 1
 
-    # 💡 blink 함수는 30m 이하 및 14m 초과인 유효 대상만 켜고 끔
     if blink_pairs:
       _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
 
