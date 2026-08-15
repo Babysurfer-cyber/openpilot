@@ -844,7 +844,7 @@ class RadarD:
     v_lat = (curr_lat - past_lat) / time_diff
 
     # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어! (감시용)
-    if cur_lat <= 1.6:
+    if cur_lat <= 1.8:
       # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
     elif cur_lat <= (lane_edge + 0.2):  
@@ -938,8 +938,8 @@ class RadarD:
     # -------------------------------------------------------------------------
     # 💡 [핵심 반영] 감속 개입 조건: max_dist 대신 lane_edge 이내로 들어왔을 때만 제어권 인가!
     # 차선이 없을 경우 get_lane_edge에서 기본값(2.25m)을 반환하므로 동일하게 처리됨.
-    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.2) and (left_long > 0.0)
-    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.2) and (right_long > 0.0)
+    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.25) and (left_long > 0.0)
+    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.25) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
