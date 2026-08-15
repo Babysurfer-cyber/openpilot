@@ -630,17 +630,25 @@ def _apply_lane_desire(values, desire):
     values['LANE_CHANGING'] = 4
 
 def _apply_radar_blink(values, radar_pairs, frame, *,
-                      disp_dist=30.0, min_dist=14.0,
+                      disp_dist=30.0, min_dist=14.0, max_dist=40.0,
                       max_interval=100, t=1.0):
   """
   거리 > min_dist 일 때만 깜빡임.
   거리 멀수록 interval 커짐(느리게).
+  거리 > max_dist (40m) 일 때는 아예 표시하지 않음 (0).
   """
   for det_key, dist_key in radar_pairs:
     dist = values[dist_key]
+    
+    # 💡 40m 초과 시 즉시 0(미표시)으로 만들고 다음 루프로 넘어감
+    if dist > max_dist:
+      values[det_key] = 0
+      continue
+
     if dist <= min_dist:
       continue
 
+    # 기존 깜빡임 로직 (14m ~ 40m 이하일 때만 실행됨)
     d = min(dist, disp_dist)
     interval = int((1 + (max_interval - 1) * (d / disp_dist)) * t)
     interval = _clip_int(interval, 1, max_interval)
