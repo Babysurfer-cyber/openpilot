@@ -873,8 +873,8 @@ class RadarD:
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 💡 [핵심 추가] 램프 구간 방어: 핸들이 60도 이상 꺾이면 차선 확장 금지 (기본 감시폭으로 축소)
-      if abs_steering > 60.0:
+      # 💡 [핵심 추가] 램프 구간 방어: 핸들이 45도 이상 꺾이면 차선 확장 금지 (기본 감시폭으로 축소)
+      if abs_steering > 45.0:
         return 2.25, 2.75
 
       # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
@@ -996,7 +996,6 @@ class RadarD:
       lead_dict['radar'] = True
 
     return lead_dict
-
 
 
 # fuses camera and radar data for best lead detection
