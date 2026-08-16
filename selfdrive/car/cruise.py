@@ -548,13 +548,13 @@ class VCruiseCarrot:
           self._v_cruise_kph_at_brake = 0
         elif self._cruise_ready or not CC.enabled or CS.cruiseState.standstill or self.carrot_cruise_active:
           
-          # ▼▼▼ [추가] 시동 후 최초로 + 버튼 눌러서 켤 때의 로직 ▼▼▼
+          # ▼▼▼ [수정] 시동 후 최초로 + 버튼 눌러서 켤 때의 로직 (제한속도+10 or 40) ▼▼▼
           if not CC.enabled and getattr(self, 'is_first_activation', True):
             self.is_first_activation = False  # 이제 최초 실행이 아님을 도장 찍음!
             if self.nRoadLimitSpeed > 0:
-              v_cruise_kph = self.nRoadLimitSpeed
+              v_cruise_kph = self.nRoadLimitSpeed + 10  # 도로제한속도가 있으면 + 10
             else:
-              v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
+              v_cruise_kph = 50  # 도로제한속도가 없으면 기본 50으로 세팅
           # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
           
           if False: #self._cruise_button_mode in [2, 3]:
