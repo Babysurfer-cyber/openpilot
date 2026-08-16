@@ -817,48 +817,6 @@ class RadarD:
       self.radar_state.leadOne = chosen
       self.radar_detected = detected
 
-  def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float, max_lat_dist: float):
-    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 동적으로 계산된 max_lat_dist 적용) 전방 30m 까지 감시
-    if cur_lat <= 0.01 or cur_lat > max_lat_dist or cur_long > 30.0: 
-      self._corner_missing_cnt[side] += 1
-      if self._corner_missing_cnt[side] > 5:  
-        self._corner_hist[side].clear()
-      return False, 0.0, 0.0
-    else:
-      self._corner_missing_cnt[side] = 0      
-      self._corner_hist[side].append((cur_long, cur_lat))
-
-    h = self._corner_hist[side]
-    n = len(h)
-    if n < 5:
-      return False, 0.0, 0.0
-
-    past_long = (h[0][0] + h[1][0]) / 2.0
-    past_lat  = (h[0][1] + h[1][1]) / 2.0
-    curr_long = (h[-1][0] + h[-2][0]) / 2.0
-    curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
-    
-    time_diff = max((n - 2) * DT_MDL, DT_MDL) 
-
-    v_long_rel = (curr_long - past_long) / time_diff
-    v_lat = (curr_lat - past_lat) / time_diff
-
-    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어! (감시용)
-    if cur_lat <= 1.8:
-      # ① 초근접 구역 (내차 반폭 + 상대차 반폭 이내): 이미 내 차와 겹침/충돌 임박
-      v_lat_threshold = 0.2  
-    elif cur_lat <= (lane_edge + 0.2):  
-      # ② 중간 구역 (0.95m 초과 ~ 차선 반폭): 슬금슬금 좁혀오는 차량 방어
-      v_lat_threshold = -0.1    
-    else:              
-      # ③ 외곽 구역 (차선 반폭 ~ ): 훅 좁혀오는 차량 방어
-      v_lat_threshold = -0.2  
-
-    is_cutting_in = v_lat < v_lat_threshold
-
-    return is_cutting_in, v_long_rel, v_lat
-
-
   def corner_radar(self, CS, md, lead_dict):
     # 💡 [수정] 원본 부호 유지: 왼쪽은 양수(+), 오른쪽은 음수(-) 좌표계를 그대로 살림
     raw_left_lat = CS.leftLatDist
@@ -866,10 +824,17 @@ class RadarD:
     left_long = CS.leftLongDist
     right_long = CS.rightLongDist
 
+    # 💡 [추가] 현재 차량의 스티어링 각도 (절댓값) - 곡률 판단용
+    abs_steering = abs(CS.steeringAngleDeg)
+
     # -------------------------------------------------------------------------
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
+      # 💡 [핵심 추가] 램프 구간 방어: 핸들이 45도 이상 꺾이면 차선 확장 금지 (기본 감시폭으로 축소)
+      if abs_steering > 45.0:
+        return 2.25, 2.75
+
       # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
       if md is None or len(md.laneLineProbs) < 3:
         return 2.25, 2.75
@@ -989,6 +954,7 @@ class RadarD:
       lead_dict['radar'] = True
 
     return lead_dict
+
 
 
 # fuses camera and radar data for best lead detection
