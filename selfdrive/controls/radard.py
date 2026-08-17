@@ -443,6 +443,8 @@ class RadarD:
     self._corner_missing_cnt = {"L": 0, "R": 0} 
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
 
+    # [추가] 이전 끼어들기 상태 기억용 변수
+    self.prev_corner_radar_cutin = False
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -948,11 +950,12 @@ class RadarD:
     left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.25) and (left_long > 0.0)
     right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.25) and (right_long > 0.0)
 
-    # ▼▼▼ [새로 추가] hyundaicanfd.py(계기판 표시)로 끼어들기 상태 전달 (징검다리) ▼▼▼
-    if left_ok or right_ok:
-      self.params.put_bool_nonblocking("CornerRadarCutIn", True)
-    else:
-      self.params.put_bool_nonblocking("CornerRadarCutIn", False)
+    # ▼▼▼ [최적화 적용] 상태가 변했을 때만 Params에 기록하여 CPU/메모리 부하 최소화 ▼▼▼
+    current_cutin_state = bool(left_ok or right_ok)
+    
+    if getattr(self, 'prev_corner_radar_cutin', False) != current_cutin_state:
+      self.params.put_bool_nonblocking("CornerRadarCutIn", current_cutin_state)
+      self.prev_corner_radar_cutin = current_cutin_state
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if not left_ok and not right_ok:
