@@ -745,6 +745,11 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
       if CS.cruise_buttons_msg is not None:
         values = copy.copy(CS.cruise_buttons_msg)
 
+        # ▼▼▼ [새로 추가] 운전자가 누른 LFA 버튼 신호를 차량이 모르게 0으로 숨김 (코너 레이더 리셋 방지) ▼▼▼
+        if "LFA_BTN" in values and values["LFA_BTN"] == 1:
+            values["LFA_BTN"] = 0
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
         if  HDA_LFA_SymSta == 0 and 0 < frame % 200 < 12:
           values["LFA_BTN"] = 1
 
