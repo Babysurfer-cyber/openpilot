@@ -948,6 +948,13 @@ class RadarD:
     left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.25) and (left_long > 0.0)
     right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.25) and (right_long > 0.0)
 
+    # ▼▼▼ [새로 추가] hyundaicanfd.py(계기판 표시)로 끼어들기 상태 전달 (징검다리) ▼▼▼
+    if left_ok or right_ok:
+      self.params.put_bool_nonblocking("CornerRadarCutIn", True)
+    else:
+      self.params.put_bool_nonblocking("CornerRadarCutIn", False)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     if not left_ok and not right_ok:
       return lead_dict
 
