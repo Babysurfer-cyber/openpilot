@@ -911,18 +911,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # ▼▼▼ [핵심 수정] radard.py에서 판단한 끼어들기 여부를 읽어와 HDA_MODE2 적용 ▼▼▼
-        # (CPU 부하를 막기 위해 Params 객체를 한 번만 생성하여 재사용합니다)
-        if not hasattr(create_ccnc_messages, 'params_memory'):
-          create_ccnc_messages.params_memory = Params()
-          
-        is_cutting_in = create_ccnc_messages.params_memory.get_bool("CornerRadarCutIn")
-        
-        if is_cutting_in:
-          values['HDA_MODE2'] = 4  # 끼어들기 인식 중일 때만 4
-        else:
-          values['HDA_MODE2'] = 1  # 평상시 1
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        values['HDA_MODE2'] = 1
 
         _make_ccnc_values(
           values, CS, lat_active, frame, hud_control,
