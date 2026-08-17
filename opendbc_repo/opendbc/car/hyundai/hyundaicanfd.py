@@ -911,7 +911,48 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        values['HDA_MODE2'] = 1
+        # ▼▼▼ [새로 추가] hyundaicanfd.py 내부에서 직접 끼어들기 판단 후 HDA_MODE2 적용 ▼▼▼
+        # CarState(CS)에서 코너 레이더의 원본 데이터를 직접 가져옴
+        left_long = getattr(CS, 'leftLongDist', 0.0)
+        right_long = getattr(CS, 'rightLongDist', 0.0)
+        raw_left_lat = getattr(CS, 'leftLatDist', 99.0)
+        raw_right_lat = getattr(CS, 'rightLatDist', 99.0)
+
+        # 1. 차선 엣지 계산 (차선 없으면 2.25m, 있으면 반폭 + 0.95m)
+        def get_lane_edge_canfd(target_long, is_left):
+            if md is None or len(md.laneLineProbs) < 3:
+                return 2.25
+            idx = 1 if is_left else 2
+            if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
+                calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
+                lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
+                return lane_y + 0.95
+            return 2.25
+
+        left_edge = get_lane_edge_canfd(left_long, True)
+        right_edge = get_lane_edge_canfd(right_long, False)
+
+        # 2. 곡률 보정 (커브길에서 계기판 아이콘 오작동 방지)
+        path_reliable = (md is not None and len(md.position.x) > 20 and len(md.position.y) > 20)
+        def get_curve_offset_canfd(target_long):
+            if not path_reliable or target_long <= 0.0:
+                return 0.0
+            calc_dist = min(float(target_long), 30.0)
+            return float(np.interp(calc_dist, list(md.position.x), list(md.position.y)))
+
+        comp_left_lat = abs(raw_left_lat - get_curve_offset_canfd(left_long))
+        comp_right_lat = abs(raw_right_lat - get_curve_offset_canfd(right_long))
+
+        # 3. 끼어들기 감지 조건 (세로 30m 이하 & 가로가 엣지 이내)
+        left_cutin = (0.0 < left_long <= 30.0) and (comp_left_lat <= left_edge)
+        right_cutin = (0.0 < right_long <= 30.0) and (comp_right_lat <= right_edge)
+
+        # 4. HDA_MODE2 값 적용
+        if left_cutin or right_cutin:
+            values['HDA_MODE2'] = 4
+        else:
+            values['HDA_MODE2'] = 1
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         _make_ccnc_values(
           values, CS, lat_active, frame, hud_control,
