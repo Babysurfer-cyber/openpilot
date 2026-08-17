@@ -443,8 +443,6 @@ class RadarD:
     self._corner_missing_cnt = {"L": 0, "R": 0} 
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
 
-    # [추가] 이전 끼어들기 상태 기억용 변수
-    self.prev_corner_radar_cutin = False
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -847,13 +845,13 @@ class RadarD:
 
     # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어! (감시용)
     if cur_lat <= (lane_edge - 0.3):
-      # ① 초근접 구역 (내 차선 0.2m 이내): 이미 내 차와 겹침/충돌 임박
+      # ① 초근접 구역 (내차로 0.3m 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
     elif cur_lat <= (lane_edge + 0.2):  
-      # ② 중간 구역 (내 차선 0.2 이내 ~ 내 차선 0.2m 바깥): 슬금슬금 좁혀오는 차량 방어
+      # ② 중간 구역 (내차로 0.3m 이내 ~ 내차로 바깥 0.2m): 슬금슬금 좁혀오는 차량 방어
       v_lat_threshold = -0.1    
     else:              
-      # ③ 외곽 구역 (그 외부 ~ ): 좁혀오는 차량 방어
+      # ③ 외곽 구역 (차선 반폭 ~ ): 좁혀오는 차량 방어
       v_lat_threshold = -0.2  
 
     is_cutting_in = v_lat < v_lat_threshold
@@ -950,14 +948,6 @@ class RadarD:
     left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.25) and (left_long > 0.0)
     right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.25) and (right_long > 0.0)
 
-    # ▼▼▼ [최적화 적용] 상태가 변했을 때만 Params에 기록하여 CPU/메모리 부하 최소화 ▼▼▼
-    current_cutin_state = bool(left_ok or right_ok)
-    
-    if getattr(self, 'prev_corner_radar_cutin', False) != current_cutin_state:
-      self.params.put_bool_nonblocking("CornerRadarCutIn", current_cutin_state)
-      self.prev_corner_radar_cutin = current_cutin_state
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
     if not left_ok and not right_ok:
       return lead_dict
 
@@ -1034,4 +1024,3 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
-
