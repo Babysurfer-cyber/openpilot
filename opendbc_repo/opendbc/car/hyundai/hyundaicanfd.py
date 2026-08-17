@@ -911,16 +911,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # ▼▼▼ [수정] 깜빡이를 켰을 때 해당 방향의 전/후방 BSD가 감지 중이면 HDA_MODE2 = 4 ▼▼▼
-        # CS.out.leftBlindspot(후측방), left_lane_warning(전측방 코너레이더)
-        left_danger = CS.out.leftBlinker and (CS.out.leftBlindspot or left_lane_warning)
-        right_danger = CS.out.rightBlinker and (CS.out.rightBlindspot or right_lane_warning)
-
-        if left_danger or right_danger:
-            values['HDA_MODE2'] = 4
-        else:
-            values['HDA_MODE2'] = 1
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        values['HDA_MODE2'] = 1
 
         _make_ccnc_values(
           values, CS, lat_active, frame, hud_control,
