@@ -911,7 +911,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        values['HDA_MODE2'] = 1
+        values['HDA_MODE2'] = 4
 
         _make_ccnc_values(
           values, CS, lat_active, frame, hud_control,
