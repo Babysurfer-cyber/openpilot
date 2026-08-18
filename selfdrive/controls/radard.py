@@ -870,91 +870,68 @@ class RadarD:
     abs_steering = abs(CS.steeringAngleDeg)
 
     # -------------------------------------------------------------------------
-    # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge)과 최대 감시폭(max_dist)을 동시 추출
+    # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge), 최대 감시폭(max_dist), 그리고 차선폭(lane_width)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 💡 [핵심 추가] 램프 구간 방어: 핸들이 45도 이상 꺾이면 차선 확장 금지 (기본 감시폭으로 축소)
+      # 💡 [수정] 모델 데이터가 없거나 램프 구간일 때는 기본 차선폭 2.6m를 함께 반환합니다.
       if abs_steering > 30.0:
-        return 2.25, 2.75
+        return 2.25, 2.75, 2.6
 
-      # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.25, 2.75
+        return 2.25, 2.75, 2.6
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
-        # 💡 [수정] 감시망이 30m이므로 보정 한계치도 30.0으로 동일하게 상향
         calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
-        # 모델이 인식한 순수 차선 반폭 (lane_y)
+        
         lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
+        lane_edge = lane_y + 0.95               
         
-        lane_edge = lane_y + 0.95               # 엣지 = 차선 반폭 + 상대차 반폭(0.9m)
-        
-        # 💡 [핵심] 모델이 계산한 내 실제 차선폭(좌우 차선 거리 합산) 구하기
         has_left = md.laneLineProbs[1] > 0.5 and len(md.laneLines[1].y) > 0
         has_right = md.laneLineProbs[2] > 0.5 and len(md.laneLines[2].y) > 0
         
         if has_left and has_right:
           left_y = float(abs(np.interp(calc_dist, list(md.laneLines[1].x), list(md.laneLines[1].y))))
           right_y = float(abs(np.interp(calc_dist, list(md.laneLines[2].x), list(md.laneLines[2].y))))
-          lane_width = left_y + right_y  # 좌측 거리 + 우측 거리 = 모델이 계산한 실제 차선폭!
+          lane_width = left_y + right_y  
         else:
-          lane_width = lane_y * 2.0      # 한쪽만 보일 때는 반폭의 2배 예비 적용
+          lane_width = lane_y * 2.0      
             
-        # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
         lane_width = min(lane_width, 3.6)
         
-        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.9m) * 0.6
         max_search_dist = lane_edge + (lane_width - 1.9) * 0.6
-        
-        # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
         max_search_dist = max(lane_edge, max_search_dist)
         
-        return lane_edge, max_search_dist
+        # 💡 [추가] 계산된 lane_width도 밖으로 꺼내서 반환합니다!
+        return lane_edge, max_search_dist, lane_width
       
-      return 2.25, 2.75
+      return 2.25, 2.75, 2.6
 
-    left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
-    right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
+    # 💡 3개의 리턴 값을 받도록 수정
+    left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
+    right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
     # -------------------------------------------------------------------------
     # 💡 [곡률 보정 삭제] 이중 보정으로 인한 커브길 오인식 버그 해결!
-    # 차선(laneLines)과 레이더(LatDist)는 이미 곡률을 포함한 동일한 원본 좌표계이므로,
-    # 보정 수식을 걷어내고 순수한 절대 거리(abs)만 추출하여 바로 비교합니다.
     # -------------------------------------------------------------------------
     compensated_left_lat = float(abs(raw_left_lat))
     compensated_right_lat = float(abs(raw_right_lat))
 
     # -------------------------------------------------------------------------
-    # 💡 [방어 구역 적용] 보정된 거리, 실제 차선 엣지, 최대 감시폭을 모두 넘겨서 감지!
-    # (감시 자체는 max_dist까지 진행하여 상태값 업데이트)
+    # 💡 [방어 구역 적용] 3단계 방어 로직 통과 여부 확인
+    # -------------------------------------------------------------------------
     left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_lane_edge, left_max_dist)
     right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge, right_max_dist)
 
     # -------------------------------------------------------------------------
-    # 💡 [동적 마진 계산] 내 차 속도(vEgo)와 상대차 진입 속도(v_lat)에 따라 개입 구역을 유동적으로 확장!
+    # 💡 [핵심 반영] 감속 개입 조건: 현재 차선폭의 10%를 동적 마진으로 추가!
     # -------------------------------------------------------------------------
-    def get_dynamic_margin(v_ego, v_lat):
-      # 1. 속도 기반 마진: 정체 시(0m/s) 0.1m ~ 고속도로(28m/s, 약 100km/h) 0.4m 확장
-      margin_speed = float(np.interp(v_ego, [0.0, 28.0], [0.1, 0.4]))
-      
-      # 2. 가로 속도 기반 마진: 훅 들어오는 칼치기(-0.5m/s)일 때 0.2m 추가 확보, 천천히 오면 0.0m
-      # v_lat은 내 쪽으로 올 때 음수(-)임
-      margin_lat = float(np.interp(v_lat, [-0.5, -0.1], [0.2, 0.0]))
-      
-      # 최종 마진 (최소 0.1m ~ 최대 0.6m로 제한하여 엉뚱한 차선 침범 방지)
-      return clamp(margin_speed + margin_lat, 0.1, 0.6)
-
-    # 좌/우 각각의 상황에 맞는 맞춤형 마진 산출
-    left_dynamic_margin = get_dynamic_margin(CS.vEgo, left_vlat)
-    right_dynamic_margin = get_dynamic_margin(CS.vEgo, right_vlat)
-
-    # 💡 [핵심 반영] 감속 개입 조건: 고정된 0.25 대신 유동적인 dynamic_margin 적용!
-    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + left_dynamic_margin) and (left_long > 0.0)
-    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + right_dynamic_margin) and (right_long > 0.0)
+    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + (left_lane_width * 0.1)) and (left_long > 0.0)
+    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + (right_lane_width * 0.1)) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
+
 
     # 시스템에 넘겨줄 위치 결정 (기존 로직 유지용 절댓값 변수 선언)
     abs_left_lat = abs(raw_left_lat)
