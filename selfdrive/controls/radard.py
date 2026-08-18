@@ -875,11 +875,11 @@ class RadarD:
     def get_lane_edge(target_long, is_left):
       # 💡 [핵심 추가] 램프 구간 방어: 핸들이 45도 이상 꺾이면 차선 확장 금지 (기본 감시폭으로 축소)
       if abs_steering > 30.0:
-        return 2.25, 3.0
+        return 2.25, 2.75
 
       # 모델 데이터가 없으면: 기본 엣지(2.25m) + 0.5m = 2.75m 감시
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.25, 3.0
+        return 2.25, 2.75
       
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
@@ -904,20 +904,19 @@ class RadarD:
         # ▼▼▼ [추가] 차선폭이 비정상적으로 넓게 인식되는 것을 방지 (최대 3.6m 제한) ▼▼▼
         lane_width = min(lane_width, 3.6)
         
-        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.9m)
-        max_search_dist = lane_edge + (lane_width - 1.9)
+        # 💡 유저 맞춤형 수식 적용: 엣지 + (차선폭 - 1.9m) * 0.6
+        max_search_dist = lane_edge + (lane_width - 1.9) * 0.6
         
         # (안전장치) 혹시라도 도로가 비정상적으로 좁을 때 감시폭이 엣지 안쪽으로 파고들지 않게 방어
         max_search_dist = max(lane_edge, max_search_dist)
         
         return lane_edge, max_search_dist
       
-      return 2.25, 3.0
+      return 2.25, 2.75
 
     left_lane_edge, left_max_dist = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist = get_lane_edge(right_long, False)
 
-    # -------------------------------------------------------------------------
     # -------------------------------------------------------------------------
     # 💡 [곡률 보정 삭제] 이중 보정으로 인한 커브길 오인식 버그 해결!
     # 차선(laneLines)과 레이더(LatDist)는 이미 곡률을 포함한 동일한 원본 좌표계이므로,
