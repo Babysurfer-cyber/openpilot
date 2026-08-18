@@ -847,9 +847,11 @@ class RadarD:
     if cur_lat <= (lane_edge - 0.3):
       # ① 초근접 구역 (내차로 0.2m 이내): 이미 내 차와 겹침/충돌 임박
       v_lat_threshold = 0.2  
-    elif cur_lat <= (lane_edge + 0.3):  
-      # ② 중간 구역 (내차로 0.2m 이내 ~ 내차로 바깥 0.3m): 슬금슬금 좁혀오는 차량 방어
+    elif cur_lat <= (lane_edge):  
+      # ② 중간 구역 (내차로 0.2m 이내 ~ 내차로 바깥): 슬금슬금 좁혀오는 차량 방어
       v_lat_threshold = -0.05    
+    elif cur_lat <= (lane_edge + 0.3):  
+      v_lat_threshold = -0.1    
     else:              
       # ③ 외곽 구역 (차선 반폭 ~ ): 좁혀오는 차량 방어
       v_lat_threshold = -0.2  
