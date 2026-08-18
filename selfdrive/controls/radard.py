@@ -932,10 +932,26 @@ class RadarD:
     right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge, right_max_dist)
 
     # -------------------------------------------------------------------------
-    # 💡 [핵심 반영] 감속 개입 조건: max_dist 대신 lane_edge 이내로 들어왔을 때만 제어권 인가!
-    # 차선이 없을 경우 get_lane_edge에서 기본값(2.25m)을 반환하므로 동일하게 처리됨.
-    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + 0.25) and (left_long > 0.0)
-    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + 0.25) and (right_long > 0.0)
+    # 💡 [동적 마진 계산] 내 차 속도(vEgo)와 상대차 진입 속도(v_lat)에 따라 개입 구역을 유동적으로 확장!
+    # -------------------------------------------------------------------------
+    def get_dynamic_margin(v_ego, v_lat):
+      # 1. 속도 기반 마진: 정체 시(0m/s) 0.1m ~ 고속도로(28m/s, 약 100km/h) 0.4m 확장
+      margin_speed = float(np.interp(v_ego, [0.0, 28.0], [0.1, 0.4]))
+      
+      # 2. 가로 속도 기반 마진: 훅 들어오는 칼치기(-0.5m/s)일 때 0.2m 추가 확보, 천천히 오면 0.0m
+      # v_lat은 내 쪽으로 올 때 음수(-)임
+      margin_lat = float(np.interp(v_lat, [-0.5, -0.1], [0.2, 0.0]))
+      
+      # 최종 마진 (최소 0.1m ~ 최대 0.6m로 제한하여 엉뚱한 차선 침범 방지)
+      return clamp(margin_speed + margin_lat, 0.1, 0.6)
+
+    # 좌/우 각각의 상황에 맞는 맞춤형 마진 산출
+    left_dynamic_margin = get_dynamic_margin(CS.vEgo, left_vlat)
+    right_dynamic_margin = get_dynamic_margin(CS.vEgo, right_vlat)
+
+    # 💡 [핵심 반영] 감속 개입 조건: 고정된 0.25 대신 유동적인 dynamic_margin 적용!
+    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + left_dynamic_margin) and (left_long > 0.0)
+    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + right_dynamic_margin) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
