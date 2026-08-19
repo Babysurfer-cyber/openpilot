@@ -868,6 +868,21 @@ class RadarD:
     left_long = CS.leftLongDist
     right_long = CS.rightLongDist
 
+    # -------------------------------------------------------------------------
+    # 💡 [추가] 앞차 정보 기반 동적 최대 감시 거리 설정 (저속/정체구간 노이즈 제거)
+    # -------------------------------------------------------------------------
+    # 앞차가 있고 거리가 유효하다면, (앞차 거리 + 5m)와 30m 중 짧은 거리를 한계선으로 설정
+    if lead_dict['status'] and lead_dict['dRel'] > 0:
+      dynamic_max_long = min(30.0, lead_dict['dRel'] + 5.0)
+    else:
+      dynamic_max_long = 30.0
+
+    # 옆차가 설정된 한계선(dynamic_max_long)보다 멀리 있으면 아예 감시망에서 제외!
+    if left_long > dynamic_max_long:
+      left_long = 0.0  
+    if right_long > dynamic_max_long:
+      right_long = 0.0 
+
     # 💡 [추가] 현재 차량의 스티어링 각도 (절댓값) - 곡률 판단용
     abs_steering = abs(CS.steeringAngleDeg)
 
