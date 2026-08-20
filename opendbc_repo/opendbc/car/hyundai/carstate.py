@@ -557,7 +557,7 @@ class CarState(CarStateBase):
         
         # 💡 [추가] 순정 BCA(후측방 충돌방지 보조) 회피 기동 시 오픈파일럿 조향 강제 해제!
         if bsm_info["COLLISION_AVOIDANCE_ACTIVE"] == 1:
-          ret.steerFaultTemporary = True
+          ret.steerOverride = True
 
     # cruise state
     if self.cruise_buttons_alt2 is not None:
