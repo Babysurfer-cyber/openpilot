@@ -719,9 +719,10 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     if blink_pairs:
       _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
 
+# 💡 파라미터에 corner_radar_cutin 추가
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          disp_angle, left_lane_warning, right_lane_warning,
-                         enable_corner_radar, stopping, canfd_debug):
+                         corner_radar_cutin, enable_corner_radar, stopping, canfd_debug):
   ret = []
 
   md = CS.MD
@@ -916,7 +917,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        values['HDA_MODE2'] = 1
+        # 💡 [핵심] carcontroller에서 넘어온 완벽한 스위치로 계기판 붉은색 경고 팝업!
+        values['HDA_MODE2'] = 4 if corner_radar_cutin else 1
 
         _make_ccnc_values(
           values, CS, lat_active, frame, hud_control,
