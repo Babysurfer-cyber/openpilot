@@ -8,6 +8,9 @@ from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.vehicle_model import VehicleModel
+from openpilot.common.params import Params
+import cereal.messaging as messaging  # 💡 [추가] radarState를 받아오기 위한 통신 모듈
+
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -150,10 +153,21 @@ class CarController(CarControllerBase):
     self.is_ldws_car = Params().get_bool("IsLdwsCar")
     self.enable_corner_radar = 0
 
+    # 💡 [추가] radarState 수신용 서브마스터 및 스위치 변수
+    self.sm = messaging.SubMaster(['radarState'])
+    self.corner_radar_cutin = False
+
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
 
   def update(self, CC, CS, now_nanos):
+    
+    # 💡 [추가] radarState 데이터를 실시간으로 가져와서 끼어들기 여부 판별!
+    self.sm.update(0) # 0초 대기(Non-blocking)로 최신 데이터만 쓱 읽어옴
+    if self.sm.updated['radarState']:
+      lead_one = self.sm['radarState'].leadOne
+      # 완벽한 공식: 레이더가 켜져있는데 TrackId가 -1 이면 코너 레이더 개입!
+      self.corner_radar_cutin = (lead_one.status and lead_one.radar and lead_one.radarTrackId == -1)
 
     if self.frame % 50 == 0:
       params = Params()
@@ -346,7 +360,8 @@ class CarController(CarControllerBase):
         self.hyundai_jerk.check_carrot_cruise(CC, CS, hud_control, stopping, accel, actuators.aTarget)
 
         if True: #not camera_scc:
-          can_sends.extend(hyundaicanfd.create_ccnc_messages(self.CP, self.packer, self.CAN, self.frame, CC, CS, hud_control, apply_angle, left_lane_warning, right_lane_warning, self.enable_corner_radar, stopping, self.canfd_debug))
+          # 💡 [수정] self.corner_radar_cutin 변수 추가 전달
+          can_sends.extend(hyundaicanfd.create_ccnc_messages(self.CP, self.packer, self.CAN, self.frame, CC, CS, hud_control, apply_angle, left_lane_warning, right_lane_warning, self.corner_radar_cutin, self.enable_corner_radar, stopping, self.canfd_debug))
           if hda2:
             can_sends.extend(hyundaicanfd.create_adrv_messages(self.CP, self.packer, self.CAN, self.frame))
           else:
