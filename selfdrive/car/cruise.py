@@ -325,7 +325,7 @@ class VCruiseCarrot:
 
     # ==============================================================
     # ▼ [수정] 5번 모드: 제한속도가 "변경될 때만" 크루즈 속도 +10 덮어쓰기
-    # ▼ [추가] 고속도로 주행 시 감속량이 30 초과 시, 감속량을 10 줄여서 적용
+    # ▼ [추가] 모든 도로에서 세팅 속도 변화량이 30 초과 감속 시 (제한속도 + 20) 적용
     # ==============================================================
     try:
       # CPU 과부하를 막기 위해 10프레임(0.1초)마다 한 번씩만 모드 읽어오기
@@ -347,17 +347,14 @@ class VCruiseCarrot:
           # 감속 상황 확인 (이전 제한속도보다 현재 제한속도가 낮아짐)
           is_decel = self.nRoadLimitSpeed < self.prev_limit_speed_for_auto
           
-          # 고속도로 주행 여부 (HDA 신호 활용)
-          is_highway = getattr(CS, 'highwayCam', 0) > 0
-          
-          # 고속도로에서 감속할 때만 완충 룰 적용
-          if is_decel and is_highway:
+          # 감속할 때 완충 룰 적용 (고속도로 조건 제거)
+          if is_decel:
             drop_amount = old_set_speed - new_set_speed
             
-            # 세팅 속도 변화량이 30보다 큰 경우 (감속량을 10 줄여서 적용)
+            # 세팅 속도 변화량이 30보다 큰 경우 (제한속도 + 20으로 적용)
             if drop_amount > 30.0:
-              new_set_speed = old_set_speed - (drop_amount - 10.0)
-              self._add_log(f"Auto Mode: HWY Drop {drop_amount} -> Adjusted to {new_set_speed}")
+              new_set_speed = float(self.nRoadLimitSpeed + 20.0)
+              self._add_log(f"Auto Mode: Drop {drop_amount} -> Adjusted to {new_set_speed} (Limit+20)")
               
           v_cruise_kph = new_set_speed
           self._add_log(f"Auto Mode: Limit changed to {self.nRoadLimitSpeed}. Set {v_cruise_kph}")
