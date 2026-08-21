@@ -324,7 +324,7 @@ class VCruiseCarrot:
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
     # ==============================================================
-    # ▼ [수정] 5번 모드: 고속도로 연속 제한속도 실시간 동기화
+    # ▼ [수정] 5번 모드: 제한속도 변동 시 사용자 맞춤형 오프셋(+@) 유지 기능
     # ==============================================================
     try:
       # CPU 과부하를 막기 위해 10프레임(0.1초)마다 한 번씩만 모드 읽어오기
@@ -332,26 +332,42 @@ class VCruiseCarrot:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
         
       if getattr(self, 'current_driving_mode', 3) == 5:
-        # 1. 초기화 (이전 속도 정보와 적용 여부 플래그)
+        # 1. 초기화: 오프셋 저장용 변수와 시스템 제어 속도 기억 변수 추가
         if not hasattr(self, 'prev_limit_speed_for_auto'):
           self.prev_limit_speed_for_auto = 0
-          self.auto_mode_applied = False  # ⭐️ 해당 구간에서 오토모드가 적용되었는지 확인하는 깃발
+          self.auto_mode_applied = False
+          self.user_speed_offset = 10.0  # 기본 설정값 (+10km/h)
+          self.last_auto_speed = 0.0     # 오토모드가 마지막으로 맞춰준 속도
 
         if self.nRoadLimitSpeed > 0:
-          # 2. 제한속도가 바뀌었거나, 현재 제한속도 구간에서 아직 동기화가 안 된 경우 즉시 작동!
+          
+          # 2. [사용자 수동 조작 감지] 
+          # 오토모드가 적용 중인데, 현재 크루즈 속도가 시스템이 마지막으로 맞춘 속도와 다르다면?
+          # => 운전자가 핸들 버튼(RES+/SET-)으로 직접 속도를 조작했다는 뜻!
+          if self.auto_mode_applied and self.last_auto_speed > 0:
+            if v_cruise_kph != self.last_auto_speed:
+              # 운전자가 설정한 속도를 바탕으로 새로운 오프셋 계산 (예: 120 - 100 = +20)
+              self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
+              self.last_auto_speed = v_cruise_kph  # 현재 속도를 다시 기준점으로 업데이트
+              self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
+
+          # 3. 제한속도가 바뀌었거나, 현재 제한속도 구간에서 처음 켜진 경우 동기화
           if self.nRoadLimitSpeed != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
             
-            old_set_speed = v_cruise_kph
-            new_set_speed = self.nRoadLimitSpeed + 10.0
+            # 도로 제한속도에 기억해둔 오프셋(기본 +10 또는 수동 변경값)을 더함
+            new_set_speed = float(self.nRoadLimitSpeed + self.user_speed_offset)
             
-            # 감속 상황일 때 완충(+20) 룰 적용
+            # (옵션) 제한속도가 급격히 30km/h 이상 떨어지는 경우 급브레이크 방지
             if self.prev_limit_speed_for_auto > 0 and self.nRoadLimitSpeed < self.prev_limit_speed_for_auto:
-              if (old_set_speed - new_set_speed) > 30.0:
+              if (self.prev_limit_speed_for_auto - self.nRoadLimitSpeed) >= 30.0:
                 new_set_speed = float(self.nRoadLimitSpeed + 20.0)
-                self._add_log(f"Auto Mode: Drop > 30 -> Set {new_set_speed}")
+                self.user_speed_offset = 20.0  # 안전을 위해 오프셋도 +20으로 강제 조정
+                self._add_log(f"Auto Mode: Big drop, safety set {new_set_speed}")
                 
+            # 최종 크루즈 속도 적용
             v_cruise_kph = new_set_speed
-            self._add_log(f"Auto Mode: Speed Sync to {v_cruise_kph}")
+            self.last_auto_speed = v_cruise_kph  # 다음에 사용자 개입을 감지하기 위해 현재 속도 기억
+            self._add_log(f"Auto Mode: Speed Sync to {v_cruise_kph} (Offset: {self.user_speed_offset:+0.1f})")
             
             # 당근크루즈 금고 속도 업데이트
             if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
@@ -362,14 +378,18 @@ class VCruiseCarrot:
             self.auto_mode_applied = True
             
         else:
-          # 제한속도가 없는 구간
+          # 제한속도가 없는 구간으로 나오면 모든 상태를 리셋 (+10으로 초기화)
           self.prev_limit_speed_for_auto = 0
           self.auto_mode_applied = False
+          self.user_speed_offset = 10.0
+          self.last_auto_speed = 0.0
           
       else:
-        # 5번 모드가 아닐 때 (추후 5번으로 진입 시 즉시 작동하도록 플래그 초기화)
+        # 5번 모드가 아닐 때 (일반 모드 등으로 변경 시) 상태 리셋
         self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
         self.auto_mode_applied = False
+        self.user_speed_offset = 10.0
+        self.last_auto_speed = 0.0
         
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
