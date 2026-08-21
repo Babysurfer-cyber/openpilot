@@ -936,7 +936,7 @@ class CarrotServ:
     current_limit = self.nRoadLimitSpeed
     
     # 💡 이전 제한속도와 현재 제한속도가 달라졌을 때 작동! (0 -> 100, 100 -> 0 모두 포함)
-    if current_limit != self.prev_speed_limit:
+    if current_limit > 0 and current_limit != self.prev_speed_limit:
       play_prompt = False
       
       # 조건 1: 5번 오토모드일 때는 제한속도가 올라가든, 내려가든, 새로 생기든 무조건 안내음!
