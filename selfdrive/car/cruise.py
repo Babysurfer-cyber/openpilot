@@ -559,10 +559,11 @@ class VCruiseCarrot:
         self._pause_auto_speed_up = False
         if self._soft_hold_active > 0:
           self._soft_hold_active = 0
-                # 저장된 이전 속도를 복원하는 코드를 먼저 실행하도록 위로 올립니다.
+        # 저장된 이전 속도를 복원하는 코드를 먼저 실행하도록 위로 올립니다.
         elif self._v_cruise_kph_at_brake > 0 and v_cruise_kph < self._v_cruise_kph_at_brake:
           v_cruise_kph = self._v_cruise_kph_at_brake
           self._v_cruise_kph_at_brake = 0
+          self.carrot_cruise_active = False  # <--- [핵심 버그 수정] 복원 후 당근크루즈를 확실히 끕니다!
         elif self._cruise_ready or not CC.enabled or CS.cruiseState.standstill or self.carrot_cruise_active:
           
           # ▼▼▼ [수정] 시동 후 최초로 + 버튼 눌러서 켤 때의 로직 (제한속도+10 or 40) ▼▼▼
