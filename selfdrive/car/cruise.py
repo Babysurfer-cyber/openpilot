@@ -324,52 +324,52 @@ class VCruiseCarrot:
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
     # ==============================================================
-    # ▼ [수정] 5번 모드: 제한속도가 "변경될 때만" 크루즈 속도 +10 덮어쓰기
-    # ▼ [추가] 모든 도로에서 세팅 속도 변화량이 30 초과 감속 시 (제한속도 + 20) 적용
+    # ▼ [수정] 5번 모드: 고속도로 연속 제한속도 실시간 동기화
     # ==============================================================
     try:
       # CPU 과부하를 막기 위해 10프레임(0.1초)마다 한 번씩만 모드 읽어오기
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
         
-      # 5번(AUTO) 모드일 때만 작동
       if getattr(self, 'current_driving_mode', 3) == 5:
-        # 1. 최초 실행 시 '이전 제한속도'를 기억할 변수 생성
+        # 1. 초기화 (이전 속도 정보와 적용 여부 플래그)
         if not hasattr(self, 'prev_limit_speed_for_auto'):
-          self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+          self.prev_limit_speed_for_auto = 0
+          self.auto_mode_applied = False  # ⭐️ 해당 구간에서 오토모드가 적용되었는지 확인하는 깃발
 
-        # 2. 핵심 로직: 제한속도가 정상(0 초과)이고, "이전 제한속도와 달라졌을 때" 딱 1번만 발동!
-        if self.nRoadLimitSpeed > 0 and self.nRoadLimitSpeed != self.prev_limit_speed_for_auto:
-          
-          old_set_speed = v_cruise_kph
-          new_set_speed = self.nRoadLimitSpeed + 10.0  # 기본 세팅 속도
-          
-          # 감속 상황 확인 (이전 제한속도보다 현재 제한속도가 낮아짐)
-          is_decel = self.nRoadLimitSpeed < self.prev_limit_speed_for_auto
-          
-          # 감속할 때 완충 룰 적용 (고속도로 조건 제거)
-          if is_decel:
-            drop_amount = old_set_speed - new_set_speed
+        if self.nRoadLimitSpeed > 0:
+          # 2. 제한속도가 바뀌었거나, 현재 제한속도 구간에서 아직 동기화가 안 된 경우 즉시 작동!
+          if self.nRoadLimitSpeed != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
             
-            # 세팅 속도 변화량이 30보다 큰 경우 (제한속도 + 20으로 적용)
-            if drop_amount > 30.0:
-              new_set_speed = float(self.nRoadLimitSpeed + 20.0)
-              self._add_log(f"Auto Mode: Drop {drop_amount} -> Adjusted to {new_set_speed} (Limit+20)")
-              
-          v_cruise_kph = new_set_speed
-          self._add_log(f"Auto Mode: Limit changed to {self.nRoadLimitSpeed}. Set {v_cruise_kph}")
+            old_set_speed = v_cruise_kph
+            new_set_speed = self.nRoadLimitSpeed + 10.0
+            
+            # 감속 상황일 때 완충(+20) 룰 적용
+            if self.prev_limit_speed_for_auto > 0 and self.nRoadLimitSpeed < self.prev_limit_speed_for_auto:
+              if (old_set_speed - new_set_speed) > 30.0:
+                new_set_speed = float(self.nRoadLimitSpeed + 20.0)
+                self._add_log(f"Auto Mode: Drop > 30 -> Set {new_set_speed}")
+                
+            v_cruise_kph = new_set_speed
+            self._add_log(f"Auto Mode: Speed Sync to {v_cruise_kph}")
+            
+            # 당근크루즈 금고 속도 업데이트
+            if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+                self._v_cruise_kph_at_brake = v_cruise_kph
+                
+            # 업데이트 완료 처리
+            self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+            self.auto_mode_applied = True
+            
+        else:
+          # 제한속도가 없는 구간
+          self.prev_limit_speed_for_auto = 0
+          self.auto_mode_applied = False
           
-          # ▼▼▼ [추가] 당근크루즈 금고 속도 업데이트 로직 ▼▼▼
-          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-              self._v_cruise_kph_at_brake = v_cruise_kph
-          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-          
-        # 3. 변경이 끝났으면 현재 제한속도를 '이전 제한속도'로 업데이트해서 다음번엔 무시되게 함
-        self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
-        
       else:
-        # 5번 모드가 아닐 때는, 나중에 5번으로 바꿨을 때 갑자기 속도가 튀는 걸 막기 위해 값만 동기화
+        # 5번 모드가 아닐 때 (추후 5번으로 진입 시 즉시 작동하도록 플래그 초기화)
         self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+        self.auto_mode_applied = False
         
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
