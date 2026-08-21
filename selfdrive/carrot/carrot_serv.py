@@ -925,38 +925,39 @@ class CarrotServ:
     hda_active = False
 
     # =========================================================
-    # ▼ [수정] 제한속도 변경 시 안내음 발생 로직 (0km/h 진출입 포함 완벽 대응)
+    # ▼ [수정] 5번 모드(AUTO) 작동/속도변경 시 안내음 발생 로직 (최종 완성판)
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
-    # 초기 변수 세팅 (처음 1회만 실행)
+    # 초기 변수 세팅 (처음 1회만 실행 - 시동 켤 때 허위 알람 방지)
     if not hasattr(self, 'prev_speed_limit'):
       self.prev_speed_limit = self.nRoadLimitSpeed
+    if not hasattr(self, 'prev_driving_mode'):
+      self.prev_driving_mode = my_driving_mode
     
     current_limit = self.nRoadLimitSpeed
+    play_prompt = False
     
-    # 💡 이전 제한속도와 현재 제한속도가 달라졌을 때 작동! (0 -> 100, 100 -> 0 모두 포함)
-    if current_limit > 0 and current_limit != self.prev_speed_limit:
-      play_prompt = False
-      
-      # 조건 1: 5번 오토모드일 때는 제한속도가 올라가든, 내려가든, 새로 생기든 무조건 안내음!
-      if my_driving_mode == 5:
+    # 💡 1. 5번 모드가 방금 "켜졌을 때" 무조건 안내음 발생! (피드백 용도)
+    if self.prev_driving_mode != 5 and my_driving_mode == 5:
+      play_prompt = True
+
+    # 💡 2. 속도가 바뀌었을 때 (0 -> 100, 100 -> 0 모두 감지)
+    elif current_limit != self.prev_speed_limit:
+      # 현재 제한속도가 0보다 크고(유효하고), 현재 5번 모드일 때만 안내음!
+      if current_limit > 0 and my_driving_mode == 5:
         play_prompt = True
         
-      # 조건 2: 5번 모드가 아닐 때, 제한속도가 '감소'할 때만 경고 목적으로 소리를 내고 싶다면?
-      # (원하신다면 아래 두 줄의 제일 앞 '#' 주석을 지워주세요!)
-      # elif current_limit > 0 and self.prev_speed_limit > current_limit:
-      #   play_prompt = True
-
-      # 소리 발생 트리거 파일 생성
-      if play_prompt:
-        try:
-          open("/dev/shm/carrot_prompt", "w").close()
-        except Exception:
-          pass
-          
-      # 다음 비교를 위해 현재 속도를 기억
-      self.prev_speed_limit = current_limit
+    # 소리 발생 트리거 파일 생성
+    if play_prompt:
+      try:
+        open("/dev/shm/carrot_prompt", "w").close()
+      except Exception:
+        pass
+        
+    # 다음 비교를 위해 현재 상태 업데이트 (기억하기)
+    self.prev_speed_limit = current_limit
+    self.prev_driving_mode = my_driving_mode
     # =========================================================
 
     ### 과속카메라, 사고방지턱
