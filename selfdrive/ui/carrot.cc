@@ -2438,8 +2438,19 @@ public:
         
         // 펌핑 애니메이션을 위한 타이머 (정적 변수로 선언)
         static int cruise_pump_timer = 0; 
-        if(longActive) sprintf(cruise_speed, "%d", (int)((s->scene.is_metric)?v_cruise: v_cruise * KM_TO_MILE + 0.5));
-        else sprintf(cruise_speed, "--");        
+        
+        // ▼▼▼ [수정] 당근크루즈 작동 시 설정 속도를 "CC"로 표시 ▼▼▼
+        if (longActive) {
+            bool is_carrot_cruise = (*(s->sm))["carState"].getCarState().getCarrotCruise() > 0;
+            if (is_carrot_cruise) {
+                sprintf(cruise_speed, "CC");
+            } else {
+                sprintf(cruise_speed, "%d", (int)((s->scene.is_metric) ? v_cruise : v_cruise * KM_TO_MILE + 0.5));
+            }
+        } else {
+            sprintf(cruise_speed, "--");        
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
         if (strcmp(cruise_speed_last, cruise_speed) != 0) {
             strcpy(cruise_speed_last, cruise_speed);
@@ -2502,10 +2513,10 @@ public:
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // ▼ [수정] 5번 모드: 바탕은 항상 파란색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
+        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
         case 5: 
             strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
-            mode_color = COLOR_BLUE_ALPHA(210);  // 배경은 무조건 녹색 고정!
+            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
             
             if (auto_blink_timer > 0) {
                 auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소
