@@ -325,7 +325,7 @@ class VCruiseCarrot:
 
     # ==============================================================
     # ▼ [수정] 5번 모드: 제한속도가 "변경될 때만" 크루즈 속도 +10 덮어쓰기
-    # ▼ [추가] 고속도로 주행 시 제한속도 급감(20 초과) 시 50%만 감속 (반올림 제거)
+    # ▼ [추가] 고속도로 주행 시 감속량이 30 초과 시, 감속량을 10 줄여서 적용
     # ==============================================================
     try:
       # CPU 과부하를 막기 위해 10프레임(0.1초)마다 한 번씩만 모드 읽어오기
@@ -350,13 +350,13 @@ class VCruiseCarrot:
           # 고속도로 주행 여부 (HDA 신호 활용)
           is_highway = getattr(CS, 'highwayCam', 0) > 0
           
-          # 고속도로에서 감속할 때만 50% 룰 적용
+          # 고속도로에서 감속할 때만 완충 룰 적용
           if is_decel and is_highway:
             drop_amount = old_set_speed - new_set_speed
             
-            # 세팅 속도 변화량이 30보다 큰 경우 (50% 감속만 적용)
+            # 세팅 속도 변화량이 30보다 큰 경우 (감속량을 10 줄여서 적용)
             if drop_amount > 30.0:
-              new_set_speed = old_set_speed - (drop_amount * 0.5)
+              new_set_speed = old_set_speed - (drop_amount - 10.0)
               self._add_log(f"Auto Mode: HWY Drop {drop_amount} -> Adjusted to {new_set_speed}")
               
           v_cruise_kph = new_set_speed
