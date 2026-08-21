@@ -925,38 +925,37 @@ class CarrotServ:
     hda_active = False
 
     # =========================================================
-    # ▼ [수정] 5번 모드(AUTO)는 상승/하락 모두, 다른 모드는 하락 시에만 안내음!
+    # ▼ [수정] 제한속도 변경 시 안내음 발생 로직 (0km/h 진출입 포함 완벽 대응)
     # =========================================================
-    # 유저님이 직접 만드신 궁극의 5번 모드 감지!
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
     # 초기 변수 세팅 (처음 1회만 실행)
     if not hasattr(self, 'prev_speed_limit'):
       self.prev_speed_limit = self.nRoadLimitSpeed
     
-    # 현재 제한속도 (통합 nRoadLimitSpeed 사용)
     current_limit = self.nRoadLimitSpeed
     
-    # 안내음 발생 조건 체크
-    if current_limit > 0 and self.prev_speed_limit > 0:
+    # 💡 이전 제한속도와 현재 제한속도가 달라졌을 때 작동! (0 -> 100, 100 -> 0 모두 포함)
+    if current_limit != self.prev_speed_limit:
       play_prompt = False
       
-      if current_limit < self.prev_speed_limit and my_driving_mode == 5:
-        # 조건 A: 제한속도가 '감소'할 때는 모드 상관없이 무조건 안내음!, 오토모드만 소리나게 수정
-        play_prompt = True
-      elif current_limit > self.prev_speed_limit and my_driving_mode == 5:
-        # 조건 B: 제한속도가 '상승'할 때는 5번(AUTO) 모드일 때만 안내음!
+      # 조건 1: 5번 오토모드일 때는 제한속도가 올라가든, 내려가든, 새로 생기든 무조건 안내음!
+      if my_driving_mode == 5:
         play_prompt = True
         
-      # 소리 발생 파일 생성
+      # 조건 2: 5번 모드가 아닐 때, 제한속도가 '감소'할 때만 경고 목적으로 소리를 내고 싶다면?
+      # (원하신다면 아래 두 줄의 제일 앞 '#' 주석을 지워주세요!)
+      # elif current_limit > 0 and self.prev_speed_limit > current_limit:
+      #   play_prompt = True
+
+      # 소리 발생 트리거 파일 생성
       if play_prompt:
         try:
           open("/dev/shm/carrot_prompt", "w").close()
         except Exception:
           pass
           
-    # 다음 비교를 위해 현재 속도를 기억
-    if current_limit > 0:
+      # 다음 비교를 위해 현재 속도를 기억
       self.prev_speed_limit = current_limit
     # =========================================================
 
