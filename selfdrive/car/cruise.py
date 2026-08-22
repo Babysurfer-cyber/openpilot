@@ -636,7 +636,7 @@ class VCruiseCarrot:
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
-    # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (버그 픽스 반영)
+    # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -651,18 +651,27 @@ class VCruiseCarrot:
 
         if self.nRoadLimitSpeed > 0:
           
-          # 💡 [핵심 버그 수정] 실제 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트!
-          # 타력주행이나 시스템 개입으로 목표 속도가 낮아지는 현상은 철저히 무시합니다.
+          # 💡 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트!
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
+              
+              # (참고) 만약 사용자가 핸들 버튼으로 '감속(SET-)'을 누를 때만 오프셋 변경을 
+              # 허용하고 싶으시다면 아래 줄을 if button_type == ButtonType.decelCruise: 로 바꾸시면 됩니다.
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
               self.last_auto_speed = v_cruise_kph  
               self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
 
           # 제한속도 변경 및 최초 진입 시 동기화
           if self.nRoadLimitSpeed != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
+            
+            # 💡 2. [핵심 추가] 제한속도가 올라갈 때(가속 구간)는 수동 조작 오프셋을 버리고 기본값(+10)으로 리셋!
+            if self.prev_limit_speed_for_auto > 0 and self.nRoadLimitSpeed > self.prev_limit_speed_for_auto:
+              self.user_speed_offset = 10.0
+              self._add_log("Auto Mode: Speed UP -> Reset offset to +10.0")
+
             new_set_speed = float(self.nRoadLimitSpeed + self.user_speed_offset)
             
+            # 💡 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지 (단, 30 이상 급감속 시 방어)
             if self.prev_limit_speed_for_auto > 0 and self.nRoadLimitSpeed < self.prev_limit_speed_for_auto:
               if (self.prev_limit_speed_for_auto - self.nRoadLimitSpeed) >= 30.0:
                 new_set_speed = float(self.nRoadLimitSpeed + 20.0)
