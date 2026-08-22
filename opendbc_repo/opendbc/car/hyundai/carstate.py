@@ -616,24 +616,25 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
-        if self.hda_info_4a3 is not None:
-          speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
-          if not self.is_metric:
-            speedLimit *= CV.MPH_TO_KPH
-          ret.speedLimit = speedLimit if speedLimit < 255 else 0
-          if int(self.hda_info_4a3["MapSource"]) == 2:
-            speed_limit_cam = True
+    # 👇 여기서부터 전체적으로 왼쪽으로 당겨야 합니다. (if corner: 의 'i'와 위치가 같아야 함)
+    if self.hda_info_4a3 is not None:
+      speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
+      if not self.is_metric:
+        speedLimit *= CV.MPH_TO_KPH
+      ret.speedLimit = speedLimit if speedLimit < 255 else 0
+      if int(self.hda_info_4a3["MapSource"]) == 2:
+        speed_limit_cam = True
 
-          # ▼▼▼ [추가] Frwinfo 추출 및 shm 초고속 메모리로 안전하게 전달 ▼▼▼
-          nav_frw_info = int(self.hda_info_4a3["Frwinfo"])
-          if getattr(self, 'nav_frw_info_prev', -1) != nav_frw_info:
-            self.params_memory.put_int_nonblocking("NavFrwInfo", nav_frw_info)
-            self.nav_frw_info_prev = nav_frw_info
-          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # ▼▼▼ [추가] Frwinfo 추출 및 shm 초고속 메모리로 안전하게 전달 ▼▼▼
+      nav_frw_info = int(self.hda_info_4a3["Frwinfo"])
+      if getattr(self, 'nav_frw_info_prev', -1) != nav_frw_info:
+        self.params_memory.put_int_nonblocking("NavFrwInfo", nav_frw_info)
+        self.nav_frw_info_prev = nav_frw_info
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-          if self.time_zone == "UTC":
-            country_code = int(self.hda_info_4a3["CountryCode"])
-            self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
+      if self.time_zone == "UTC":
+        country_code = int(self.hda_info_4a3["CountryCode"])
+        self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
     if 1 <= ret.gearStep <= 8 and ret.gearShifter == GearShifter.unknown:
