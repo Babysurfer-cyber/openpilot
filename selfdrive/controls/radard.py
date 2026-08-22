@@ -890,7 +890,12 @@ class RadarD:
     # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge), 최대 감시폭(max_dist), 그리고 차선폭(lane_width)을 동시 추출
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 💡 [수정] 모델 데이터가 없거나 램프 구간일 때는 기본 차선폭 2.6m를 함께 반환합니다.
+      # 💡 [추가/핵심] 대상 차량이 10m 이내로 들어오면 카메라가 앞차에 가려져 차선을 잃으므로 
+      # 모델 값을 무시하고 가장 안정적인 기본값(2.25m, 2.75m, 2.6m)으로 강제 고정!
+      if target_long <= 10.0:
+        return 2.25, 2.75, 2.6
+
+      # 💡 [수정] 모델 데이터가 없거나 램프 구간(조향 30도 이상)일 때도 기본값 적용
       if abs_steering > 30.0:
         return 2.25, 2.75, 2.6
 
@@ -919,7 +924,7 @@ class RadarD:
         max_search_dist = lane_edge + (lane_width - 1.9) * 0.6
         max_search_dist = max(lane_edge, max_search_dist)
         
-        # 💡 [추가] 계산된 lane_width도 밖으로 꺼내서 반환합니다!
+        # 💡 계산된 차선 정보 반환
         return lane_edge, max_search_dist, lane_width
       
       return 2.25, 2.75, 2.6
