@@ -892,7 +892,7 @@ class RadarD:
     def get_lane_edge(target_long, is_left):
       # 💡 [추가/핵심] 대상 차량이 10m 이내로 들어오면 카메라가 앞차에 가려져 차선을 잃으므로 
       # 모델 값을 무시하고 가장 안정적인 기본값(2.25m, 2.75m, 2.6m)으로 강제 고정!
-      if target_long <= 10.0:
+      if target_long < 10.0:
         return 2.25, 2.75, 2.6
 
       # 💡 [수정] 모델 데이터가 없거나 램프 구간(조향 30도 이상)일 때도 기본값 적용
