@@ -636,6 +636,33 @@ class VCruiseCarrot:
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
+    # ▼ [추가] 전방 정지차량 5초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
+    # ==============================================================
+    if getattr(self, 'carrot_cruise_active', False):
+      if not hasattr(self, 'stationary_lead_timer'):
+        self.stationary_lead_timer = 0
+        
+      # 전방 차량 존재(d_rel > 0) 및 앞차의 속도가 5km/h 미만(정지 상태)인지 확인
+      if self.d_rel > 0 and self.v_lead_kph < 5:
+        self.stationary_lead_timer += 1
+        
+        if self.stationary_lead_timer >= 300:  # 100Hz 루프 기준 3초 (300 프레임)
+          self.carrot_cruise_active = False
+          self.stationary_lead_timer = 0
+          
+          # 💡 LFA 버튼(또는 엑셀) 해제 시처럼 금고에 넣어둔 기존 크루즈 목표 속도로 복귀!
+          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+            v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+            self._v_cruise_kph_at_brake = 0
+            
+          self._add_log("Carrot Cruise OFF & Restore (Stationary 5s)")
+      else:
+        self.stationary_lead_timer = 0  # 앞차가 움직이거나 사라지면 타이머 초기화
+    else:
+      self.stationary_lead_timer = 0
+    # ==============================================================
+
+    # ==============================================================
     # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
     # ==============================================================
     try:
