@@ -224,6 +224,9 @@ class VCruiseCarrot:
     self.useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed")
     self.useLaneLineSpeedApply = self.useLaneLineSpeed
 
+    # ▼▼▼ [추가] 진출로 감지용 이전 상태 변수 ▼▼▼
+    self.prev_nav_frw_info = 0
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   @property
   def v_cruise_initialized(self):
@@ -728,13 +731,50 @@ class VCruiseCarrot:
         self.user_speed_offset = 10.0
         self.last_auto_speed = 0.0
         
-    except Exception as e:
-      self._add_log(f"Auto Mode Error: {e}")
-    # ==============================================================
+      # 기존 5번 모드 코드 부분
+      except Exception as e:
+        self._add_log(f"Auto Mode Error: {e}")
+      # ==============================================================
 
-    # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
-    v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
-    return v_cruise_kph
+      # ==============================================================
+      # ▼ [추가] 진출로(IC/JC 램프) 진입 시 70% 감속 로직 (오직 5번 모드에서만)
+      # ==============================================================
+      try:
+        # carstate.py에서 넘겨준 Frwinfo 데이터를 메모리에서 안전하게 가져옴
+        val = self.params_memory.get("NavFrwInfo")
+        current_frw_info = int(val) if val is not None else 0
+        
+        if getattr(self, 'current_driving_mode', 3) == 5:
+          # 방금 전까지는 3이 아니었는데, 지금 막 3(진출로)으로 바뀐 그 순간!
+          if current_frw_info == 3 and self.prev_nav_frw_info != 3:
+            
+            # 목표 속도를 현재 설정 속도의 70%로 삭감
+            new_v_cruise = int(v_cruise_kph * 0.7)
+            if new_v_cruise < 50:  # 최소 50km/h 방어 (필요시 수정 가능)
+              new_v_cruise = 50
+              
+            v_cruise_kph = new_v_cruise
+            self._add_log(f"Ramp! Speed down 70% to {v_cruise_kph}")
+            
+            # 동기화 1: 5번 오프셋 로직이 덮어쓰지 않도록 즉시 동기화 처리
+            self.last_auto_speed = v_cruise_kph
+            if self.nRoadLimitSpeed > 0:
+              self.user_speed_offset = v_cruise_kph - self.nRoadLimitSpeed
+            
+            # 동기화 2: 브레이크 밟았을 때를 대비한 당근크루즈 금고 속도 업데이트
+            if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+                self._v_cruise_kph_at_brake = v_cruise_kph
+
+        # 다음 프레임 비교를 위해 상태 저장
+        self.prev_nav_frw_info = current_frw_info
+      except Exception as e:
+        self._add_log(f"Ramp Logic Error: {e}")
+      # ==============================================================
+
+      # 기존 코드 (이 아래 코드가 반드시 감속 로직 밑에 있어야 합니다!)
+      # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
+      v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
+      return v_cruise_kph
 
   ## desiredSpeed :
   #   leadCar_distance, leadCar_speed, leadCar_accel,
