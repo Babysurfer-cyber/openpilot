@@ -775,6 +775,7 @@ class VCruiseCarrot:
     # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 실행
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
+    
   ## desiredSpeed :
   #   leadCar_distance, leadCar_speed, leadCar_accel,
   #   v_ego, tbt_distance, tbt_speed,
