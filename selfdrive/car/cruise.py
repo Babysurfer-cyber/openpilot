@@ -731,7 +731,34 @@ class VCruiseCarrot:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
 
-    # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
+    # ==============================================================
+    # ▼ [추가] 진출로(IC/JC 램프) 진입 시 당근크루즈(코스팅) 자동 실행
+    # ==============================================================
+    try:
+      # 메모리에서 Frwinfo 값을 가져옴 (없으면 0)
+      val = self.params_memory.get("NavFrwInfo")
+      current_frw_info = int(val) if val is not None else 0
+      
+      # 💡 내비게이션 경로가 있고, 직진(0) 하다가 진출로(3)로 바뀌는 순간 포착!
+      if current_frw_info == 3 and getattr(self, 'prev_nav_frw_info', 0) == 0:
+        
+        # 현재 크루즈가 켜져 있고, 당근크루즈가 켜져 있지 않다면
+        if CC.enabled and not getattr(self, 'carrot_cruise_active', False):
+          self.carrot_cruise_active = True  # 당근크루즈(코스팅) 발동!
+          
+          # 램프 주행 후 본선 합류 시 복귀할 원래 목표 속도(예: 110)를 금고에 보관
+          if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:
+            self._v_cruise_kph_at_brake = v_cruise_kph
+            
+          self._add_log("Ramp Detected! Carrot Cruise ON")
+
+      # 다음 프레임 비교를 위해 현재 상태 저장
+      self.prev_nav_frw_info = current_frw_info
+    except Exception as e:
+      self._add_log(f"Ramp Logic Error: {e}")
+    # ==============================================================
+
+    # 🚨 주의: 반드시 5번 모드 및 진출로 로직이 끝난 직후에 _update_cruise_state가 실행되어야 합니다!
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
 
