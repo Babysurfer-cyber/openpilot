@@ -163,6 +163,11 @@ class CarState(CarStateBase):
     self.cp_cam = None
     self.cp_alt = None
     self.controls_ready_count = 0
+    
+    # ▼▼▼ [추가] 램프 감속(Frwinfo) 전달용 메모리 준비 ▼▼▼
+    self.params_memory = Params("/dev/shm/params")
+    self.nav_frw_info_prev = -1
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def monitor_fingerprint(self, can_parsers, canfd):
     if self.controls_ready_count <= READY_COUNT_OK:
@@ -618,6 +623,14 @@ class CarState(CarStateBase):
       ret.speedLimit = speedLimit if speedLimit < 255 else 0
       if int(self.hda_info_4a3["MapSource"]) == 2:
         speed_limit_cam = True
+
+      # ▼▼▼ [추가] 데이터 딕셔너리 안에 Frwinfo가 있을 때만 꺼내오기 ▼▼▼
+      if "Frwinfo" in self.hda_info_4a3:
+        nav_frw_info = int(self.hda_info_4a3["Frwinfo"])
+        if getattr(self, 'nav_frw_info_prev', -1) != nav_frw_info:
+          self.params_memory.put_int_nonblocking("NavFrwInfo", nav_frw_info)
+          self.nav_frw_info_prev = nav_frw_info
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if self.time_zone == "UTC":
         country_code = int(self.hda_info_4a3["CountryCode"])
