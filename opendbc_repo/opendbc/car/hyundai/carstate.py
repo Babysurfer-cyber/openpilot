@@ -165,7 +165,7 @@ class CarState(CarStateBase):
     self.controls_ready_count = 0
     
     # ▼▼▼ [추가] 램프 감속(Frwinfo) 전달용 메모리 초기화 ▼▼▼
-    self.params_memory = Params()
+    self.params_memory = Params("/dev/shm/params")
     self.nav_frw_info_prev = -1
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -616,9 +616,10 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
-# ⭕ 수정 후 (이 부분 전체를 복사해서 덮어쓰세요)
+# ⭕ 수정 후 (안전하게 0으로 처리되어 시스템 다운 방지)
     if self.hda_info_4a3 is not None:
-      speedLimit = self.hda_info_4a3.get("SPEED_LIMIT", 0)
+      # 대괄호 대신 .get("이름", 기본값) 사용!
+      speedLimit = self.hda_info_4a3.get("SPEED_LIMIT", 0) 
       if not self.is_metric:
         speedLimit *= CV.MPH_TO_KPH
       ret.speedLimit = speedLimit if speedLimit < 255 else 0
@@ -626,12 +627,12 @@ class CarState(CarStateBase):
       if int(self.hda_info_4a3.get("MapSource", 0)) == 2:
         speed_limit_cam = True
 
-      # ▼▼▼ [추가] Frwinfo 추출 및 shm 초고속 메모리로 안전하게 전달 ▼▼▼
+      # ▼▼▼ [수정됨] Frwinfo 추출 시 .get 사용 ▼▼▼
       nav_frw_info = int(self.hda_info_4a3.get("Frwinfo", 0))
       if getattr(self, 'nav_frw_info_prev', -1) != nav_frw_info:
         self.params_memory.put_int_nonblocking("NavFrwInfo", nav_frw_info)
         self.nav_frw_info_prev = nav_frw_info
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if self.time_zone == "UTC":
         country_code = int(self.hda_info_4a3.get("CountryCode", 0))
@@ -757,4 +758,4 @@ class CarState(CarStateBase):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-    }
+                           }
