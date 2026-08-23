@@ -165,7 +165,7 @@ class CarState(CarStateBase):
     self.controls_ready_count = 0
     
     # ▼▼▼ [추가] 램프 감속(Frwinfo) 전달용 메모리 초기화 ▼▼▼
-    self.params_memory = Params("/dev/shm/params")
+    self.params_memory = Params()
     self.nav_frw_info_prev = -1
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -616,24 +616,25 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
-    # 👇 여기서부터 전체적으로 왼쪽으로 당겨야 합니다. (if corner: 의 'i'와 위치가 같아야 함)
+# ⭕ 수정 후 (이 부분 전체를 복사해서 덮어쓰세요)
     if self.hda_info_4a3 is not None:
-      speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
+      speedLimit = self.hda_info_4a3.get("SPEED_LIMIT", 0)
       if not self.is_metric:
         speedLimit *= CV.MPH_TO_KPH
       ret.speedLimit = speedLimit if speedLimit < 255 else 0
-      if int(self.hda_info_4a3["MapSource"]) == 2:
+      
+      if int(self.hda_info_4a3.get("MapSource", 0)) == 2:
         speed_limit_cam = True
 
       # ▼▼▼ [추가] Frwinfo 추출 및 shm 초고속 메모리로 안전하게 전달 ▼▼▼
-      nav_frw_info = int(self.hda_info_4a3["Frwinfo"])
+      nav_frw_info = int(self.hda_info_4a3.get("Frwinfo", 0))
       if getattr(self, 'nav_frw_info_prev', -1) != nav_frw_info:
         self.params_memory.put_int_nonblocking("NavFrwInfo", nav_frw_info)
         self.nav_frw_info_prev = nav_frw_info
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if self.time_zone == "UTC":
-        country_code = int(self.hda_info_4a3["CountryCode"])
+        country_code = int(self.hda_info_4a3.get("CountryCode", 0))
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
