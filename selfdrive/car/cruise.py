@@ -717,10 +717,9 @@ class VCruiseCarrot:
             self.auto_mode_applied = True
             
         else:
-          self.prev_limit_speed_for_auto = 0
-          self.auto_mode_applied = False
-          self.user_speed_offset = 10.0
-          self.last_auto_speed = 0.0
+          # 💡 [핵심 수정] 과속카메라 알림 등으로 내비 제한속도가 찰나의 순간 0으로 깜빡일 때,
+          # 기껏 올려둔 오프셋(+20)이 초기화되지 않도록 리셋 로직을 삭제(pass)합니다.
+          pass
           
       else:
         self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
