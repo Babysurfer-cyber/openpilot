@@ -165,7 +165,7 @@ class CarState(CarStateBase):
     self.controls_ready_count = 0
     
     # ▼▼▼ [추가] 램프 감속(Frwinfo) 전달용 메모리 초기화 ▼▼▼
-    self.params_memory = Params()
+    self.params_memory = Params("/dev/shm/params")
     self.nav_frw_info_prev = -1
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
