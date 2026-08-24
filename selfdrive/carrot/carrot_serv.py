@@ -1024,7 +1024,7 @@ class CarrotServ:
 
       if bump_dist > 0:
         # ▼▼▼ [수정] 현재 속도에 비례하여 방지턱이 더 가까이 있다고 거리를 속임 ▼▼▼
-        early_sec = 3.0  # 3초 일찍 반응 (체감상 5초가 늦었다면 4.0~5.0 사이로 조절)
+        early_sec = 2.0  # n초 일찍 반응 (체감상 5초가 늦었다면 4.0~5.0 사이로 조절)
         # 현재 속도(m/s) * n초만큼 거리를 빼서, 플래너가 방지턱이 코앞에 있다고 착각하게 만듦
         fake_bump_dist = max(0.0, bump_dist - (CS.vEgo * early_sec))
 
