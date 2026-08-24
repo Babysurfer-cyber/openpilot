@@ -1023,17 +1023,20 @@ class CarrotServ:
         pass
 
       if bump_dist > 0:
-        vehicle_bump_speed = self.calculate_current_speed(bump_dist,
+        # ▼▼▼ [수정] 현재 속도에 비례하여 방지턱이 더 가까이 있다고 거리를 속임 ▼▼▼
+        early_sec = 5.0  # 5초 일찍 반응 (체감상 5초가 늦었다면 4.0~5.0 사이로 조절)
+        # 현재 속도(m/s) * 4초만큼 거리를 빼서, 플래너가 방지턱이 코앞에 있다고 착각하게 만듦
+        fake_bump_dist = max(0.0, bump_dist - (CS.vEgo * early_sec))
+
+        vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
                                                           self.autoNaviSpeedBumpSpeed,
                                                           self.autoNaviSpeedBumpTime,
                                                           self.autoNaviSpeedDecelRate)
         self.active_carrot = 5
-        # ▼▼▼ [추가] 실제 감속 플래너가 방지턱으로 인식하여 브레이크를 밟도록 값 전달 ▼▼▼
-        self.xSpdType = 22  # 22 = 과속방지턱 타입
+        self.xSpdType = 22  
         self.xSpdLimit = self.autoNaviSpeedBumpSpeed
-        self.xSpdDist = bump_dist
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        self.xSpdDist = fake_bump_dist  # 시스템에 전달할 때도 뺀 거리를 전달!
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if self.autoTurnControl not in [2, 3]:    # auto turn speed control
       atc_desired = atc_desired_next = 250
