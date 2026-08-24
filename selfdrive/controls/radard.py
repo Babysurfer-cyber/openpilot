@@ -895,8 +895,8 @@ class RadarD:
       if target_long < 10.0:
         return 2.25, 2.75, 2.6
 
-      # 💡 [수정] 모델 데이터가 없거나 램프 구간(조향 30도 이상)일 때도 기본값 적용
-      if abs_steering > 30.0:
+      # 💡 [수정] 모델 데이터가 없거나 램프 구간(조향 15도 이상)일 때도 기본값 적용
+      if abs_steering > 15.0:
         return 2.25, 2.75, 2.6
 
       if md is None or len(md.laneLineProbs) < 3:
