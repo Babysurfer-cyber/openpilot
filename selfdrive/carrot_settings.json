@@ -2191,7 +2191,7 @@
       "min": 0,
       "max": 1,
       "default": 0,
-      "unit": 1,
+      "unit": 1
     },
     {
       "group": "감속제어",
