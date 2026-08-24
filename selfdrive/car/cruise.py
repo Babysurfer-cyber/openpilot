@@ -636,14 +636,14 @@ class VCruiseCarrot:
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
-    # ▼ [추가] 전방 정지차량 5초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
+    # ▼ [추가] 전방 정지차량 3초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
     # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'stationary_lead_timer'):
         self.stationary_lead_timer = 0
         
-      # 전방 차량 존재(d_rel > 0) 및 앞차의 속도가 5km/h 미만(정지 상태)인지 확인
-      if self.d_rel > 0 and self.v_lead_kph < 5:
+      # 전방 차량 존재(d_rel > 0) 및 앞차의 속도가 3km/h 미만(정지 상태)인지 확인
+      if self.d_rel > 0 and self.v_lead_kph < 3:
         self.stationary_lead_timer += 1
         
         if self.stationary_lead_timer >= 300:  # 100Hz 루프 기준 3초 (300 프레임)
@@ -662,9 +662,39 @@ class VCruiseCarrot:
       self.stationary_lead_timer = 0
     # ==============================================================
 
+    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 3초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
+    # ==============================================================
+    if getattr(self, 'carrot_cruise_active', False):
+      if not hasattr(self, 'target_speed_reach_timer'):
+        self.target_speed_reach_timer = 0
+        
+      # desiredSpeed가 유효한 감속 지시 중이고 (예: 200km/h 미만), 
+      # 현재 차량 속도가 그 목표 속도 부근(+1km/h 오차 허용)까지 충분히 떨어졌을 때
+      if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1:
+        self.target_speed_reach_timer += 1
+        
+        if self.target_speed_reach_timer >= 300:  # 100Hz 루프 기준 3초 (300 프레임)
+          self.carrot_cruise_active = False
+          self.target_speed_reach_timer = 0
+          
+          # 금고에 넣어둔 기존 크루즈 목표 속도(예: 100km/h)로 복귀
+          # (복귀해도 desiredSpeed가 60이라면 시스템이 알아서 브레이크를 잡아 60을 유지합니다!)
+          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+            v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+            self._v_cruise_kph_at_brake = 0
+            
+          self._add_log(f"Carrot Cruise OFF & Restore (Target Speed {self.desiredSpeed} Reached)")
+      else:
+        self.target_speed_reach_timer = 0  # 목표 속도를 벗어나면 타이머 초기화
+    else:
+      self.target_speed_reach_timer = 0
+    # ==============================================================
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     # ==============================================================
     # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
     # ==============================================================
+
     try:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
