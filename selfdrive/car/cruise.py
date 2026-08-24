@@ -675,50 +675,77 @@ class VCruiseCarrot:
           self.auto_mode_applied = False
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
+          self.current_active_limit = self.nRoadLimitSpeed
 
-        if self.nRoadLimitSpeed > 0:
-          
-          # 💡 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트!
+        cam_dist = 0.0
+        cam_limit = 0.0
+        try:
+          with open("/dev/shm/navi_cam_info", "r") as f:
+            vals = f.read().strip().split(',')
+            if len(vals) == 2:
+              cam_dist = float(vals[0])
+              cam_limit = float(vals[1])
+        except Exception:
+          pass
+
+        # 카메라 거리가 0이거나 없을 때는 현재 시스템 제한속도를 활성 제한속도로 확정
+        if cam_dist <= 0:
+            if self.nRoadLimitSpeed > 0:
+                self.current_active_limit = self.nRoadLimitSpeed
+        
+        effective_limit = self.current_active_limit
+
+        # 4BE 카메라 신호가 존재할 때 (표지판/램프로 다가오는 중)
+        if cam_dist > 0 and cam_limit > 0:
+          # 램프 구간 조건: 현재 내 차 속도와 감속할 속도의 차이가 30 이상일 때
+          if (self.v_ego_kph_set - cam_limit) >= 30:
+            if cam_dist <= 50.0:
+              # 50m 이내 진입 시: 현재 속도와 타겟 속도의 중간값으로 1차 감속 (10 단위 반올림)
+              effective_limit = int(round((self.v_ego_kph_set + cam_limit) / 20.0)) * 10
+            else:
+              # 50m 보다 멀 때: 아직 크루즈 설정 속도를 내리지 않음 (기존 속도 유지)
+              effective_limit = self.current_active_limit
+          else:
+            # 램프 구간이 아닌 일반적인 속도 변경: 
+            # 제한속도가 바뀌는 지점(cam_dist <= 0) 전까지는 크루즈 설정 속도 유지
+            effective_limit = self.current_active_limit
+
+        if effective_limit > 0:
+          # 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
-              
-              # (참고) 만약 사용자가 핸들 버튼으로 '감속(SET-)'을 누를 때만 오프셋 변경을 
-              # 허용하고 싶으시다면 아래 줄을 if button_type == ButtonType.decelCruise: 로 바꾸시면 됩니다.
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
               self.last_auto_speed = v_cruise_kph  
               self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
 
           # 제한속도 변경 및 최초 진입 시 동기화
-          if self.nRoadLimitSpeed != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
-            
-            # 💡 2. [핵심 추가] 제한속도가 올라갈 때(가속 구간)는 수동 조작 오프셋을 버리고 기본값(+10)으로 리셋!
-            if self.prev_limit_speed_for_auto > 0 and self.nRoadLimitSpeed > self.prev_limit_speed_for_auto:
+          if effective_limit != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
+            # 2. 제한속도가 올라갈 때(가속 구간)는 수동 조작 오프셋을 버리고 기본값(+10)으로 리셋!
+            if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
               self.user_speed_offset = 10.0
               self._add_log("Auto Mode: Speed UP -> Reset offset to +10.0")
 
-            new_set_speed = float(self.nRoadLimitSpeed + self.user_speed_offset)
+            new_set_speed = float(effective_limit + self.user_speed_offset)
             
-            # 💡 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지 (단, 30 이상 급감속 시 방어)
-            if self.prev_limit_speed_for_auto > 0 and self.nRoadLimitSpeed < self.prev_limit_speed_for_auto:
-              if (self.prev_limit_speed_for_auto - self.nRoadLimitSpeed) >= 30.0:
-                new_set_speed = float(self.nRoadLimitSpeed + 20.0)
+            # 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지 (단, 30 이상 급감속 시 방어)
+            if self.prev_limit_speed_for_auto > 0 and effective_limit < self.prev_limit_speed_for_auto:
+              if (self.prev_limit_speed_for_auto - effective_limit) >= 30.0:
+                new_set_speed = float(effective_limit + 20.0)
                 self.user_speed_offset = 20.0  
                 self._add_log(f"Auto Mode: Big drop, safety set {new_set_speed}")
                 
             v_cruise_kph = new_set_speed
             self.last_auto_speed = v_cruise_kph  
-            self._add_log(f"Auto Mode: Speed Sync to {v_cruise_kph} (Offset: {self.user_speed_offset:+0.1f})")
+            self._add_log(f"Auto Mode: Sync to {v_cruise_kph} (Offset: {self.user_speed_offset:+0.1f})")
             
             # 당근크루즈 금고 속도 업데이트
             if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
                 self._v_cruise_kph_at_brake = v_cruise_kph
                 
-            self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
+            self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
             
         else:
-          # 💡 [핵심 수정] 과속카메라 알림 등으로 내비 제한속도가 찰나의 순간 0으로 깜빡일 때,
-          # 기껏 올려둔 오프셋(+20)이 초기화되지 않도록 리셋 로직을 삭제(pass)합니다.
           pass
           
       else:
@@ -730,7 +757,6 @@ class VCruiseCarrot:
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
-
     # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
