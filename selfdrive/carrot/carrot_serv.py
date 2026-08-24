@@ -999,18 +999,7 @@ class CarrotServ:
 
     if self.nSdiType  >= 0: # or self.active_carrot > 0:
       pass
-      # self.debugText = (
-      #   f"Atc:{atc_desired:.1f}," +
-      #   f"{self.xTurnInfo}:{self.xDistToTurn:.1f}, " +
-      #   f"I({self.nTBTNextRoadWidth},{self.roadcate}) " +
-      #   f"Atc2:{atc_desired_next:.1f}," +
-      #   f"{self.xTurnInfoNext},{self.xDistToTurnNext:.1f}"
-      # )
-      #self.debugText = "" #f" {self.nSdiType}/{self.nSdiSpeedLimit}/{self.nSdiDist},BLOCK:{self.nSdiBlockType}/{self.nSdiBlockSpeed}/{self.nSdiBlockDist}, PLUS:{self.nSdiPlusType}/{self.nSdiPlusSpeedLimit}/{self.nSdiPlusDist}"
-    #elif self.nGoPosDist > 0 and self.active_carrot > 1:
-    #  self.debugText = " 목적지:{:.1f}km/{:.1f}분 남음".format(self.nGoPosDist/1000., self.nGoPosTime / 60)
     else:
-      #self.debugText = ""
       pass
 
     # ▼▼▼ [2/3] RAM 디스크에서 방지턱 거리 읽어와서 속도 계산 ▼▼▼
