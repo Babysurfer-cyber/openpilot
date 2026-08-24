@@ -1028,6 +1028,11 @@ class CarrotServ:
                                                           self.autoNaviSpeedBumpTime,
                                                           self.autoNaviSpeedDecelRate)
         self.active_carrot = 5
+        # ▼▼▼ [추가] 실제 감속 플래너가 방지턱으로 인식하여 브레이크를 밟도록 값 전달 ▼▼▼
+        self.xSpdType = 22  # 22 = 과속방지턱 타입
+        self.xSpdLimit = self.autoNaviSpeedBumpSpeed
+        self.xSpdDist = bump_dist
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if self.autoTurnControl not in [2, 3]:    # auto turn speed control
