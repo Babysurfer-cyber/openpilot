@@ -259,6 +259,9 @@ struct CarState {
   rightRearLongDist @78 :Float32; # rear-right corner radar longitudinal distance
   leftRearLatDist @79 :Float32; # rear-left corner radar lateral distance
   rightRearLatDist @80 :Float32; # rear-right corner radar lateral distance
+  
+  speedBumpDistance @81 :Float32;  # <-- 추가
+  schoolZoneActive @82 :Bool;      # <-- 추가
 
   struct Tpms {
     fl @0 :Float32;
