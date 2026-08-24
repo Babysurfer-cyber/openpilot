@@ -202,8 +202,10 @@ class CarrotServ:
     self.autoNaviSpeedBumpTime = float(self.params.get_int("AutoNaviSpeedBumpTime"))
     self.autoNaviSpeedCtrlEnd = float(self.params.get_int("AutoNaviSpeedCtrlEnd"))
     self.autoNaviSpeedCtrlMode = self.params.get_int("AutoNaviSpeedCtrlMode")
+    self.vehicleNaviCanControl = self.params.get_bool("VehicleNaviCanControl") # <--- 이 줄을 꼭 추가해 주세요!
     self.autoNaviSpeedSafetyFactor = float(self.params.get_int("AutoNaviSpeedSafetyFactor")) * 0.01
     self.autoNaviSpeedDecelRate = float(self.params.get_int("AutoNaviSpeedDecelRate")) * 0.01
+
     self.autoNaviCountDownMode = self.params.get_int("AutoNaviCountDownMode")
     self.turnSpeedControlMode= self.params.get_int("TurnSpeedControlMode")
     self.mapTurnSpeedFactor= self.params.get_float("MapTurnSpeedFactor") * 0.01
@@ -923,6 +925,7 @@ class CarrotServ:
 
     sdi_speed = 250
     hda_active = False
+    vehicle_bump_speed = 250  # <--- [1/3] 초기값 변수 추가
 
     # =========================================================
     # ▼ [수정] 5번 모드(AUTO) 작동/속도변경 시 안내음 발생 로직 (최종 완성판)
@@ -1010,19 +1013,37 @@ class CarrotServ:
       #self.debugText = ""
       pass
 
+    # ▼▼▼ [2/3] RAM 디스크에서 방지턱 거리 읽어와서 속도 계산 ▼▼▼
+    if getattr(self, 'vehicleNaviCanControl', False) and self.autoNaviSpeedCtrlMode >= 2:
+      bump_dist = 0.0
+      try:
+        with open("/dev/shm/speed_bump_dist", "r") as f:
+          bump_dist = float(f.read().strip())
+      except Exception:
+        pass
+
+      if bump_dist > 0:
+        vehicle_bump_speed = self.calculate_current_speed(bump_dist,
+                                                          self.autoNaviSpeedBumpSpeed,
+                                                          self.autoNaviSpeedBumpTime,
+                                                          self.autoNaviSpeedDecelRate)
+        self.active_carrot = 5
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     if self.autoTurnControl not in [2, 3]:    # auto turn speed control
       atc_desired = atc_desired_next = 250
 
     if self.autoTurnControl not in [1,2]:    # auto turn control
       self.atcType = "none"
 
-
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
       (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
+      (vehicle_bump_speed, "hda_bump"),  # <--- [3/3] 이 줄을 추가합니다.
       (limit_speed, "road"),
     ]
+
     if self.turnSpeedControlMode in [1,2]:
       speed_n_sources.append((max(abs(vturn_speed), self.autoCurveSpeedLowerLimit), "VTRUN"))
 
