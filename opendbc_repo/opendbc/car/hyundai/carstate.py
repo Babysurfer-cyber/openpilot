@@ -23,6 +23,12 @@ PREV_BUTTON_SAMPLES = 8
 CLUSTER_SAMPLE_RATE = 20  # frames
 STANDSTILL_THRESHOLD = 12 * 0.03125 * CV.KPH_TO_MS
 
+# ▼▼▼ [추가] 방지턱 전용 상수 ▼▼▼
+VEHICLE_NAVI_MAX_EVENT_DISTANCE = 2500.0
+VEHICLE_NAVI_PASSED_EVENT_DISTANCE = 30.0
+VEHICLE_NAVI_MAX_EVENTS = 32
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: ButtonType.decelCruise,
                 Buttons.GAP_DIST: ButtonType.gapAdjustCruise, Buttons.CANCEL: ButtonType.cancel, Buttons.LFA_BUTTON: ButtonType.lfaButton}
 
@@ -99,6 +105,18 @@ class CarState(CarStateBase):
     self.adrv_0x160 = None
     self.ccnc_0x162 = None    
     self.hda_info_4a3 = None    
+    
+    # ▼▼▼ [추가] 순정 내비 방지턱 트래킹 초기화 ▼▼▼
+    self.navi_segment_4b9 = None
+    self.navi_profile_4be = None
+    self.vehicleNaviEvents = []
+    self.vehicleNaviSegmentTimestamp = 0
+    self.vehicleNaviProfileTimestamp = 0
+    self.vehicleNaviRouteResetTimestamp = 0
+    self.frame_for_params = 0
+    self.vehicleNaviCanControl = False
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     self.tcs = None    
     self.mdps = None
     self.steer_touch_2af = None
@@ -237,6 +255,12 @@ class CarState(CarStateBase):
           add_and_cache(self.cp_cam, "CCNC_0x162", "ccnc_0x162")
         elif self.controls_ready_count == 123:        
           add_and_cache(self.cp, "HDA_INFO_4A3", "hda_info_4a3")
+          
+          # ▼▼▼ [추가] 4B9, 4BE 방지턱 메시지 허용 ▼▼▼
+          add_and_cache(self.cp, "NEW_MSG_4B9", "navi_segment_4b9")
+          add_and_cache(self.cp, "NEW_MSG_4BE", "navi_profile_4be")
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          
           add_and_cache(self.cp, "STEER_TOUCH_2AF", "steer_touch_2af")
         elif self.controls_ready_count == 124:
           add_and_cache(self.cp, self.cruise_btns_msg_canfd, "cruise_buttons_msg")
@@ -459,6 +483,81 @@ class CarState(CarStateBase):
       self.main_enabled = not self.main_enabled
 
     return ret
+
+  # ▼▼▼ [추가] 순정 내비 방지턱 데이터 파싱 및 RAM 디스크 저장 (카메라 무시) ▼▼▼
+  def _clear_vehicle_navi_events(self):
+    self.vehicleNaviEvents = []
+
+  @staticmethod
+  def _vehicle_navi_message_timestamp(cp, name):
+    return max(cp.ts_nanos.get(name, {}).values(), default=0)
+
+  @staticmethod
+  def _decode_vehicle_navi_segment(values):
+    raw = sum(int(values.get(f"BYTE_{i + 1}", 0)) << (i * 8) for i in range(8))
+    return {"offset": raw & 0x1fff, "calculated_route": (raw >> 22) & 0x3}
+
+  @staticmethod
+  def _decode_vehicle_navi_profile(values):
+    return {
+      "value": int(values.get("PROLONG_VALUE", 0xffffffff)),
+      "offset": int(values.get("PROLONG_OFFSET", 8191)),
+      "profile_type": int(values.get("PROLONG_PROFILE_TYPE", 31)),
+    }
+
+  @staticmethod
+  def _classify_vehicle_navi_profile(profile):
+    if profile["profile_type"] != 16 or not 0 < profile["offset"] <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
+      return None
+    if profile["value"] == 6:  # 6번(방지턱)만 추출
+      return "bump", 0, 6
+    return None
+
+  def _add_vehicle_navi_event(self, event_type, speed, kind, offset):
+    target = self.totalDistance + offset
+    for event in self.vehicleNaviEvents:
+      if event["type"] == event_type and abs(event["target"] - target) < 20:
+        event["target"] = target
+        return
+    self.vehicleNaviEvents.append({"type": event_type, "speed": speed, "kind": kind, "target": target})
+    self.vehicleNaviEvents.sort(key=lambda event: event["target"])
+    self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
+
+  def _update_vehicle_navi_events(self, cp):
+    if not getattr(self, 'vehicleNaviCanControl', False):
+      return
+
+    if self.navi_segment_4b9 is not None:
+      timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
+      if timestamp > self.vehicleNaviSegmentTimestamp:
+        self.vehicleNaviSegmentTimestamp = timestamp
+        if self._decode_vehicle_navi_segment(self.navi_segment_4b9)["calculated_route"] == 2:
+          self.vehicleNaviRouteResetTimestamp = timestamp
+          self._clear_vehicle_navi_events()
+
+    if self.navi_profile_4be is not None:
+      timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4BE")
+      if timestamp > self.vehicleNaviProfileTimestamp:
+        self.vehicleNaviProfileTimestamp = timestamp
+        profile = self._decode_vehicle_navi_profile(self.navi_profile_4be)
+        event = self._classify_vehicle_navi_profile(profile)
+        if event is not None and timestamp > self.vehicleNaviRouteResetTimestamp:
+          self._add_vehicle_navi_event(*event, profile["offset"])
+
+    self.vehicleNaviEvents = [e for e in self.vehicleNaviEvents if e["target"] >= self.totalDistance - VEHICLE_NAVI_PASSED_EVENT_DISTANCE]
+    bumps = [e for e in self.vehicleNaviEvents if e["type"] == "bump" and e["target"] > self.totalDistance]
+    
+    # 💡 Cereal 대신 파이썬 직결 통신으로 RAM 디스크에 거리 저장
+    bump_dist = 0.0
+    if bumps:
+      bump_dist = bumps[0]["target"] - self.totalDistance
+      
+    try:
+      with open("/dev/shm/speed_bump_dist", "w") as f:
+        f.write(str(bump_dist))
+    except Exception:
+      pass
+  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
     self.totalDistance += ret.vEgo * DT_CTRL
@@ -708,6 +807,14 @@ class CarState(CarStateBase):
     vEgoClu, aEgoClu = self.update_clu_speed_kf(ret.vEgoCluster)
     ret.vCluRatio = (ret.vEgo / vEgoClu) if (vEgoClu > 3. and ret.vEgo > 3.) else 1.0
 
+    # ▼▼▼ [추가] 토글 상태 갱신 및 방지턱 로직 실행 ▼▼▼
+    self.frame_for_params += 1
+    if self.frame_for_params % 100 == 0:
+      self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
+
+    self._update_vehicle_navi_events(cp)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     self.update_speed_limit(ret, speed_limit_cam)
 
     paddle_button = self.paddle_button_prev
@@ -725,6 +832,9 @@ class CarState(CarStateBase):
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
+    # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
+    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan)]
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
       msgs += [
