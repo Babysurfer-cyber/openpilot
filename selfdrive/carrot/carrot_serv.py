@@ -1047,8 +1047,10 @@ class CarrotServ:
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
-      (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
-      (vehicle_bump_speed, "hda_bump"),  # <--- [3/3] 이 줄을 추가합니다.
+      # ▼ [수정] 대소문자 섞여있던 것을 소문자 "cam"으로 통일
+      (sdi_speed, "cam" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "cam"),
+      # ▼ [수정] "hda_bump"를 기존과 동일한 "bump"로 통일
+      (vehicle_bump_speed, "bump"),  
       (limit_speed, "road"),
     ]
 
