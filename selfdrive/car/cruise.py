@@ -726,20 +726,21 @@ class VCruiseCarrot:
 
         # 4BE 카메라 신호가 존재할 때 (표지판/램프로 다가오는 중)
         if cam_dist > 0 and cam_limit > 0:
-          # 램프 구간 조건: 현재 내 차 속도와 감속할 속도의 차이가 30 이상일 때
-          if (self.v_ego_kph_set - cam_limit) >= 30:
-            is_ramp_section = True
-            if cam_dist <= 80.0:
-              # ▼▼▼ [수정] 오프셋(+20)이 강제될 것을 감안하여 1차 타겟 속도를 역산 ▼▼▼
-              final_target_speed = cam_limit + 20.0
-              mid_target_speed = (self.v_ego_kph_set + final_target_speed) / 2.0
-              effective_limit = int(round((mid_target_speed - 20.0) / 10.0)) * 10
+          # ▼ [수정] 2단 감속 폐지 & 감속 거리 절반(0.5)으로 단축 ▼
+          if cam_limit < self.current_active_limit:
+            v_ego_mps = self.v_ego_kph_set / 3.6
+            cam_limit_mps = cam_limit / 3.6
+            
+            # 물리 공식: 제동거리 = (현재속도^2 - 목표속도^2) / (2 * 감속도 1.2) + 여유거리(2초)
+            # 회원님 요청 반영: 전체 계산된 거리에 0.5를 곱해 감속 시작 시점을 절반으로 확 줄입니다!
+            safe_decel_dist = (max(0, (v_ego_mps**2 - cam_limit_mps**2) / (2 * 1.2)) + (v_ego_mps * 2.0)) * 0.5
+            
+            if cam_dist <= safe_decel_dist:
+              effective_limit = cam_limit
             else:
-              # 50m 보다 멀 때: 아직 크루즈 설정 속도를 내리지 않음 (기존 속도 유지)
               effective_limit = self.current_active_limit
           else:
-            # 램프 구간이 아닌 일반적인 속도 변경: 
-            # 제한속도가 바뀌는 지점(cam_dist <= 0) 전까지는 크루즈 설정 속도 유지
+            # 가속 구간 또는 동일 속도: 표지판을 지날 때(cam_dist <= 0)까지 기존 속도 유지
             effective_limit = self.current_active_limit
 
         if effective_limit > 0:
