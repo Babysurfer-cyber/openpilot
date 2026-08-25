@@ -758,15 +758,17 @@ class VCruiseCarrot:
               self.user_speed_offset = 10.0
               self._add_log("Auto Mode: Speed UP -> Reset offset to +10.0")
 
+            # ▼▼▼ [추가] 제한속도가 없었을 경우, 내 차의 현재 속도를 가상의 기준 속도로 삼습니다! ▼▼▼
+            reference_speed = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else self.v_ego_kph_set
+
             new_set_speed = float(effective_limit + self.user_speed_offset)
             
             # 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지 (단, 30 이상 급감속 시 방어)
-            if self.prev_limit_speed_for_auto > 0 and effective_limit < self.prev_limit_speed_for_auto:
-              # 속도가 쪼개져서 떨어지더라도 램프 구간이면 무조건 오프셋 +20 부여
-              if (self.prev_limit_speed_for_auto - effective_limit) >= 30.0 or is_ramp_section:
-                new_set_speed = float(effective_limit + 20.0)
-                self.user_speed_offset = 20.0  
-                self._add_log(f"Auto Mode: Big drop or Ramp, safety set {new_set_speed}")
+            if effective_limit < reference_speed:
+              if (reference_speed - effective_limit) >= 30.0:
+                self.user_speed_offset += 10.0  
+                new_set_speed = float(effective_limit + self.user_speed_offset)
+                self._add_log(f"Auto Mode: Big drop, added +10 to offset -> set {new_set_speed}")
                 
             v_cruise_kph = new_set_speed
             self.last_auto_speed = v_cruise_kph  
