@@ -1023,20 +1023,22 @@ class CarrotServ:
         pass
 
       if bump_dist > 0:
-        # ▼▼▼ [수정] 현재 속도에 비례하여 방지턱이 더 가까이 있다고 거리를 속임 ▼▼▼
-        early_sec = 2.0  # n초 일찍 반응 (체감상 5초가 늦었다면 4.0~5.0 사이로 조절)
-        # 현재 속도(m/s) * n초만큼 거리를 빼서, 플래너가 방지턱이 코앞에 있다고 착각하게 만듦
-        fake_bump_dist = max(0.0, bump_dist - (CS.vEgo * early_sec))
+        # ▼▼▼ [수정] 방지턱 도망감(피드백 루프) 현상 해결 및 부드러운 감속 적용 ▼▼▼
+        # 1. 속도에 비례해서 빼지 말고, 고정된 거리(예: 10m)를 앞으로 당겨줍니다.
+        fake_bump_dist = max(0.0, bump_dist - 10.0)
+
+        # 2. 방지턱은 카메라보다 더 부드럽고 일찍 감속하도록 감속률을 낮춥니다 (기본 설정값의 70% 수준)
+        bump_decel_rate = self.autoNaviSpeedDecelRate * 0.7
 
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
                                                           self.autoNaviSpeedBumpSpeed,
                                                           self.autoNaviSpeedBumpTime,
-                                                          self.autoNaviSpeedDecelRate)
+                                                          bump_decel_rate)
         self.active_carrot = 5
         self.xSpdType = 22  
         self.xSpdLimit = self.autoNaviSpeedBumpSpeed
-        self.xSpdDist = fake_bump_dist  # 시스템에 전달할 때도 뺀 거리를 전달!
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        self.xSpdDist = fake_bump_dist  
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if self.autoTurnControl not in [2, 3]:    # auto turn speed control
       atc_desired = atc_desired_next = 250
