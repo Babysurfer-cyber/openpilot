@@ -801,7 +801,7 @@ class VCruiseCarrot:
                 
           # ▼▼▼ [신규] 4. 제한속도는 유지되는데, 계단식 감속이 진행 중일 때 ▼▼▼
           elif getattr(self, 'auto_mode_step_down_active', False):
-            # 차의 현재 속도(v_ego)가 목표한 크루즈 속도 부근(여유 +2km/h)까지 충분히 떨어졌을 때 다음 계단 진행
+            # 1. 속도 조건: 차의 현재 속도(v_ego)가 목표 부근까지 떨어지면 다음 계단 진행
             if self.v_ego_kph_set <= v_cruise_kph + 2.0:
               if v_cruise_kph > self.auto_mode_step_down_target:
                 v_cruise_kph = max(self.auto_mode_step_down_target, v_cruise_kph - 10.0)
@@ -810,6 +810,21 @@ class VCruiseCarrot:
               else:
                 self.auto_mode_step_down_active = False
                 self._add_log("Auto Mode: Step-down FINISHED")
+                
+            # ▼▼▼ [신규] 2. 거리 조건 (마지노선 방어막): 카메라 통과 전 하강 완료 보장! ▼▼▼
+            if cam_dist > 0 and self.auto_mode_step_down_active:
+              v_ego_mps = self.v_ego_kph_set / 3.6
+              target_mps = self.auto_mode_step_down_target / 3.6
+              # 감속도 1.5m/s^2 (꽤 강한 제동) 기준으로 남은 최소 필요 거리를 계산
+              min_required_dist = max(0, (v_ego_mps**2 - target_mps**2) / (2 * 1.5))
+              
+              # 차가 계단식으로 우아하게 내려가다가 이 마지노선보다 카메라가 가까워지면?
+              if cam_dist <= min_required_dist:
+                v_cruise_kph = self.auto_mode_step_down_target  # 계단 생략! 즉시 최종 속도로 꽂음!
+                self.last_auto_speed = v_cruise_kph
+                self.auto_mode_step_down_active = False
+                self._add_log(f"Auto Mode: Emergency Drop to {v_cruise_kph} (Dist: {cam_dist:.1f}m)")
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
                 
           # ▼▼▼ 들여쓰기 10칸: 변경/유지 모두에서 반드시 매 프레임 업데이트 방지 ▼▼▼
           self.prev_limit_speed_for_auto = effective_limit
