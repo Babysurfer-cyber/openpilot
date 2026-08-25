@@ -327,14 +327,20 @@ class CarrotServ:
     if decel_dist <= 0:
       return safe_speed_kph
 
-    # v_i^2 = v_f^2 + 2ad
-    temp = safe_speed**2 + 2 * safe_decel_rate * decel_dist  # 공식에서 감속 적용
+    # v_i^2 = v_f^2 + 2ad -> 이론적 속도 계산
+    temp = safe_speed**2 + 2 * safe_decel_rate * decel_dist
+    speed_mps = math.sqrt(max(0, temp))
 
-    if temp < 0:
-      speed_mps = safe_speed
-    else:
-      speed_mps = math.sqrt(temp)
-    return max(safe_speed_kph, min(250, speed_mps * 3.6))
+    # ▼▼▼ [핵심 개선] 오픈파일럿 제동 지연(Lag) 및 Jerk 보상 ▼▼▼
+    # 시스템이 브레이크를 밟기 시작하는 데 걸리는 시간(약 1.2초)을 보상하기 위해
+    # 이론적인 계산 속도에서 (감속률 * 1.2초) 만큼을 강제로 빼서 플래너에 던집니다.
+    # 진입 시점에 목표 속도가 '툭' 떨어져 브레이크를 즉시 강하게 물게 만들며,
+    # 바닥에서는 원래의 safe_speed_kph가 방어해주어 절대 미리 기어가지 않습니다!
+    lag_compensation = safe_decel_rate * 1.2
+    compensated_speed = speed_mps - lag_compensation
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    return max(safe_speed_kph, min(250, compensated_speed * 3.6))
 
   def _update_tbt(self):
     #xTurnInfo : 1: left turn, 2: right turn, 3: left lane change, 4: right lane change, 5: rotary, 6: tg, 7: arrive or uturn
@@ -1025,7 +1031,7 @@ class CarrotServ:
       if bump_dist > 0:
         # ▼▼▼ [수정] 방지턱 도망감(피드백 루프) 현상 해결 및 부드러운 감속 적용 ▼▼▼
         # 1. 속도에 비례해서 빼지 말고, 고정된 거리(예: 10m)를 앞으로 당겨줍니다.
-        fake_bump_dist = max(0.0, bump_dist - 10.0)
+        fake_bump_dist = max(0.0, bump_dist - 5.0)
 
         # 2. 방지턱은 카메라보다 더 부드럽고 일찍 감속하도록 감속률을 낮춥니다 (기본 설정값의 70% 수준)
         bump_decel_rate = self.autoNaviSpeedDecelRate * 0.7
