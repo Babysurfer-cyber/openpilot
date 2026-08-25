@@ -729,7 +729,7 @@ class VCruiseCarrot:
           # 램프 구간 조건: 현재 내 차 속도와 감속할 속도의 차이가 30 이상일 때
           if (self.v_ego_kph_set - cam_limit) >= 30:
             is_ramp_section = True
-            if cam_dist <= 50.0:
+            if cam_dist <= 80.0:
               # ▼▼▼ [수정] 오프셋(+20)이 강제될 것을 감안하여 1차 타겟 속도를 역산 ▼▼▼
               final_target_speed = cam_limit + 20.0
               mid_target_speed = (self.v_ego_kph_set + final_target_speed) / 2.0
