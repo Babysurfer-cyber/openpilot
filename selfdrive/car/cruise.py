@@ -189,7 +189,6 @@ class VCruiseCarrot:
     self._v_cruise_kph_at_brake = 0
     self.cruise_state_available_last = False
 
-    self._paddle_decel_active = False
     self.carrot_cruise_active = False
 
     #self.events = []
@@ -205,7 +204,6 @@ class VCruiseCarrot:
     self.carrot_cmd_index = 0
     self.carrot_cmd = ""
     self.carrot_arg = ""
-
 
     self._cancel_timer = 0
     self.d_rel = 0
@@ -224,7 +222,6 @@ class VCruiseCarrot:
     self.useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed")
     self.useLaneLineSpeedApply = self.useLaneLineSpeed
 
-
   @property
   def v_cruise_initialized(self):
     return self.v_cruise_kph != V_CRUISE_UNSET
@@ -234,10 +231,8 @@ class VCruiseCarrot:
       self._log_timer = max(0, self._log_timer - 1)
       if self._log_timer <= 0:
         self.log = ""
-        #self.event = -1
     else:
       self.log = log
-      #self.event = event
       self._log_timer = self._log_timeout
 
   def update_params(self, is_metric):
@@ -288,6 +283,11 @@ class VCruiseCarrot:
       self.autoCruiseControl_cancel_timer = max(0, self.autoCruiseControl_cancel_timer - 1)
 
     CC = sm['carControl']
+    
+    # ▼▼▼ 크루즈가 꺼져있으면 최소 속도 제한을 기본값(5)으로 안전하게 복구 ▼▼▼
+    if not CC.enabled:
+      self._cruise_speed_min = 5
+      
     if sm.alive['carrotMan']:
       carrot_man = sm['carrotMan']
       self.nRoadLimitSpeed = carrot_man.nRoadLimitSpeed
@@ -313,7 +313,6 @@ class VCruiseCarrot:
 
     self._cancel_timer = max(0, self._cancel_timer - 1)
 
-    #self.events = []
     self.v_ego_kph_set = int(CS.vEgoCluster * CV.MS_TO_KPH + 0.5)
     self._activate_cruise = 0
     self._prepare_brake_gas(CS, CC)
@@ -324,10 +323,8 @@ class VCruiseCarrot:
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
     if self._activate_cruise > 0:
-      #self.events.append(EventName.buttonEnable)
       self._cruise_ready = False
     elif self._activate_cruise < 0:
-      #self.events.append(EventName.buttonCancel)
       self._cruise_ready = True if self._activate_cruise == -2 else False
 
     if CS.cruiseState.available:
@@ -346,17 +343,14 @@ class VCruiseCarrot:
           self.v_cruise_kph = np.clip(v_cruise_kph, 30, self._cruise_speed_max)
           self.v_cruise_cluster_kph = self.v_cruise_kph
     else:
-      self.v_cruise_kph = np.clip(v_cruise_kph, self._cruise_speed_min, self._cruise_speed_max) #max(20, self.v_ego_kph_set) #V_CRUISE_UNSET
-      self.v_cruise_cluster_kph = self.v_cruise_kph #V_CRUISE_UNSET
-      #if self.cruise_state_available_last: # 최초 한번이라도 cruiseState.available이 True였다면
-      #  self._lat_enabled = False
+      self.v_cruise_kph = np.clip(v_cruise_kph, self._cruise_speed_min, self._cruise_speed_max) 
+      self.v_cruise_cluster_kph = self.v_cruise_kph 
 
     self.cruise_state_available_last = CS.cruiseState.available
     self.enabled_last = CC.enabled
 
   def initialize_v_cruise(self, CS, experimental_mode: bool) -> None:
     return
-    # initializing is handled by the PCM
     if self.CP.pcmCruise and self.speed_from_pcm == 1:
       return
 
@@ -364,7 +358,7 @@ class VCruiseCarrot:
 
     v_ego_kph = int(round(np.clip(CS.vEgoCluster * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
     print(CS.buttonEvents)
-    if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents): # and self.v_cruise_initialized:
+    if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents): 
       self.v_cruise_kph = max(self._v_cruise_kph_at_brake, v_ego_kph) if self._v_cruise_kph_at_brake > 0 else self.v_cruise_kph_last
       self._add_log(f"{self.v_cruise_kph},{self._v_cruise_kph_at_brake} Cruise resume")
     else:
@@ -381,33 +375,21 @@ class VCruiseCarrot:
 
     SPEED_UP_UNIT = self._cruise_speed_unit_basic
     SPEED_DOWN_UNIT = self._cruise_speed_unit if self._cruise_button_mode in [1, 2, 3] else self._cruise_speed_unit_basic
-    V_CRUISE_DELTA = 30  #크루즈버튼 롱클릭 변경 단위
+    V_CRUISE_DELTA = 30  
     is_metric = self.is_metric
 
-    # long press tracking
     if self.button_cnt > 0:
       self.button_cnt += 1
 
     for b in buttonEvents:
       bt = b.type
 
-      # ▼▼▼ [삭제] 패들 즉시 반응 로직 6줄 삭제 (또는 주석 처리) ▼▼▼
-      # if bt in [ButtonType.paddleLeft, ButtonType.paddleRight] and b.pressed:
-      #   # Paddle: 즉시 이벤트 발생
-      #   button_type = bt
-      #   self.long_pressed = False
-      #   self.button_cnt = 0
-      #   continue
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-      # ▼▼▼ [수정] 아래 리스트에 패들 버튼 2개를 추가해 줍니다 ▼▼▼
       if b.pressed and self.button_cnt == 0 and bt in [
         ButtonType.accelCruise, ButtonType.decelCruise,
         ButtonType.gapAdjustCruise, ButtonType.cancel,
         ButtonType.lfaButton,
-        ButtonType.paddleLeft, ButtonType.paddleRight  # <--- 추가됨!
+        ButtonType.paddleLeft, ButtonType.paddleRight
       ]:
-
         self.button_cnt = 1
         self.button_prev = bt
         self.button_long_time = self._cruise_button_long_delay if bt in [ButtonType.accelCruise, ButtonType.decelCruise] else self._cruise_button_long_delay + 30
@@ -426,20 +408,17 @@ class VCruiseCarrot:
         self.long_pressed = False
         self.button_cnt = 0
 
-    # Long press 처리
     if self.button_cnt > self.button_long_time:
       self.long_pressed = True
       bt = self.button_prev
 
       if bt in [ButtonType.accelCruise, ButtonType.decelCruise]:
-        # ▼ [수정] 1초(100프레임) 주기마다 계속해서 속도가 조절되도록 변경!
         if (self.button_cnt - self.button_long_time) % 100 == 1:
           if bt == ButtonType.accelCruise:
             button_kph += 30
           else:
             button_kph -= 30
           button_type = bt
-          
       else: 
         if self.button_cnt == self.button_long_time + 1:
           button_type = bt
@@ -469,7 +448,7 @@ class VCruiseCarrot:
           v_cruise_kph = self._auto_speed_up(v_cruise_kph)
           self._add_log("Cruise speed up (carrot command)")
         elif self.carrot_arg == "DOWN":
-          if v_cruise_kph > 20: #이부분 20에서 10으로 수정
+          if v_cruise_kph > 20: 
             v_cruise_kph -= 10
             self._add_log("Cruise speed downup (carrot command)")
         else:
@@ -485,15 +464,12 @@ class VCruiseCarrot:
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
 
-    # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
       if getattr(self, 'carrot_cruise_active', False):
         button_type = ButtonType.accelCruise
         self._add_log("Carrot Cruise OFF & Restore Speed (LFA toggle)")
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if button_type in [ButtonType.accelCruise, ButtonType.decelCruise]:
-      self._paddle_decel_active = False
       if self.autoCruiseControl_cancel_timer > 0:
         self._add_log(f"AutoCruiseControl cancel timer RESET {button_type}")
         self.autoCruiseControl_cancel_timer = 0
@@ -512,8 +488,6 @@ class VCruiseCarrot:
           self._v_cruise_kph_at_brake = 0
           self.carrot_cruise_active = False  
         elif self._cruise_ready or not CC.enabled or CS.cruiseState.standstill or self.carrot_cruise_active:
-          
-          # 최초 작동 시 제한속도 +10 로직
           if not CC.enabled and getattr(self, 'is_first_activation', True):
             self.is_first_activation = False  
             if self.nRoadLimitSpeed > 0:
@@ -544,7 +518,6 @@ class VCruiseCarrot:
           if self._soft_hold_active > 0:
             self._cruise_control(-1, -1, "Cruise off,softhold mode (decelCruise)")
           elif self._cruise_ready:
-            self._paddle_decel_active = True
             pass
           elif not CC.enabled:
             v_cruise_kph = max(self.v_ego_kph_set, self._cruise_speed_min)
@@ -575,13 +548,7 @@ class VCruiseCarrot:
           self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
         elif self._lfa_button_mode == 2:
           self.carrot_cruise_active = True
-        else:
-          if False: 
-            self._paddle_decel_active = False
-          else:          
-            self._paddle_decel_active = True
       elif button_type == ButtonType.cancel:
-        self._paddle_decel_active = False
         if self._cancel_button_mode in [1]:
           self._lat_enabled = False
           self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
@@ -607,24 +574,28 @@ class VCruiseCarrot:
       elif button_type == ButtonType.cancel:
         self._cruise_cancel_state = True
         self._lat_enabled = False
-        self._paddle_decel_active = False
         self.carrot_cruise_active = False  
         self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
 
     if self._paddle_mode > 0 and button_type in [ButtonType.paddleLeft, ButtonType.paddleRight]:
       if long_pressed:
-        self._paddle_decel_active = False
+        pass
       else:
         if self._paddle_mode == 3:
           self.carrot_cruise_active = True
-        else:
-          self._cruise_control(-2, -1, "Cruise off & Ready (paddle)")
-          if self._paddle_mode == 2:
-            self._paddle_decel_active = True
-
-    elif self._paddle_decel_active:
-      if not CC.enabled:
-        self._cruise_control(1, -1, "Cruise on (paddle decel)")
+        elif self._paddle_mode == 2:
+          # ▼▼▼ 초간단 패들 정지 로직: 크루즈 속도를 0으로 설정 ▼▼▼
+          if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:  
+            self._v_cruise_kph_at_brake = v_cruise_kph         
+          
+          self._cruise_speed_min = 0  
+          v_cruise_kph = 0 
+          self._pause_auto_speed_up = True
+          
+          if not CC.enabled:
+            self._cruise_control(1, -1, "Cruise on (Paddle Stop)")
+          self._add_log("Paddle Stop: Target Speed 0")
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if not hasattr(self, 'prev_carrot_active'):
       self.prev_carrot_active = False
@@ -635,64 +606,48 @@ class VCruiseCarrot:
         
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
-    # ==============================================================
-    # ▼ [추가] 전방 정지차량 5초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
-    # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'stationary_lead_timer'):
         self.stationary_lead_timer = 0
         
-      # 전방 차량 존재(d_rel > 0) 및 앞차의 속도가 3km/h 미만(정지 상태)인지 확인
       if self.d_rel > 0 and self.v_lead_kph < 3:
         self.stationary_lead_timer += 1
         
-        if self.stationary_lead_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
+        if self.stationary_lead_timer >= 300: 
           self.carrot_cruise_active = False
           self.stationary_lead_timer = 0
           
-          # 💡 LFA 버튼(또는 엑셀) 해제 시처럼 금고에 넣어둔 기존 크루즈 목표 속도로 복귀!
           if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
             v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
             self._v_cruise_kph_at_brake = 0
             
           self._add_log("Carrot Cruise OFF & Restore (Stationary 5s)")
       else:
-        self.stationary_lead_timer = 0  # 앞차가 움직이거나 사라지면 타이머 초기화
+        self.stationary_lead_timer = 0  
     else:
       self.stationary_lead_timer = 0
-    # ==============================================================
 
-    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 5초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
-    # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'target_speed_reach_timer'):
         self.target_speed_reach_timer = 0
         
-      # desiredSpeed가 유효한 감속 지시 중이고 (예: 200km/h 미만), 
-      # 현재 차량 속도가 그 목표 속도 부근(+1km/h 오차 허용)까지 충분히 떨어졌을 때
       if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1:
         self.target_speed_reach_timer += 1
         
-        if self.target_speed_reach_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
+        if self.target_speed_reach_timer >= 100:  
           self.carrot_cruise_active = False
           self.target_speed_reach_timer = 0
           
-          # 금고에 넣어둔 기존 크루즈 목표 속도(예: 100km/h)로 복귀
-          # (복귀해도 desiredSpeed가 60이라면 시스템이 알아서 브레이크를 잡아 60을 유지합니다!)
           if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
             v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
             self._v_cruise_kph_at_brake = 0
             
           self._add_log(f"Carrot Cruise OFF & Restore (Target Speed {self.desiredSpeed} Reached)")
       else:
-        self.target_speed_reach_timer = 0  # 목표 속도를 벗어나면 타이머 초기화
+        self.target_speed_reach_timer = 0  
     else:
       self.target_speed_reach_timer = 0
-    # ==============================================================
 
-    # ==============================================================
-    # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
-    # ==============================================================
     try:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
@@ -716,52 +671,40 @@ class VCruiseCarrot:
         except Exception:
           pass
 
-        # 카메라 거리가 0이거나 없을 때는 현재 시스템 제한속도를 활성 제한속도로 확정
         if cam_dist <= 0:
             if self.nRoadLimitSpeed > 0:
                 self.current_active_limit = self.nRoadLimitSpeed
         
         effective_limit = self.current_active_limit
-        is_ramp_section = False  # 램프 구간 판별 꼬리표
+        is_ramp_section = False  
 
-        # 4BE 카메라 신호가 존재할 때 (표지판/램프로 다가오는 중)
         if cam_dist > 0 and cam_limit > 0:
-          # 램프 구간 조건: 현재 내 차 속도와 감속할 속도의 차이가 30 이상일 때
           if (self.v_ego_kph_set - cam_limit) >= 30:
             is_ramp_section = True
             if cam_dist <= 50.0:
-              # ▼▼▼ [수정] 오프셋(+20)이 강제될 것을 감안하여 1차 타겟 속도를 역산 ▼▼▼
               final_target_speed = cam_limit + 20.0
               mid_target_speed = (self.v_ego_kph_set + final_target_speed) / 2.0
               effective_limit = int(round((mid_target_speed - 20.0) / 10.0)) * 10
             else:
-              # 50m 보다 멀 때: 아직 크루즈 설정 속도를 내리지 않음 (기존 속도 유지)
               effective_limit = self.current_active_limit
           else:
-            # 램프 구간이 아닌 일반적인 속도 변경: 
-            # 제한속도가 바뀌는 지점(cam_dist <= 0) 전까지는 크루즈 설정 속도 유지
             effective_limit = self.current_active_limit
 
         if effective_limit > 0:
-          # 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
               self.last_auto_speed = v_cruise_kph  
               self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
 
-          # 제한속도 변경 및 최초 진입 시 동기화
           if effective_limit != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
-            # 2. 제한속도가 올라갈 때(가속 구간)는 수동 조작 오프셋을 버리고 기본값(+10)으로 리셋!
             if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
               self.user_speed_offset = 10.0
               self._add_log("Auto Mode: Speed UP -> Reset offset to +10.0")
 
             new_set_speed = float(effective_limit + self.user_speed_offset)
             
-            # 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지 (단, 30 이상 급감속 시 방어)
             if self.prev_limit_speed_for_auto > 0 and effective_limit < self.prev_limit_speed_for_auto:
-              # 속도가 쪼개져서 떨어지더라도 램프 구간이면 무조건 오프셋 +20 부여
               if (self.prev_limit_speed_for_auto - effective_limit) >= 30.0 or is_ramp_section:
                 new_set_speed = float(effective_limit + 20.0)
                 self.user_speed_offset = 20.0  
@@ -771,11 +714,9 @@ class VCruiseCarrot:
             self.last_auto_speed = v_cruise_kph  
             self._add_log(f"Auto Mode: Sync to {v_cruise_kph} (Offset: {self.user_speed_offset:+0.1f})")
             
-            # 당근크루즈 금고 속도 업데이트
             if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
                 self._v_cruise_kph_at_brake = v_cruise_kph
                 
-          # ▼▼▼ 들여쓰기 10칸: 변경/유지 모두에서 반드시 매 프레임 업데이트 방지 ▼▼▼
           self.prev_limit_speed_for_auto = effective_limit
           self.auto_mode_applied = True
             
@@ -790,17 +731,10 @@ class VCruiseCarrot:
         
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
-    # ==============================================================
-    
-    # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
+      
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
 
-  ## desiredSpeed :
-  #   leadCar_distance, leadCar_speed, leadCar_accel,
-  #   v_ego, tbt_distance, tbt_speed,
-  #   nRoadLimitSpeed, vTurnSpeed
-  #   gasPressed, brakePressed, standstill
   def _v_cruise_desired(self, CS, v_cruise_kph):
     if self._cruise_button_mode == 3:
       for speed in self._cruise_speed_table:
@@ -810,8 +744,8 @@ class VCruiseCarrot:
       else:
         v_cruise_kph = ((v_cruise_kph // self._cruise_speed_unit) + 1) * self._cruise_speed_unit
 
-    elif v_cruise_kph < 30: #self.nRoadLimitSpeed:
-      v_cruise_kph = 30 #self.nRoadLimitSpeed
+    elif v_cruise_kph < 30: 
+      v_cruise_kph = 30 
     else:
       for speed in range (40, 160, self._cruise_speed_unit):
         if v_cruise_kph < speed:
@@ -820,8 +754,6 @@ class VCruiseCarrot:
     return v_cruise_kph
 
   def _auto_speed_up(self, v_cruise_kph):
-    #if self._pause_auto_speed_up:
-    #  return v_cruise_kph
     if not self._pause_auto_speed_up and self.applyModelSpeed != 0.0:
       model_kph = self.model_v_kph * abs(self.applyModelSpeed)
       apply_speed = min(model_kph, self.nRoadLimitSpeed * 1.1)
@@ -835,12 +767,9 @@ class VCruiseCarrot:
     if road_limit_kph < 1.0:
       return v_cruise_kph
 
-    #if self.autoRoadSpeedLimitOffset > 0:
-      #self._v_cruise_kph_at_brake = self.nRoadLimitSpeed + self.autoRoadSpeedLimitOffset
-
     if not self._pause_auto_speed_up and self.v_lead_kph + 5 > v_cruise_kph and v_cruise_kph < road_limit_kph and self.d_rel < 60:
       v_cruise_kph = min(v_cruise_kph + 5, road_limit_kph)
-    elif self.autoRoadSpeedAdjust < 0 and self.nRoadLimitSpeed != self.nRoadLimitSpeed_last:  # 도로제한속도가 바뀌면, 바뀐속도로 속도를 바꿈.
+    elif self.autoRoadSpeedAdjust < 0 and self.nRoadLimitSpeed != self.nRoadLimitSpeed_last:  
       if self.autoRoadSpeedLimitOffset < 0:
         v_cruise_kph = self.nRoadLimitSpeed * self.autoNaviSpeedSafetyFactor
       else:
@@ -852,8 +781,9 @@ class VCruiseCarrot:
     self.road_limit_kph = road_limit_kph
     self.nRoadLimitSpeed_last = self.nRoadLimitSpeed
     return v_cruise_kph
+    
   def _cruise_control(self, enable, cancel_timer, reason):
-    if self._cruise_cancel_state: # and self._soft_hold_active != 2:
+    if self._cruise_cancel_state: 
       self._add_log(reason + " > Cancel state")
     elif enable > 0 and self._cancel_timer > 0 and cancel_timer >= 0:
       enable = 0
@@ -869,7 +799,7 @@ class VCruiseCarrot:
         self._soft_hold_active = 0
         return
       self._activate_cruise = enable
-      self._cancel_timer = int(cancel_timer / 0.01)   # DT_CTRL: 0.01
+      self._cancel_timer = int(cancel_timer / 0.01)   
       self._add_log(reason)
 
   def _check_safe_stop(self, CS, safe_distance = 3):
@@ -887,12 +817,9 @@ class VCruiseCarrot:
 
   def _update_cruise_state(self, CS, CC, v_cruise_kph):
     if not CC.enabled:
-      #self._pause_auto_speed_up = False
       if self._brake_pressed_count == -1 and self._soft_hold_active > 0:
         self._soft_hold_active = 2
-        #self.autoCruiseControl_cancel_timer = 0
         self._cruise_control(1, -1, "Cruise on (soft hold)")
-      # GM: autoResume
       elif self.params.get_bool("ActivateCruiseAfterBrake"):
         self.params.put_bool_nonblocking("ActivateCruiseAfterBrake", False)
         self._cruise_control(1, -1, "Cruise on (brake)")
@@ -900,13 +827,10 @@ class VCruiseCarrot:
         self.v_cruise_kph = self.v_ego_kph_set
 
     if self._soft_hold_active > 0:
-      #self.events.append(EventName.softHold)
-      #self._cruise_cancel_state = False
       pass
 
     if self._gas_tok and self.v_ego_kph_set >= self.autoGasTokSpeed:
       if not CC.enabled:
-        #self._cruise_cancel_state = False
         self._cruise_control(1, -1, "Cruise on (gas tok)")
         if self.v_ego_kph_set > v_cruise_kph:
           v_cruise_kph = self.v_ego_kph_set
@@ -932,11 +856,10 @@ class VCruiseCarrot:
         self._cruise_control(1, -1 if self.aTarget > 0.0 else 0, "Cruise on (speed)")
       elif abs(CS.steeringAngleDeg) < 20:
         if self.xState in [3, 5]:
-          if self.xState == 3:  # 감속중
+          if self.xState == 3:  
             v_cruise_kph = self.v_ego_kph_set
           self._cruise_control(1, 0, "Cruise on (traffic sign)")
         elif 0 < self.d_rel < 20: 
-          # v_cruise_kph = self.v_ego_kph_set # 전방에 차가 가까이 있을때, 기존속도 유지
           self._cruise_control(1, -1 if self.v_ego_kph_set < 1 else 0, "Cruise on (lead car)")
 
     elif self._brake_pressed_count < 0 and self._gas_pressed_count < 0:
@@ -951,7 +874,6 @@ class VCruiseCarrot:
             self._cruise_control(1, 0, "Cruise on (fcw dist)")
           else:
             self._add_log(f"leadCar d={self.d_rel:.1f},v={self.v_rel:.1f},{CS.vEgo:.1f}, {safe_dist:.1f}")
-            #self.events.append(EventName.stopStop)
         if self.desiredSpeed < self.v_ego_kph_set:
           self._cruise_control(1, -1, "Cruise on (desired speed)")
         if self._cruise_ready:
@@ -959,10 +881,6 @@ class VCruiseCarrot:
             self._cruise_control(1, 0, "Cruise on (traffic sign)")
           elif self.d_rel > 0:
             self._cruise_control(1, 0, "Cruise on (lead car)")
-      elif self._paddle_decel_active:
-        if self.xState in [3]:
-          self._paddle_decel_active = False
-          v_cruise_kph = self.v_ego_kph_set          
 
     if self._gas_pressed_count > self._gas_tok_timer:
       if CS.aEgo < -0.5:
@@ -977,31 +895,22 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
-    # ▼▼▼ [추가 2] 당근크루즈 중 재가속 차단 및 타력주행(코스팅) 완벽 유지! ▼▼▼
     if getattr(self, 'carrot_cruise_active', False):
       if CS.gasPressed:
-        # 1. 엑셀을 밟을 때: 목표 속도도 내 차 속도에 맞춰 같이 끌어올려줌 
         v_cruise_kph = self.v_ego_kph_set
       else:
-        # 2. 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
-        # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 엑셀 개입을 완벽히 차단합니다.
         v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 2)) 
       
-      # 3. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
       self._pause_auto_speed_up = True                     
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     return self._auto_speed_up(v_cruise_kph)
 
   def _prepare_brake_gas(self, CS, CC):
     if CS.gasPressed:
-      self._paddle_decel_active = False
       self._gas_pressed_count = max(1, self._gas_pressed_count + 1)
       self._gas_pressed_count_last = self._gas_pressed_count
       self._gas_pressed_value = max(CS.gas, self._gas_pressed_value) if self._gas_pressed_count > 1 else CS.gas
       self._gas_tok = False
-      #if self._cruise_cancel_state and self._soft_hold_active == 2:
-      #  self._cruise_control(-1, -1, "Cruise off,softhold mode (gasPressed)")
       self._soft_hold_active = 0
     else:
       self._gas_tok = True if 0 < self._gas_pressed_count < self._gas_tok_timer else False
@@ -1012,15 +921,12 @@ class VCruiseCarrot:
 
     if CS.brakePressed:
       self._cruise_ready = False
-      self._paddle_decel_active = False
-      self.carrot_cruise_active = False  # <--- 추가
+      self.carrot_cruise_active = False 
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
       if self._brake_pressed_count == 1 and self.enabled_last:
-        # ▼▼▼ [수정] 금고가 비어있을 때만 백업! (당근크루즈가 넣어둔 80 보존) ▼▼▼
         if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:
           self._v_cruise_kph_at_brake = self.v_cruise_kph
         self._add_log(f"{self._v_cruise_kph_at_brake} Cruise speed at brake")
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       self._soft_hold_count = self._soft_hold_count + 1 if CS.vEgo < 0.1 and CS.gearShifter == GearShifter.drive else 0
       if self.autoCruiseControl == 0 or self.CP.pcmCruise:
         self._soft_hold_active = 0
