@@ -965,8 +965,8 @@ class CarrotServ:
 
     ### 과속카메라, 사고방지턱
 
+    # 기존: 4BE (내비) 카메라 신호 처리 부분
     if (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0:
-
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
       sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
@@ -974,14 +974,21 @@ class CarrotServ:
       if self.xSpdType == 4 or (self.xSpdType in [100, 101] and self.xSpdDist <= 0):
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
+        
+    # ▼▼▼ [수정] HDA 신호 처리 부분 (4A3) ▼▼▼
     elif CS is not None and CS.speedLimit > 0 and CS.speedLimitDistance > 0:
-      sdi_speed = min(sdi_speed,
-                      self.calculate_current_speed(CS.speedLimitDistance,
-                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
-                                                   self.autoNaviSpeedCtrlEnd,
-                                                   self.autoNaviSpeedDecelRate))
-      #self.active_carrot = 6
-      hda_active = True
+      
+      # [핵심 추가] 4BE 신호가 있고, 두 제한속도가 같다면 HDA 처리를 건너뜁니다!
+      if self.xSpdLimit > 0 and self.xSpdLimit == CS.speedLimit:
+          pass  # 4BE가 알아서 하도록 아무것도 안 함
+      else:
+          # 기존 HDA 처리 로직 정상 수행
+          sdi_speed = min(sdi_speed,
+                          self.calculate_current_speed(CS.speedLimitDistance,
+                                                       CS.speedLimit * self.autoNaviSpeedSafetyFactor,
+                                                       self.autoNaviSpeedCtrlEnd,
+                                                       self.autoNaviSpeedDecelRate))
+          hda_active = True
       
       # =========================================================
       # ▼ [추가] 순정 내비 카메라 감지 시 화면 깜빡임 연동 스위치!
