@@ -733,7 +733,7 @@ class VCruiseCarrot:
             
             # 물리 공식: 제동거리 = (현재속도^2 - 목표속도^2) / (2 * 감속도 1.2) + 여유거리(2초)
             # 회원님 요청 반영: 전체 계산된 거리에 0.5를 곱해 감속 시작 시점을 절반으로 확 줄입니다!
-            safe_decel_dist = (max(0, (v_ego_mps**2 - cam_limit_mps**2) / (2 * 1.2)) + (v_ego_mps * 2.0)) * 0.5
+            safe_decel_dist = (max(0, (v_ego_mps**2 - cam_limit_mps**2) / (2 * 1.2)) + (v_ego_mps * 2.0)) * 0.33
             
             if cam_dist <= safe_decel_dist:
               effective_limit = cam_limit
