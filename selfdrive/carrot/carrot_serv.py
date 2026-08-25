@@ -1048,7 +1048,7 @@ class CarrotServ:
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
       (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
-      (vehicle_bump_speed, "hda_bump"),  # <--- [3/3] 이 줄을 추가합니다.
+      (vehicle_bump_speed, "bump"),  # <--- [3/3] 이 줄을 추가합니다.
       (limit_speed, "road"),
     ]
 
