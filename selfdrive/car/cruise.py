@@ -636,7 +636,7 @@ class VCruiseCarrot:
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
-    # ▼ [추가] 전방 정지차량 3초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
+    # ▼ [추가] 전방 정지차량 5초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
     # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'stationary_lead_timer'):
@@ -646,7 +646,7 @@ class VCruiseCarrot:
       if self.d_rel > 0 and self.v_lead_kph < 3:
         self.stationary_lead_timer += 1
         
-        if self.stationary_lead_timer >= 300:  # 100Hz 루프 기준 3초 (300 프레임)
+        if self.stationary_lead_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
           self.carrot_cruise_active = False
           self.stationary_lead_timer = 0
           
@@ -662,7 +662,7 @@ class VCruiseCarrot:
       self.stationary_lead_timer = 0
     # ==============================================================
 
-    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 3초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
+    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 1초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
     # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'target_speed_reach_timer'):
@@ -673,7 +673,7 @@ class VCruiseCarrot:
       if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1:
         self.target_speed_reach_timer += 1
         
-        if self.target_speed_reach_timer >= 300:  # 100Hz 루프 기준 3초 (300 프레임)
+        if self.target_speed_reach_timer >= 100:  # 100Hz 루프 기준 1초 (100 프레임)
           self.carrot_cruise_active = False
           self.target_speed_reach_timer = 0
           
