@@ -662,7 +662,7 @@ class VCruiseCarrot:
       self.stationary_lead_timer = 0
     # ==============================================================
 
-    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 1초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
+    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 5초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
     # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'target_speed_reach_timer'):
@@ -673,7 +673,7 @@ class VCruiseCarrot:
       if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1:
         self.target_speed_reach_timer += 1
         
-        if self.target_speed_reach_timer >= 100:  # 100Hz 루프 기준 1초 (100 프레임)
+        if self.target_speed_reach_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
           self.carrot_cruise_active = False
           self.target_speed_reach_timer = 0
           
