@@ -704,6 +704,8 @@ class VCruiseCarrot:
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
           self.current_active_limit = self.nRoadLimitSpeed
+          self.auto_mode_step_down_active = False   # 계단식 감속 진행 여부
+          self.auto_mode_step_down_target = 0.0     # 계단식 감속 최종 목표
 
         cam_dist = 0.0
         cam_limit = 0.0
@@ -748,7 +750,8 @@ class VCruiseCarrot:
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
-              self.last_auto_speed = v_cruise_kph  
+              self.last_auto_speed = v_cruise_kph
+              self.auto_mode_step_down_active = False  # 수동 조작 시 계단식 감속 강제 종료
               self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
 
           # 제한속도 변경 및 최초 진입 시 동기화
@@ -758,25 +761,55 @@ class VCruiseCarrot:
               self.user_speed_offset = 10.0
               self._add_log("Auto Mode: Speed UP -> Reset offset to +10.0")
 
-            # ▼▼▼ [추가] 제한속도가 없었을 경우, 내 차의 현재 속도를 가상의 기준 속도로 삼습니다! ▼▼▼
             reference_speed = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else self.v_ego_kph_set
-
             new_set_speed = float(effective_limit + self.user_speed_offset)
             
-            # 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지 (단, 30 이상 급감속 시 방어)
+            # 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지
             if effective_limit < reference_speed:
               if (reference_speed - effective_limit) >= 30.0:
                 self.user_speed_offset += 10.0  
                 new_set_speed = float(effective_limit + self.user_speed_offset)
                 self._add_log(f"Auto Mode: Big drop, added +10 to offset -> set {new_set_speed}")
                 
-            v_cruise_kph = new_set_speed
-            self.last_auto_speed = v_cruise_kph  
-            self._add_log(f"Auto Mode: Sync to {v_cruise_kph} (Offset: {self.user_speed_offset:+0.1f})")
+              # ▼▼▼ [신규] 감속 시 계단식 감속(10km/h씩) 1단계 시작 ▼▼▼
+              if new_set_speed < v_cruise_kph:
+                self.auto_mode_step_down_target = new_set_speed
+                self.auto_mode_step_down_active = True
+                v_cruise_kph = max(new_set_speed, v_cruise_kph - 10.0)
+                
+                # 처음 10 줄어들 때 딱 한 번만 안내음(알림) 발생
+                try:
+                  open("/dev/shm/carrot_prompt", "w").close()
+                except Exception:
+                  pass
+                self._add_log(f"Auto Mode: Step-down START to {v_cruise_kph}")
+              else:
+                v_cruise_kph = new_set_speed
+                self.auto_mode_step_down_active = False
+
+            else:
+              # 가속 구간이거나 동일할 때
+              v_cruise_kph = new_set_speed
+              self.auto_mode_step_down_active = False
+              self._add_log(f"Auto Mode: Sync to {v_cruise_kph}")
+
+            self.last_auto_speed = v_cruise_kph
             
             # 당근크루즈 금고 속도 업데이트
             if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
                 self._v_cruise_kph_at_brake = v_cruise_kph
+                
+          # ▼▼▼ [신규] 4. 제한속도는 유지되는데, 계단식 감속이 진행 중일 때 ▼▼▼
+          elif getattr(self, 'auto_mode_step_down_active', False):
+            # 차의 현재 속도(v_ego)가 목표한 크루즈 속도 부근(여유 +2km/h)까지 충분히 떨어졌을 때 다음 계단 진행
+            if self.v_ego_kph_set <= v_cruise_kph + 2.0:
+              if v_cruise_kph > self.auto_mode_step_down_target:
+                v_cruise_kph = max(self.auto_mode_step_down_target, v_cruise_kph - 10.0)
+                self.last_auto_speed = v_cruise_kph
+                self._add_log(f"Auto Mode: Step-down NEXT to {v_cruise_kph}")
+              else:
+                self.auto_mode_step_down_active = False
+                self._add_log("Auto Mode: Step-down FINISHED")
                 
           # ▼▼▼ 들여쓰기 10칸: 변경/유지 모두에서 반드시 매 프레임 업데이트 방지 ▼▼▼
           self.prev_limit_speed_for_auto = effective_limit
