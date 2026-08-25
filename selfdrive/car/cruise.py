@@ -689,6 +689,7 @@ class VCruiseCarrot:
     else:
       self.target_speed_reach_timer = 0
     # ==============================================================
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # ==============================================================
     # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
@@ -776,9 +777,12 @@ class VCruiseCarrot:
             if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
                 self._v_cruise_kph_at_brake = v_cruise_kph
                 
-        self.prev_limit_speed_for_auto = effective_limit
-        self.auto_mode_applied = True
-        
+            self.prev_limit_speed_for_auto = effective_limit
+            self.auto_mode_applied = True
+            
+        else:
+          pass
+          
       else:
         self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
         self.auto_mode_applied = False
@@ -788,7 +792,6 @@ class VCruiseCarrot:
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
-    
     # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
