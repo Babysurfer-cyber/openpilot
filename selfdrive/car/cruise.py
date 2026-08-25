@@ -689,7 +689,6 @@ class VCruiseCarrot:
     else:
       self.target_speed_reach_timer = 0
     # ==============================================================
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # ==============================================================
     # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
@@ -735,7 +734,6 @@ class VCruiseCarrot:
               final_target_speed = cam_limit + 20.0
               mid_target_speed = (self.v_ego_kph_set + final_target_speed) / 2.0
               effective_limit = int(round((mid_target_speed - 20.0) / 10.0)) * 10
-              # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             else:
               # 50m 보다 멀 때: 아직 크루즈 설정 속도를 내리지 않음 (기존 속도 유지)
               effective_limit = self.current_active_limit
@@ -777,8 +775,9 @@ class VCruiseCarrot:
             if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
                 self._v_cruise_kph_at_brake = v_cruise_kph
                 
-            self.prev_limit_speed_for_auto = effective_limit
-            self.auto_mode_applied = True
+          # ▼▼▼ 들여쓰기 10칸: 변경/유지 모두에서 반드시 매 프레임 업데이트 방지 ▼▼▼
+          self.prev_limit_speed_for_auto = effective_limit
+          self.auto_mode_applied = True
             
         else:
           pass
@@ -792,6 +791,7 @@ class VCruiseCarrot:
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
+    
     # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return v_cruise_kph
