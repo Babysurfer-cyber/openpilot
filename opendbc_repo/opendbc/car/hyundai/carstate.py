@@ -507,39 +507,15 @@ class CarState(CarStateBase):
 
   @staticmethod
   def _classify_vehicle_navi_profile(profile):
-    if profile["profile_type"] != 16:
+    if profile["profile_type"] != 16 or not 0 < profile["offset"] <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
       return None
-      
-    val = profile["value"]
-    offset = profile.get("offset", 0)
-
-    if val == 6 and 0 < offset <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
+    if profile["value"] == 6:  # 6번(방지턱)만 추출
       return "bump", 0, 6
-
-    # ▼▼▼ 신규: 카메라 및 국도 제한속도 구역 디코딩 ▼▼▼
-    kind = val & 0xF
-    speed_code = val >> 4
-    if speed_code > 0:
-      speed_limit = (speed_code - 1) * 5
-      if speed_limit > 0:
-        # 1. 과속카메라 (거리가 있을 때만 유효)
-        if kind in (0, 1, 2) and 0 < offset <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
-          return "camera", speed_limit, kind
-        # 2. 일반 도로 제한속도 구간 (거리가 0일 수 있음, kind=7)
-        elif kind == 7:
-          return "speed_limit_zone", speed_limit, kind
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     return None
 
   def _add_vehicle_navi_event(self, event_type, speed, kind, offset):
     target = self.totalDistance + offset
     for event in self.vehicleNaviEvents:
-      # ▼▼▼ 신규: 국도 속도제한 구역은 중복 추가하지 않고 무한 갱신 ▼▼▼
-      if event_type == "speed_limit_zone" and event["type"] == "speed_limit_zone":
-        event["target"] = target
-        event["speed"] = speed
-        return
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       if event["type"] == event_type and abs(event["target"] - target) < 20:
         event["target"] = target
         return
@@ -549,7 +525,7 @@ class CarState(CarStateBase):
 
   def _update_vehicle_navi_events(self, cp):
     if not getattr(self, 'vehicleNaviCanControl', False):
-      return 0.0, 0.0
+      return
 
     if self.navi_segment_4b9 is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
@@ -566,46 +542,21 @@ class CarState(CarStateBase):
         profile = self._decode_vehicle_navi_profile(self.navi_profile_4be)
         event = self._classify_vehicle_navi_profile(profile)
         if event is not None and timestamp > self.vehicleNaviRouteResetTimestamp:
-          self._add_vehicle_navi_event(*event, profile.get("offset", 0))
+          self._add_vehicle_navi_event(*event, profile["offset"])
 
     self.vehicleNaviEvents = [e for e in self.vehicleNaviEvents if e["target"] >= self.totalDistance - VEHICLE_NAVI_PASSED_EVENT_DISTANCE]
     bumps = [e for e in self.vehicleNaviEvents if e["type"] == "bump" and e["target"] > self.totalDistance]
     
-    # ▼▼▼ 신규: 카메라와 일반구역 분리 추출 ▼▼▼
-    cameras = [e for e in self.vehicleNaviEvents if e["type"] == "camera" and e["target"] > self.totalDistance]
-    zones = [e for e in self.vehicleNaviEvents if e["type"] == "speed_limit_zone"]
-    
-    bump_dist = bumps[0]["target"] - self.totalDistance if bumps else 0.0
-    cam_dist = 0.0
-    cam_limit = 0.0
-    
-    # 카메라는 거리 기반, 일반구역은 즉시 적용(0m)
-    if cameras:
-      cam_dist = cameras[0]["target"] - self.totalDistance
-      cam_limit = cameras[0]["speed"]
-      
-      # ▼▼▼ [수정] 카메라 거리 제한 (국도 600m / 고속도로 1100m) ▼▼▼
-      if cam_limit < 80 and cam_dist > 600.0:
-        cam_dist = 0.0
-        cam_limit = 0.0
-      elif cam_limit >= 80 and cam_dist > 1100.0:
-        cam_dist = 0.0
-        cam_limit = 0.0
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-      
-    elif zones:
-      cam_dist = 0.0
-      cam_limit = zones[-1]["speed"]
+    # 💡 Cereal 대신 파이썬 직결 통신으로 RAM 디스크에 거리 저장
+    bump_dist = 0.0
+    if bumps:
+      bump_dist = bumps[0]["target"] - self.totalDistance
       
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
         f.write(str(bump_dist))
-      with open("/dev/shm/navi_cam_info", "w") as f:
-        f.write(f"{cam_dist},{cam_limit}")
     except Exception:
       pass
-      
-    return cam_limit, cam_dist
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
@@ -856,19 +807,12 @@ class CarState(CarStateBase):
     vEgoClu, aEgoClu = self.update_clu_speed_kf(ret.vEgoCluster)
     ret.vCluRatio = (ret.vEgo / vEgoClu) if (vEgoClu > 3. and ret.vEgo > 3.) else 1.0
 
-    # ▼▼▼ [수정] 토글 상태 갱신 및 카메라/방지턱 로직 실행 ▼▼▼
+    # ▼▼▼ [추가] 토글 상태 갱신 및 방지턱 로직 실행 ▼▼▼
     self.frame_for_params += 1
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
-    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
-    
-    # ▼▼▼ [수정] 4A3, 4BE 중복 시 거리 정보가 있는 4BE를 무조건 최우선 적용 (덮어쓰기) ▼▼▼
-    if cam_limit > 0:
-      ret.speedLimit = cam_limit
-      speed_limit_cam = True
-      # 4A3가 먼저 잡아버린 0m 거리를 무시하고, 4BE의 정확한 남은 거리로 덮어씌움
-      self.speedLimitDistance = self.totalDistance + cam_dist
+    self._update_vehicle_navi_events(cp)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
