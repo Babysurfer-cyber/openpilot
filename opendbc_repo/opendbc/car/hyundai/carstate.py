@@ -584,11 +584,11 @@ class CarState(CarStateBase):
       cam_dist = cameras[0]["target"] - self.totalDistance
       cam_limit = cameras[0]["speed"]
       
-      # ▼▼▼ [수정] 카메라 거리 제한 (국도 600m / 고속도로 1100m) ▼▼▼
-      if cam_limit < 80 and cam_dist > 600.0:
+      # ▼▼▼ [수정] 카메라 거리 제한 (국도 300m / 고속도로 600m) ▼▼▼
+      if cam_limit < 80 and cam_dist > 300.0:
         cam_dist = 0.0
         cam_limit = 0.0
-      elif cam_limit >= 80 and cam_dist > 1100.0:
+      elif cam_limit >= 80 and cam_dist > 600.0:
         cam_dist = 0.0
         cam_limit = 0.0
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
