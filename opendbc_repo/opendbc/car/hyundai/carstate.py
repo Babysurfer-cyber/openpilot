@@ -584,11 +584,11 @@ class CarState(CarStateBase):
       cam_dist = cameras[0]["target"] - self.totalDistance
       cam_limit = cameras[0]["speed"]
       
-      # ▼▼▼ [수정] 카메라 거리 제한 (국도 300m / 고속도로 600m) ▼▼▼
-      if cam_limit < 80 and cam_dist > 300.0:
+      # ▼▼▼ [수정] 카메라 거리 제한 (국도 600m / 고속도로 1100m) ▼▼▼
+      if cam_limit < 80 and cam_dist > 600.0:
         cam_dist = 0.0
         cam_limit = 0.0
-      elif cam_limit >= 80 and cam_dist > 600.0:
+      elif cam_limit >= 80 and cam_dist > 1100.0:
         cam_dist = 0.0
         cam_limit = 0.0
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
@@ -863,12 +863,14 @@ class CarState(CarStateBase):
 
     cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
     
-    # 💡 4A3(HDA) 신호를 더 우선시: ret.speedLimit이 0이거나 없을 때만 4BE(카메라) 값 적용
-    if ret.speedLimit == 0 and cam_limit > 0:
+    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
+    
+    # ▼▼▼ [수정] 4A3, 4BE 중복 시 거리 정보가 있는 4BE를 무조건 최우선 적용 (덮어쓰기) ▼▼▼
+    if cam_limit > 0:
       ret.speedLimit = cam_limit
       speed_limit_cam = True
-      if self.speedLimitDistance <= self.totalDistance:
-        self.speedLimitDistance = self.totalDistance + cam_dist
+      # 4A3가 먼저 잡아버린 0m 거리를 무시하고, 4BE의 정확한 남은 거리로 덮어씌움
+      self.speedLimitDistance = self.totalDistance + cam_dist
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
