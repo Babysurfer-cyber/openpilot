@@ -692,7 +692,7 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (계단식 감속 완전 삭제)
+    # ▼ [위치 이동 & 수정] 5번 모드: 카메라 통과 시점 완벽 동기화 로직
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -705,8 +705,23 @@ class VCruiseCarrot:
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
 
-        # carstate.py에서 알아서 4A3/4BE 우선순위를 정리해 넘겨준 제한속도를 바로 사용!
-        effective_limit = self.nRoadLimitSpeed
+        # carstate.py에서 알아서 4A3/4BE 우선순위를 정리해 넘겨준 제한속도를 읽어옵니다.
+        raw_limit = CS.speedLimit if CS.speedLimit > 0 else self.nRoadLimitSpeed
+
+        # ▼▼▼ [핵심] 과속카메라 판별 (거리가 0보다 크면 무조건 카메라!) ▼▼▼
+        is_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
+
+        # ▼▼▼ 카메라 통과 시점까지 오토모드 타겟 변경 보류 로직 ▼▼▼
+        if is_cam:
+          # 카메라 앞에서는 하위 로직(sdi_speed)이 물리적 감속을 완벽히 책임지므로,
+          # 오토모드(화면 타겟 속도)는 쫄지 않고 예전 제한속도를 계속 꽉 잡고 대기합니다!
+          effective_limit = self.prev_limit_speed_for_auto
+          if effective_limit <= 0: 
+            effective_limit = raw_limit
+        else:
+          # 카메라가 끝났거나(통과 완료), 단순 표지판 변경일 때는 즉시 적용!
+          effective_limit = raw_limit
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if effective_limit > 0:
           # 1. 수동 조작 오프셋 업데이트 (무제한 허용)
@@ -736,7 +751,7 @@ class VCruiseCarrot:
             self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
 
-          # 3. 계단식 감속 삭제 ➔ 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
+          # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
           v_cruise_kph = float(effective_limit + self.user_speed_offset)
           self.last_auto_speed = v_cruise_kph
 
