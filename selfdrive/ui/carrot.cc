@@ -2614,7 +2614,14 @@ public:
 #ifdef __UI_TEST
         active_carrot = 2;
 #endif
-        if (active_carrot >= 2) {
+        // ▼▼▼ [수정] 제한속도나 카메라 정보가 들어오면 무조건 파란색 배경의 APN 표시! ▼▼▼
+        bool has_speed_info = (nRoadLimitSpeed > 0 || xSpdLimit > 0);
+
+        if (has_speed_info) {
+            ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_BLUE_ALPHA(210), 15, 2);
+            ui_draw_text(s, dx, dy, "APN", 35, COLOR_WHITE, BOLD);
+        }
+        else if (active_carrot >= 2) {
             ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_WHITE_ALPHA(190), 15, 2);
             ui_draw_text(s, dx, dy, "APN", 35, COLOR_WHITE, BOLD);
         }
