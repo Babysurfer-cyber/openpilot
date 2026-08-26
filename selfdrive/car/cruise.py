@@ -703,9 +703,6 @@ class VCruiseCarrot:
           self.auto_mode_applied = False
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
-          self.current_active_limit = self.nRoadLimitSpeed
-          self.auto_mode_step_down_active = False   # 계단식 감속 진행 여부
-          self.auto_mode_step_down_target = 0.0     # 계단식 감속 최종 목표
 
         cam_dist = 0.0
         cam_limit = 0.0
@@ -718,131 +715,81 @@ class VCruiseCarrot:
         except Exception:
           pass
 
-        # 카메라 거리가 0이거나 없을 때는 현재 시스템 제한속도를 활성 제한속도로 확정
         if cam_dist <= 0:
             if self.nRoadLimitSpeed > 0:
                 self.current_active_limit = self.nRoadLimitSpeed
         
         effective_limit = self.current_active_limit
-        is_ramp_section = False  # 램프 구간 판별 꼬리표
-
-        # 4BE 카메라 신호가 존재할 때 (표지판/램프로 다가오는 중)
-        if cam_dist > 0 and cam_limit > 0:
-          # ▼ [수정] 2단 감속 폐지 & 감속 거리 절반(0.5)으로 단축 ▼
-          if cam_limit < self.current_active_limit:
-            v_ego_mps = self.v_ego_kph_set / 3.6
-            cam_limit_mps = cam_limit / 3.6
-            
-            # 물리 공식: 제동거리 = (현재속도^2 - 목표속도^2) / (2 * 감속도 1.2) + 여유거리(2초)
-            # 회원님 요청 반영: 전체 계산된 거리에 0.5를 곱해 감속 시작 시점을 절반으로 확 줄입니다!
-            safe_decel_dist = (max(0, (v_ego_mps**2 - cam_limit_mps**2) / (2 * 1.2)) + (v_ego_mps * 2.0)) * 0.5
-            
-            if cam_dist <= safe_decel_dist:
-              effective_limit = cam_limit
-            else:
-              effective_limit = self.current_active_limit
-          else:
-            # 가속 구간 또는 동일 속도: 표지판을 지날 때(cam_dist <= 0)까지 기존 속도 유지
-            effective_limit = self.current_active_limit
 
         if effective_limit > 0:
-              # 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트
+          # 1. 수동 조작 오프셋 업데이트 (버튼으로 속도를 조절했을 때 보존)
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
-              
-              # ▼▼▼ [추가 1] 수동 조작 시에도 오프셋은 최대 +20.0 으로 캡(Cap) 씌우기 ▼▼▼
-              self.user_speed_offset = min(self.user_speed_offset, 20.0)
-              
+              self.user_speed_offset = min(self.user_speed_offset, 20.0) # 최대 오프셋 20 제한
               self.last_auto_speed = v_cruise_kph
-              self.auto_mode_step_down_active = False  # 수동 조작 시 계단식 감속 강제 종
-              self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
 
-          # 제한속도 변경 및 최초 진입 시 동기화
+          # 2. 제한속도 변경 감지 및 오프셋 동기화
           if effective_limit != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
-            # 2. 제한속도가 올라갈 때(가속 구간)는 수동 조작 오프셋을 버리고 기본값(+10)으로 리셋!
-            if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
-              self.user_speed_offset = 10.0
-              self._add_log("Auto Mode: Speed UP -> Reset offset to +10.0")
-
-            reference_speed = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else self.v_ego_kph_set
-            new_set_speed = float(effective_limit + self.user_speed_offset)
             
-            # 3. 제한속도가 내려갈 때(감속 구간)는 사용자가 설정한 오프셋을 그대로 유지
-            if effective_limit < reference_speed:
-              if (reference_speed - effective_limit) >= 30.0:
-                self.user_speed_offset += 10.0  
-                new_set_speed = float(effective_limit + self.user_speed_offset)
-                self._add_log(f"Auto Mode: Big drop, added +10 to offset -> set {new_set_speed}")
+            # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
+            if self.prev_limit_speed_for_auto <= 0:
+              if (self.v_ego_kph_set - effective_limit) >= 30.0:
+                self.user_speed_offset = 20.0
+              else:
+                self.user_speed_offset = 10.0
                 
-              # ▼▼▼ [신규] 감속 시 계단식 감속(10km/h씩) 1단계 시작 ▼▼▼
-              if new_set_speed < v_cruise_kph:
-                self.auto_mode_step_down_target = new_set_speed
-                self.auto_mode_step_down_active = True
-                v_cruise_kph = max(new_set_speed, v_cruise_kph - 10.0)
-                
-                # 처음 10 줄어들 때 딱 한 번만 안내음(알림) 발생
+            # [규칙 2] 속도 상향 (가속 구간)
+            elif effective_limit > self.prev_limit_speed_for_auto:
+              self.user_speed_offset = 10.0
+              
+            # [규칙 3] 속도 하향 (감속 구간)
+            elif effective_limit < self.prev_limit_speed_for_auto:
+              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0) # 기존 유지하되 20 캡
+
+            self.prev_limit_speed_for_auto = effective_limit
+            self.auto_mode_applied = True
+
+          # 최종 도달해야 할 타겟 속도
+          target_speed = float(effective_limit + self.user_speed_offset)
+
+          # 3. 4BE / 4A3 통합 계단식 감속 로직
+          if v_cruise_kph > target_speed:
+            step_down_allowed = False
+
+            if cam_dist > 0:
+              # [4BE] 거리 정보가 있음: 물리적 활주로 도달 시 하강 시작
+              v_ego_mps = self.v_ego_kph_set / 3.6
+              target_mps = target_speed / 3.6
+              safe_decel_dist = max(0, (v_ego_mps**2 - target_mps**2) / (2 * 1.2)) + (v_ego_mps * 2.0)
+
+              if cam_dist <= safe_decel_dist:
+                step_down_allowed = True
+            else:
+              # [4A3] 거리 정보가 없음: 신호를 받는 즉시 하강 시작
+              step_down_allowed = True
+
+            # 계단식 감속 실행 (10km/h 씩 뚝뚝)
+            if step_down_allowed:
+              # 내 차 속도가 세팅속도 근처(+4km/h)로 따라왔거나, 감속의 첫 시작점일 때 10 깎기!
+              if self.v_ego_kph_set <= v_cruise_kph + 4.0 or v_cruise_kph == self.last_auto_speed:
+                v_cruise_kph = max(target_speed, v_cruise_kph - 10.0)
                 try:
                   open("/dev/shm/carrot_prompt", "w").close()
                 except Exception:
                   pass
-                self._add_log(f"Auto Mode: Step-down START to {v_cruise_kph}")
-              else:
-                v_cruise_kph = new_set_speed
-                self.auto_mode_step_down_active = False
 
-            else:
-              # 가속 구간이거나 동일할 때
-              v_cruise_kph = new_set_speed
-              self.auto_mode_step_down_active = False
-              self._add_log(f"Auto Mode: Sync to {v_cruise_kph}")
+          elif v_cruise_kph < target_speed:
+            # 목표가 더 높으면 변경 지점에서 즉시 가속
+            v_cruise_kph = target_speed
 
-            self.last_auto_speed = v_cruise_kph
-            
-            # 당근크루즈 금고 속도 업데이트
-            if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-                self._v_cruise_kph_at_brake = v_cruise_kph
-                
-          # ▼▼▼ [신규] 4. 제한속도는 유지되는데, 계단식 감속이 진행 중일 때 ▼▼▼
-          elif getattr(self, 'auto_mode_step_down_active', False):
-            # 1. 속도 조건: 차의 현재 속도(v_ego)가 목표 부근까지 떨어지면 다음 계단 진행
-            if self.v_ego_kph_set <= v_cruise_kph + 2.0:
-              if v_cruise_kph > self.auto_mode_step_down_target:
-                v_cruise_kph = max(self.auto_mode_step_down_target, v_cruise_kph - 10.0)
-                self.last_auto_speed = v_cruise_kph
-                self._add_log(f"Auto Mode: Step-down NEXT to {v_cruise_kph}")
-              else:
-                self.auto_mode_step_down_active = False
-                self._add_log("Auto Mode: Step-down FINISHED")
-                
-            # ▼▼▼ [신규] 2. 거리 조건 (마지노선 방어막): 카메라 통과 전 하강 완료 보장! ▼▼▼
-            if cam_dist > 0 and self.auto_mode_step_down_active:
-              v_ego_mps = self.v_ego_kph_set / 3.6
-              target_mps = self.auto_mode_step_down_target / 3.6
-              
-              # ▼ [수정 2] 제동 거리 공식에 기계적 지연시간(브레이크 작동 공주거리 1.0초) 추가!
-              min_required_dist = max(0, (v_ego_mps**2 - target_mps**2) / (2 * 1.5)) + (v_ego_mps * 1.0)
-              
-              # 차가 계단식으로 우아하게 내려가다가 이 마지노선보다 카메라가 가까워지면?
-              if cam_dist <= min_required_dist:
-                v_cruise_kph = self.auto_mode_step_down_target  # 계단 생략! 즉시 최종 속도로 꽂음!
-                self.last_auto_speed = v_cruise_kph
-                self.auto_mode_step_down_active = False
-                self._add_log(f"Auto Mode: Emergency Drop to {v_cruise_kph} (Dist: {cam_dist:.1f}m)")
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-                
-          # ▼▼▼ 들여쓰기 10칸: 변경/유지 모두에서 반드시 매 프레임 업데이트 방지 ▼▼▼
-          self.prev_limit_speed_for_auto = effective_limit
-          self.auto_mode_applied = True
-            
+          self.last_auto_speed = v_cruise_kph
+
         else:
-          pass
-          
-      else:
-        self.prev_limit_speed_for_auto = self.nRoadLimitSpeed
-        self.auto_mode_applied = False
-        self.user_speed_offset = 10.0
-        self.last_auto_speed = 0.0
+          self.prev_limit_speed_for_auto = 0
+          self.auto_mode_applied = False
+          self.user_speed_offset = 10.0
+          self.last_auto_speed = 0.0
         
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
