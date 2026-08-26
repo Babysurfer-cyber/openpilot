@@ -526,10 +526,11 @@ class VCruiseCarrot:
             if road_limit_kph > 1.0:
               v_cruise_kph = max(v_cruise_kph, road_limit_kph)
 
-        elif self._cruise_button_mode == 0:
+        elif self._cruise_button_mode in [0, 1]:
           v_cruise_kph = button_kph
         else:
-          v_cruise_kph = self._v_cruise_desired(CS, v_cruise_kph)
+          # ▼▼▼ [수정] v_cruise_kph 대신 증가된 속도인 button_kph를 넣어야 정확히 올라갑니다! ▼▼▼
+          v_cruise_kph = self._v_cruise_desired(CS, button_kph)
         self.carrot_cruise_active = False
 
       elif button_type == ButtonType.decelCruise:
