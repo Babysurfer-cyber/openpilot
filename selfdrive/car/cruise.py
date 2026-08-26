@@ -769,7 +769,8 @@ class VCruiseCarrot:
               target_mps = target_speed / 3.6
               
               # 계산된 속도를 바탕으로 미리미리 UI를 하강시킵니다.
-              safe_decel_dist = max(0, (calc_mps**2 - target_mps**2) / (2 * 1.2)) + (calc_mps * 2.0)
+              # ▼▼▼ [수치 조정] 감속도를 1.5로 높이고, 여유 시간을 1.0초로 줄여 거리를 확 당깁니다! ▼▼▼
+              safe_decel_dist = max(0, (calc_mps**2 - target_mps**2) / (2 * 1.5)) + (calc_mps * 1.0)
               # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
               if cam_dist <= safe_decel_dist:
