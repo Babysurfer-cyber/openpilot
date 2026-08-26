@@ -1035,7 +1035,7 @@ class CarrotServ:
         fake_bump_dist = max(0.0, bump_dist - bump_offset)
 
         # 2. 방지턱은 카메라보다 더 부드럽고 일찍 감속하도록 감속률을 낮춥니다 (기본 설정값의 70% 수준)
-        bump_decel_rate = self.autoNaviSpeedDecelRate * 0.7
+        bump_decel_rate = self.autoNaviSpeedDecelRate * 1.0
 
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
                                                           self.autoNaviSpeedBumpSpeed,
