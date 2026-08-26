@@ -692,7 +692,7 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (감속 시에만 오프셋 유지)
+    # ▼ [위치 이동 & 수정] 5번 모드: 오프셋 실시간 동기화 (계단식 감속 완전 삭제)
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -705,32 +705,13 @@ class VCruiseCarrot:
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
 
-        cam_dist = 0.0
-        cam_limit = 0.0
-        try:
-          with open("/dev/shm/navi_cam_info", "r") as f:
-            vals = f.read().strip().split(',')
-            if len(vals) == 2:
-              cam_dist = float(vals[0])
-              cam_limit = float(vals[1])
-        except Exception:
-          pass
-
-        # ▼▼▼ [핵심 수정 1] 카메라 신호(4BE)가 있으면 cam_limit을 최우선으로 적용하여 오토모드를 깨웁니다! ▼▼▼
-        if cam_dist > 0 and cam_limit > 0:
-            effective_limit = cam_limit
-        else:
-            if self.nRoadLimitSpeed > 0:
-                self.current_active_limit = self.nRoadLimitSpeed
-            effective_limit = self.current_active_limit
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        # carstate.py에서 알아서 4A3/4BE 우선순위를 정리해 넘겨준 제한속도를 바로 사용!
+        effective_limit = self.nRoadLimitSpeed
 
         if effective_limit > 0:
-          # 1. 수동 조작 오프셋 업데이트 (버튼으로 속도를 조절했을 때 무제한 허용)
+          # 1. 수동 조작 오프셋 업데이트 (무제한 허용)
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
-              
-              # ▼▼▼ [수정] 수동 조작 시 오프셋 제한 전면 해제! 운전자 의도 100% 반영 ▼▼▼
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
               self.last_auto_speed = v_cruise_kph
 
@@ -750,50 +731,13 @@ class VCruiseCarrot:
               
             # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
-              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0) # 기존 유지하되 20 캡
+              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0)
 
             self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
 
-          # 최종 도달해야 할 타겟 속도
-          target_speed = float(effective_limit + self.user_speed_offset)
-
-          # 3. 4BE / 4A3 통합 계단식 감속 로직
-          if v_cruise_kph > target_speed:
-            step_down_allowed = False
-
-            if cam_dist > 0:
-              # ▼▼▼ [핵심 수정 2] 내 차가 서행 중이라도, 화면에 설정된 크루즈 속도(v_cruise_kph)를 기준으로 거리를 계산! ▼▼▼
-              calc_kph = max(self.v_ego_kph_set, v_cruise_kph)
-              calc_mps = calc_kph / 3.6
-              target_mps = target_speed / 3.6
-              
-              # 계산된 속도를 바탕으로 미리미리 UI를 하강시킵니다.
-              # ▼▼▼ [수치 조정] 감속도를 1.5로 높이고, 여유 시간을 1.0초로 줄여 거리를 확 당깁니다! ▼▼▼
-              safe_decel_dist = max(0, (calc_mps**2 - target_mps**2) / (2 * 1.5)) + (calc_mps * 1.0)
-              # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-              if cam_dist <= safe_decel_dist:
-                step_down_allowed = True
-            else:
-              # [4A3] 거리 정보가 없음: 신호를 받는 즉시 하강 시작
-              step_down_allowed = True
-
-            # 계단식 감속 실행 (10km/h 씩 뚝뚝)
-            if step_down_allowed:
-              # ▼▼▼ [치명적 맹점 수정] 'or v_cruise_kph == ...' 삭제! 오직 실제 속도 기반으로만 하강! ▼▼▼
-              if self.v_ego_kph_set <= v_cruise_kph + 4.0:
-                v_cruise_kph = max(target_speed, v_cruise_kph - 10.0)
-                try:
-                  open("/dev/shm/carrot_prompt", "w").close()
-                except Exception:
-                  pass
-
-
-          elif v_cruise_kph < target_speed:
-            # 목표가 더 높으면 변경 지점에서 즉시 가속
-            v_cruise_kph = target_speed
-
+          # 3. 계단식 감속 삭제 ➔ 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
+          v_cruise_kph = float(effective_limit + self.user_speed_offset)
           self.last_auto_speed = v_cruise_kph
 
         else:
