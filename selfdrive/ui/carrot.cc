@@ -2629,9 +2629,21 @@ public:
             ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_WHITE_ALPHA(190), 15, 2);
             ui_draw_text(s, dx, dy, "APM", 35, COLOR_WHITE, BOLD);
         }
-        if (nav_path_vertex_count > 1) {
-            ui_draw_text(s, dx, dy - 45, "ROUTE", 30, COLOR_WHITE, BOLD);
-		}
+        
+        // ▼▼▼ [수정] ROUTE 대신 Wi-Fi 연결 상태 표기 ▼▼▼
+        bool is_wifi_connected = false;
+        if (sm.alive("deviceState")) {
+            auto network_type = sm["deviceState"].getDeviceState().getNetworkType();
+            if (network_type == cereal::DeviceState::NetworkType::WIFI) {
+                is_wifi_connected = true;
+            }
+        }
+
+        if (is_wifi_connected) {
+            ui_draw_text(s, dx, dy - 45, "Wi-Fi", 30, COLOR_WHITE, BOLD);
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 #ifdef __UI_TEST
         active_carrot = 2;
         nRoadLimitSpeed = 30;
