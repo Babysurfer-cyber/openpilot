@@ -2356,8 +2356,18 @@ public:
         xSpdLimit = 50;
         xSignType = 1;
 #endif
+        // ▼▼▼ [추가] carstate.py가 4A3/4BE를 섞어 만든 순정 CAN 정보 가져오기 ▼▼▼
+        auto car_state_hud = (*(s->sm))["carState"].getCarState();
+        float cs_limit = car_state_hud.getSpeedLimit();
+        float cs_limit_dist = car_state_hud.getSpeedLimitDistance();
+
         bool cam_detected = false;
+        // 1. 스마트폰 앱에서 과속카메라로 판정한 경우
         if (xSpdLimit > 0 && xSignType != 22 && xSignType != 4) cam_detected = true;
+        
+        // 2. 차량 CAN에서 과속카메라로 판정한 경우 (거리가 0보다 크면 카메라!)
+        if (cs_limit > 0 && cs_limit_dist > 0) cam_detected = true;
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
         // ▼ [추가] 앞차 인식(Lead Vehicle) 및 크루즈 활성화 상태 확인
         bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
@@ -2402,10 +2412,11 @@ public:
         
         // ▼▼▼ [수정] 과속카메라 앞 제한속도 110% 기준 색상 변경 ▼▼▼
         NVGcolor speed_color = COLOR_WHITE; // 기본은 항상 흰색
+        float active_cam_limit = (xSpdLimit > 0) ? xSpdLimit : cs_limit;
         
-        if (cam_detected && xSpdLimit > 0) {
+        if (cam_detected && active_cam_limit > 0) {
             // 카메라 제한 속도를 미터/야드법에 맞게 변환
-            float limit_speed_converted = xSpdLimit * (s->scene.is_metric ? 1.0f : KM_TO_MILE);
+            float limit_speed_converted = active_cam_limit * (s->scene.is_metric ? 1.0f : KM_TO_MILE);
             
             // 제한속도 정수값과 110% 정수값 계산 (반올림 처리)
             int limit_int = (int)(limit_speed_converted + 0.5f);
@@ -2614,10 +2625,10 @@ public:
 #ifdef __UI_TEST
         active_carrot = 2;
 #endif
-        // ▼▼▼ [수정] 제한속도나 카메라 정보가 들어오면 무조건 파란색 배경의 APN 표시! ▼▼▼
-        bool has_speed_info = (nRoadLimitSpeed > 0 || xSpdLimit > 0);
+        // ▼▼▼ [수정] 제한속도, 카메라, 방지턱, 턴 정보가 있을 때 파란색 APN 표시! ▼▼▼
+        bool has_navi_decel = (nRoadLimitSpeed > 0 || xSpdLimit > 0 || cs_limit > 0 || xTurnInfo > 0);
 
-        if (has_speed_info) {
+        if (has_navi_decel) {
             ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, COLOR_BLUE_ALPHA(210), 15, 2);
             ui_draw_text(s, dx, dy, "APN", 35, COLOR_WHITE, BOLD);
         }
@@ -2658,20 +2669,22 @@ public:
             int disp_speed = 0;
             NVGcolor limit_color = COLOR_GREEN_ALPHA(210);
             
-            if (xSpdLimit > 0 && xSignType != 22) {
-                disp_speed = (int)(xSpdLimit * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5);
-                limit_color = (blink_timer <= 8) ? COLOR_RED_ALPHA(190) : COLOR_RED_ALPHA(190);
+            // ▼▼▼ [수정] 4A3/4BE (CAN) 및 외부앱(App) 신호 종합하여 CAM/LIMIT 출력 ▼▼▼
+            if (cam_detected) {
+                float target_speed = (xSpdLimit > 0) ? xSpdLimit : cs_limit;
+                disp_speed = (int)(target_speed * ((s->scene.is_metric)?1:KM_TO_MILE) + 0.5);
+                
+                limit_color = COLOR_RED_ALPHA(190);
                 ui_draw_text(s, dx, dy-45, "CAM", 30, COLOR_RED, BOLD);
             }
             else {
-                disp_speed = nRoadLimitSpeed;
-		            disp_speed = (int)(disp_speed * ((s->scene.is_metric)?1.0:KM_TO_MILE) + 0.5);
+                float target_speed = (nRoadLimitSpeed > 0) ? nRoadLimitSpeed : cs_limit;
+                disp_speed = (int)(target_speed * ((s->scene.is_metric)?1.0:KM_TO_MILE) + 0.5);
                 
-                
-                limit_color = (disp_speed > 0 && v_ego * 3.6 > disp_speed + 10) ? COLOR_WHITE_ALPHA(190) : COLOR_WHITE_ALPHA(190);
-                
+                limit_color = COLOR_WHITE_ALPHA(190);
                 ui_draw_text(s, dx, dy - 45, "LIMIT", 30, COLOR_WHITE, BOLD);
             }
+            // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
             // 👇 지난번에 실수로 날아갔던 "박스 그리기"와 "숫자/- 출력" 코드 복구!
             ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, limit_color, 15, 2);
