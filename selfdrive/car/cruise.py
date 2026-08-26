@@ -780,13 +780,14 @@ class VCruiseCarrot:
 
             # 계단식 감속 실행 (10km/h 씩 뚝뚝)
             if step_down_allowed:
-              # 내 차 속도가 세팅속도 근처(+4km/h)로 따라왔거나, 감속의 첫 시작점일 때 10 깎기!
-              if self.v_ego_kph_set <= v_cruise_kph + 4.0 or v_cruise_kph == self.last_auto_speed:
+              # ▼▼▼ [치명적 맹점 수정] 'or v_cruise_kph == ...' 삭제! 오직 실제 속도 기반으로만 하강! ▼▼▼
+              if self.v_ego_kph_set <= v_cruise_kph + 4.0:
                 v_cruise_kph = max(target_speed, v_cruise_kph - 10.0)
                 try:
                   open("/dev/shm/carrot_prompt", "w").close()
                 except Exception:
                   pass
+
 
           elif v_cruise_kph < target_speed:
             # 목표가 더 높으면 변경 지점에서 즉시 가속
