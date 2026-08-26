@@ -716,11 +716,14 @@ class VCruiseCarrot:
         except Exception:
           pass
 
-        if cam_dist <= 0:
+        # ▼▼▼ [핵심 수정 1] 카메라 신호(4BE)가 있으면 cam_limit을 최우선으로 적용하여 오토모드를 깨웁니다! ▼▼▼
+        if cam_dist > 0 and cam_limit > 0:
+            effective_limit = cam_limit
+        else:
             if self.nRoadLimitSpeed > 0:
                 self.current_active_limit = self.nRoadLimitSpeed
-        
-        effective_limit = self.current_active_limit
+            effective_limit = self.current_active_limit
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if effective_limit > 0:
           # 1. 수동 조작 오프셋 업데이트 (버튼으로 속도를 조절했을 때 무제한 허용)
@@ -760,10 +763,14 @@ class VCruiseCarrot:
             step_down_allowed = False
 
             if cam_dist > 0:
-              # [4BE] 거리 정보가 있음: 물리적 활주로 도달 시 하강 시작
-              v_ego_mps = self.v_ego_kph_set / 3.6
+              # ▼▼▼ [핵심 수정 2] 내 차가 서행 중이라도, 화면에 설정된 크루즈 속도(v_cruise_kph)를 기준으로 거리를 계산! ▼▼▼
+              calc_kph = max(self.v_ego_kph_set, v_cruise_kph)
+              calc_mps = calc_kph / 3.6
               target_mps = target_speed / 3.6
-              safe_decel_dist = max(0, (v_ego_mps**2 - target_mps**2) / (2 * 1.2)) + (v_ego_mps * 2.0)
+              
+              # 계산된 속도를 바탕으로 미리미리 UI를 하강시킵니다.
+              safe_decel_dist = max(0, (calc_mps**2 - target_mps**2) / (2 * 1.2)) + (calc_mps * 2.0)
+              # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
               if cam_dist <= safe_decel_dist:
                 step_down_allowed = True
