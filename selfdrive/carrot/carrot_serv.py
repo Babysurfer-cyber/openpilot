@@ -965,8 +965,16 @@ class CarrotServ:
 
     ### 과속카메라, 사고방지턱
 
-    # 기존: 4BE (내비) 카메라 신호 처리 부분
-    if (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0:
+    # ▼▼▼ [핵심] 최종 출력용 로컬 변수 생성 (기본값은 4BE) ▼▼▼
+    final_xSpdType = self.xSpdType
+    final_xSpdLimit = self.xSpdLimit
+    final_xSpdDist = self.xSpdDist
+
+    # 1순위: 4BE (내비) 카메라 신호가 살아있는지 엄격하게 검사
+    is_4be_active = (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0
+
+    if is_4be_active:
+      # 4BE (내비) 신호 우선 적용
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
       sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
@@ -974,30 +982,21 @@ class CarrotServ:
       if self.xSpdType == 4 or (self.xSpdType in [100, 101] and self.xSpdDist <= 0):
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
-        
-    # ▼▼▼ [수정] HDA 신호 처리 부분 (4A3) ▼▼▼
+
+    # 2순위: 4BE가 완전히 없을 때만 HDA(4A3) 신호 적용
     elif CS is not None and CS.speedLimit > 0 and CS.speedLimitDistance > 0:
+      sdi_speed = min(sdi_speed,
+                      self.calculate_current_speed(CS.speedLimitDistance,
+                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
+                                                   self.autoNaviSpeedCtrlEnd,
+                                                   self.autoNaviSpeedDecelRate))
+      hda_active = True
       
-      # [핵심 추가] 4BE 신호가 있고, 두 제한속도가 같다면 HDA 처리를 건너뜁니다!
-      if self.xSpdLimit > 0 and self.xSpdLimit == CS.speedLimit:
-          pass  # 4BE가 알아서 하도록 아무것도 안 함
-      else:
-          # 기존 HDA 처리 로직 정상 수행
-          sdi_speed = min(sdi_speed,
-                          self.calculate_current_speed(CS.speedLimitDistance,
-                                                       CS.speedLimit * self.autoNaviSpeedSafetyFactor,
-                                                       self.autoNaviSpeedCtrlEnd,
-                                                       self.autoNaviSpeedDecelRate))
-          hda_active = True
-      
-          # =========================================================
-          # ▼ [수정] 이 부분 전체를 들여쓰기해서 else: 안으로 넣어주세요! ▼
-          # =========================================================
-          self.xSpdLimit = CS.speedLimit
-          self.xSpdDist = CS.speedLimitDistance
-          self.xSpdType = 1  # 1: 고정식 과속카메라 (UI에서 CAM으로 인식하게 만듦)
-          self.active_carrot = max(self.active_carrot, 2)  # 강제로 UI를 깨움
-          # =========================================================
+      # [버그 픽스] self 변수(4BE 공간)는 냅두고 화면 출력용 final 변수만 HDA로 조작!
+      final_xSpdLimit = CS.speedLimit
+      final_xSpdDist = CS.speedLimitDistance
+      final_xSpdType = 1  
+      self.active_carrot = max(self.active_carrot, 2)
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
