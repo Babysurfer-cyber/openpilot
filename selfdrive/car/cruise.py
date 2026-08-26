@@ -723,11 +723,12 @@ class VCruiseCarrot:
         effective_limit = self.current_active_limit
 
         if effective_limit > 0:
-          # 1. 수동 조작 오프셋 업데이트 (버튼으로 속도를 조절했을 때 보존)
+          # 1. 수동 조작 오프셋 업데이트 (버튼으로 속도를 조절했을 때 무제한 허용)
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
+              
+              # ▼▼▼ [수정] 수동 조작 시 오프셋 제한 전면 해제! 운전자 의도 100% 반영 ▼▼▼
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
-              self.user_speed_offset = min(self.user_speed_offset, 20.0) # 최대 오프셋 20 제한
               self.last_auto_speed = v_cruise_kph
 
           # 2. 제한속도 변경 감지 및 오프셋 동기화
