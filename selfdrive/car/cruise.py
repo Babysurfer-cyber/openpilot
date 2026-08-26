@@ -996,15 +996,6 @@ class VCruiseCarrot:
       self._pause_auto_speed_up = True                     
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    # ▼▼▼ [신규 추가] 시동 후 1회 한정: 크루즈 100km/h 이상 설정 시 오토모드(5) 자동 켜기 ▼▼▼
-    if not getattr(self, 'auto_mode_auto_activated', False):
-      if CC.enabled and v_cruise_kph >= 100:
-        if self.params.get_int("MyDrivingMode") != 5:
-          self.params.put_int_nonblocking("MyDrivingMode", 5)
-          self._add_log("Auto Mode ON (Speed >= 100)")
-        self.auto_mode_auto_activated = True
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
     return self._auto_speed_up(v_cruise_kph)
 
   def _prepare_brake_gas(self, CS, CC):
