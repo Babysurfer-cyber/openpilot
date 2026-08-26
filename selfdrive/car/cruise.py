@@ -815,8 +815,9 @@ class VCruiseCarrot:
             if cam_dist > 0 and self.auto_mode_step_down_active:
               v_ego_mps = self.v_ego_kph_set / 3.6
               target_mps = self.auto_mode_step_down_target / 3.6
-              # 감속도 1.5m/s^2 (꽤 강한 제동) 기준으로 남은 최소 필요 거리를 계산
-              min_required_dist = max(0, (v_ego_mps**2 - target_mps**2) / (2 * 1.5))
+              
+              # ▼ [수정 2] 제동 거리 공식에 기계적 지연시간(브레이크 작동 공주거리 1.0초) 추가!
+              min_required_dist = max(0, (v_ego_mps**2 - target_mps**2) / (2 * 1.5)) + (v_ego_mps * 1.0)
               
               # 차가 계단식으로 우아하게 내려가다가 이 마지노선보다 카메라가 가까워지면?
               if cam_dist <= min_required_dist:
