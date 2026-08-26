@@ -570,12 +570,26 @@ class CarState(CarStateBase):
     cam_dist = 0.0
     cam_limit = 0.0
     
-    if cameras:
-      cam_dist = cameras[0]["target"] - self.totalDistance
-      cam_limit = cameras[0]["speed"]
+    # ▼▼▼ [추가] 4BE 카메라 속도별 거리 제한 필터링 ▼▼▼
+    valid_cameras = []
+    for c in cameras:
+      c_dist = c["target"] - self.totalDistance
+      c_limit = c["speed"]
+      
+      # 80 미만은 300m 이하일 때, 80 이상은 600m 이하일 때만 유효한 카메라로 인정!
+      if c_limit < 80 and c_dist <= 300:
+        valid_cameras.append(c)
+      elif c_limit >= 80 and c_dist <= 600:
+        valid_cameras.append(c)
+        
+    if valid_cameras:
+      cam_dist = valid_cameras[0]["target"] - self.totalDistance
+      cam_limit = valid_cameras[0]["speed"]
     elif zones:
+      # 유효한 카메라가 없거나 너무 멀리 있으면 일반 제한속도(zone)를 따름
       cam_dist = 0.0
       cam_limit = zones[-1]["speed"]
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
