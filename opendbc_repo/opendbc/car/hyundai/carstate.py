@@ -507,10 +507,25 @@ class CarState(CarStateBase):
 
   @staticmethod
   def _classify_vehicle_navi_profile(profile):
-    if profile["profile_type"] != 16 or not 0 < profile["offset"] <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
+    if profile["profile_type"] != 16:
       return None
-    if profile["value"] == 6:  # 6번(방지턱)만 추출
+      
+    val = profile["value"]
+    offset = profile.get("offset", 0)
+
+    if val == 6 and 0 < offset <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
       return "bump", 0, 6
+
+    # ▼▼▼ 카메라 및 국도 제한속도 구역 디코딩 복구 ▼▼▼
+    kind = val & 0xF
+    speed_code = val >> 4
+    if speed_code > 0:
+      speed_limit = (speed_code - 1) * 5
+      if speed_limit > 0:
+        if kind in (0, 1, 2) and 0 < offset <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
+          return "camera", speed_limit, kind
+        elif kind == 7:
+          return "speed_limit_zone", speed_limit, kind
     return None
 
   def _add_vehicle_navi_event(self, event_type, speed, kind, offset):
@@ -525,7 +540,7 @@ class CarState(CarStateBase):
 
   def _update_vehicle_navi_events(self, cp):
     if not getattr(self, 'vehicleNaviCanControl', False):
-      return
+      return 0.0, 0.0
 
     if self.navi_segment_4b9 is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
@@ -542,21 +557,33 @@ class CarState(CarStateBase):
         profile = self._decode_vehicle_navi_profile(self.navi_profile_4be)
         event = self._classify_vehicle_navi_profile(profile)
         if event is not None and timestamp > self.vehicleNaviRouteResetTimestamp:
-          self._add_vehicle_navi_event(*event, profile["offset"])
+          self._add_vehicle_navi_event(*event, profile.get("offset", 0))
 
     self.vehicleNaviEvents = [e for e in self.vehicleNaviEvents if e["target"] >= self.totalDistance - VEHICLE_NAVI_PASSED_EVENT_DISTANCE]
     bumps = [e for e in self.vehicleNaviEvents if e["type"] == "bump" and e["target"] > self.totalDistance]
     
-    # 💡 Cereal 대신 파이썬 직결 통신으로 RAM 디스크에 거리 저장
-    bump_dist = 0.0
-    if bumps:
-      bump_dist = bumps[0]["target"] - self.totalDistance
+    # ▼▼▼ 카메라와 일반구역 데이터 추출 복구 ▼▼▼
+    cameras = [e for e in self.vehicleNaviEvents if e["type"] == "camera" and e["target"] > self.totalDistance]
+    zones = [e for e in self.vehicleNaviEvents if e["type"] == "speed_limit_zone"]
+    
+    bump_dist = bumps[0]["target"] - self.totalDistance if bumps else 0.0
+    cam_dist = 0.0
+    cam_limit = 0.0
+    
+    if cameras:
+      cam_dist = cameras[0]["target"] - self.totalDistance
+      cam_limit = cameras[0]["speed"]
+    elif zones:
+      cam_dist = 0.0
+      cam_limit = zones[-1]["speed"]
       
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
         f.write(str(bump_dist))
     except Exception:
       pass
+
+    return cam_limit, cam_dist
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
@@ -807,12 +834,22 @@ class CarState(CarStateBase):
     vEgoClu, aEgoClu = self.update_clu_speed_kf(ret.vEgoCluster)
     ret.vCluRatio = (ret.vEgo / vEgoClu) if (vEgoClu > 3. and ret.vEgo > 3.) else 1.0
 
-    # ▼▼▼ [추가] 토글 상태 갱신 및 방지턱 로직 실행 ▼▼▼
+    # ▼▼▼ [수정] 토글 상태 갱신 및 4A3/4BE 우선순위 로직 실행 ▼▼▼
     self.frame_for_params += 1
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
-    self._update_vehicle_navi_events(cp)
+    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
+    
+    # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
+    # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
+    if ret.speedLimit == 0 and cam_limit > 0:
+      ret.speedLimit = cam_limit
+      if cam_dist > 0:
+        speed_limit_cam = True
+        self.speedLimitDistance = self.totalDistance + cam_dist
+      else:
+        speed_limit_cam = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
