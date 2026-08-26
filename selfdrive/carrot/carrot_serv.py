@@ -1031,7 +1031,7 @@ class CarrotServ:
       if bump_dist > 0:
         # ▼▼▼ [수정] 방지턱 도망감 해결 및 고속 주행 시 조기 감속 적용 ▼▼▼
         # 1. 현재 속도(v_ego) 1.0초 이동 거리만큼 당겨줍니다 (최소 10m 보장)
-        bump_offset = 10.0 + v_ego * 2.0
+        bump_offset = 10.0 + v_ego * 2.5
         fake_bump_dist = max(0.0, bump_dist - bump_offset)
 
         # 2. 방지턱은 카메라보다 더 부드럽고 일찍 감속하도록 감속률을 낮춥니다 (기본 설정값의 70% 수준)
