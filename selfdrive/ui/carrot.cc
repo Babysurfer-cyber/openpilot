@@ -2626,6 +2626,10 @@ public:
         active_carrot = 2;
 #endif
         // ▼▼▼ [수정] 제한속도, 카메라, 방지턱, 턴 정보가 있을 때 파란색 APN 표시! ▼▼▼
+        int xTurnInfo = 0;
+        if ((*(s->sm)).alive("carrotMan")) {
+            xTurnInfo = (*(s->sm))["carrotMan"].getCarrotMan().getXTurnInfo();
+        }
         bool has_navi_decel = (nRoadLimitSpeed > 0 || xSpdLimit > 0 || cs_limit > 0 || xTurnInfo > 0);
 
         if (has_navi_decel) {
