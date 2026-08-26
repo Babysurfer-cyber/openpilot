@@ -895,13 +895,15 @@ class RadarD:
       if target_long < 10.0:
         return 2.25, 2.75, 2.6
 
-      # 💡 [수정] 모델 데이터가 없거나 램프 구간(조향 15도 이상)일 때도 기본값 적용
-      if abs_steering > 15.0:
+      # ▼▼▼ [수정] 시속 60 이상은 조향 10도 이상, 그 외(저속)는 30도 이상일 때 기본값 강제 적용! ▼▼▼
+      v_ego_kph = CS.vEgo * 3.6
+      if (v_ego_kph >= 60.0 and abs_steering >= 10.0) or (v_ego_kph < 60.0 and abs_steering >= 30.0):
         return 2.25, 2.75, 2.6
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if md is None or len(md.laneLineProbs) < 3:
         return 2.25, 2.75, 2.6
-      
+    
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
         calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
