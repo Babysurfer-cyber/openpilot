@@ -863,8 +863,6 @@ class CarState(CarStateBase):
 
     cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
     
-    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
-    
     # ▼▼▼ [수정] 4A3, 4BE 중복 시 거리 정보가 있는 4BE를 무조건 최우선 적용 (덮어쓰기) ▼▼▼
     if cam_limit > 0:
       ret.speedLimit = cam_limit
