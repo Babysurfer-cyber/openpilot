@@ -746,12 +746,16 @@ class VCruiseCarrot:
             effective_limit = self.current_active_limit
 
         if effective_limit > 0:
-          # 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트
+              # 1. 물리적인 버튼 조작(RES+/SET-)이 있었을 때만 오프셋 업데이트
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
+              
+              # ▼▼▼ [추가 1] 수동 조작 시에도 오프셋은 최대 +20.0 으로 캡(Cap) 씌우기 ▼▼▼
+              self.user_speed_offset = min(self.user_speed_offset, 20.0)
+              
               self.last_auto_speed = v_cruise_kph
-              self.auto_mode_step_down_active = False  # 수동 조작 시 계단식 감속 강제 종료
+              self.auto_mode_step_down_active = False  # 수동 조작 시 계단식 감속 강제 종
               self._add_log(f"Auto Mode: User offset changed to {self.user_speed_offset:+0.1f}")
 
           # 제한속도 변경 및 최초 진입 시 동기화
