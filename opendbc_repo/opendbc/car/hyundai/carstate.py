@@ -578,14 +578,11 @@ class CarState(CarStateBase):
         hold_until = curve_end if curve_end is not None else curve["target"] + VEHICLE_NAVI_CURVE_END_FALLBACK_DISTANCE
         if self.totalDistance >= hold_until: continue
         distance = 0.0
-        target_speed = max(self.vehicleNaviCurveLowerLimit, curve["speed"] * self.vehicleNaviCurveSpeedFactor)
-        safe_speed = target_speed / CV.MS_TO_KPH
-        
-        # ▼▼▼ [핵심 수정] 과속카메라 완료시간 대신 커브 전용 여유시간(1.0초) 적용 ▼▼▼
-        decel_distance = max(0.0, distance - safe_speed * 1.0)
-        
-        preview_speed = math.sqrt(safe_speed ** 2 + 2 * self.vehicleNaviCurveDecelRate * decel_distance) * CV.MS_TO_KPH
-        candidates.append((preview_speed, distance, curve))
+      target_speed = max(self.vehicleNaviCurveLowerLimit, curve["speed"] * self.vehicleNaviCurveSpeedFactor)
+      safe_speed = target_speed / CV.MS_TO_KPH
+      decel_distance = max(0.0, distance - safe_speed * self.vehicleNaviCurveControlEnd)
+      preview_speed = math.sqrt(safe_speed ** 2 + 2 * self.vehicleNaviCurveDecelRate * decel_distance) * CV.MS_TO_KPH
+      candidates.append((preview_speed, distance, curve))
 
     if candidates:
       _, distance, curve = min(candidates, key=lambda item: item[0])
@@ -914,9 +911,6 @@ class CarState(CarStateBase):
     self.frame_for_params += 1
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = self.op_params.get_bool("VehicleNaviCanControl")
-      # ▼▼▼ [추가] 커브 파라미터 실시간 갱신 ▼▼▼
-      self.vehicleNaviCurveSpeedFactor = min(2.0, max(0.5, self.op_params.get_int("VehicleNaviCurveSpeedFactor") * 0.01))
-      self.vehicleNaviCurveLowerLimit = max(5.0, self.op_params.get_int("AutoCurveSpeedLowerLimit"))
 
     cam_limit, cam_dist = self._update_vehicle_navi_events(cp, ret)
     
@@ -969,4 +963,4 @@ class CarState(CarStateBase):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-      }
+    }
