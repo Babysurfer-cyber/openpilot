@@ -692,7 +692,7 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [위치 이동 & 수정] 5번 모드: 카메라 통과 시점 완벽 동기화 로직
+    # ▼ 5번 모드: 카메라 통과 시점 동기화 + 스쿨존 진입 즉시 10 고정
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -705,26 +705,23 @@ class VCruiseCarrot:
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
 
-        # carstate.py에서 알아서 4A3/4BE 우선순위를 정리해 넘겨준 제한속도를 읽어옵니다.
         raw_limit = CS.speedLimit if CS.speedLimit > 0 else self.nRoadLimitSpeed
 
-        # ▼▼▼ [핵심] 과속카메라 판별 (거리가 0보다 크면 무조건 카메라!) ▼▼▼
+        # 카메라 판별 및 스쿨존 판별
         is_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
+        # 내비 스쿨존 신호가 켜졌을 경우 스쿨존으로 간주
+        is_school_zone = getattr(CS, 'isSchoolZone', False)
 
-        # ▼▼▼ 카메라 통과 시점까지 오토모드 타겟 변경 보류 로직 ▼▼▼
-        if is_cam:
-          # 카메라 앞에서는 하위 로직(sdi_speed)이 물리적 감속을 완벽히 책임지므로,
-          # 오토모드(화면 타겟 속도)는 쫄지 않고 예전 제한속도를 계속 꽉 잡고 대기합니다!
+        # ▼▼▼ [핵심] 스쿨존은 통과 시점 보류를 무시하고 '진입 즉시' 새로운 타겟 적용 ▼▼▼
+        if is_cam and not is_school_zone:
           effective_limit = self.prev_limit_speed_for_auto
           if effective_limit <= 0: 
             effective_limit = raw_limit
         else:
-          # 카메라가 끝났거나(통과 완료), 단순 표지판 변경일 때는 즉시 적용!
           effective_limit = raw_limit
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if effective_limit > 0:
-          # 1. 수동 조작 오프셋 업데이트 (무제한 허용)
+          # 1. 수동 조작 오프셋 업데이트
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
               self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
@@ -732,28 +729,38 @@ class VCruiseCarrot:
 
           # 2. 제한속도 변경 감지 및 오프셋 동기화
           if effective_limit != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
-            
-            # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
             if self.prev_limit_speed_for_auto <= 0:
               if (self.v_ego_kph_set - effective_limit) >= 30.0:
                 self.user_speed_offset = 20.0
               else:
                 self.user_speed_offset = 10.0
-                
-            # [규칙 2] 속도 상향 (가속 구간)
             elif effective_limit > self.prev_limit_speed_for_auto:
               self.user_speed_offset = 10.0
-              
-            # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
               self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0)
 
             self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
 
-          # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
+          # 3. 스쿨존 오프셋 강제 5 고정 (진입 시점에 즉시 덮어쓰기)
+          if is_school_zone:
+            self.user_speed_offset = 5.0
+            # 다음 로직을 위해 이전 제한속도도 강제로 맞춰줌
+            self.prev_limit_speed_for_auto = effective_limit 
+
+          # 4. 최종 크루즈 타겟 적용
           v_cruise_kph = float(effective_limit + self.user_speed_offset)
           self.last_auto_speed = v_cruise_kph
+
+        else:
+          self.prev_limit_speed_for_auto = 0
+          self.auto_mode_applied = False
+          self.user_speed_offset = 10.0
+          self.last_auto_speed = 0.0
+        
+    except Exception as e:
+      self._add_log(f"Auto Mode Error: {e}")
+    # ==============================================================
 
         else:
           self.prev_limit_speed_for_auto = 0
