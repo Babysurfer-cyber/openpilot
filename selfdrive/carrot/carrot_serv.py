@@ -956,27 +956,37 @@ class CarrotServ:
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
-    # 초기 변수 세팅 (처음 1회만 실행 - 시동 켤 때 허위 알람 방지)
+    # 초기 변수 세팅
     if not hasattr(self, 'prev_speed_limit'):
       self.prev_speed_limit = self.nRoadLimitSpeed
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
+
+    # ▼▼▼ [핵심] 안내음/글자도 '카메라 통과 시점'에 맞추기 위해 보류 로직 추가 ▼▼▼
+    is_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     
-    current_limit = self.nRoadLimitSpeed
+    if is_cam:
+      # 카메라 안내 중에는 차량이 실제 타겟 속도를 깎지 않으므로, 알림용 기준 속도도 예전 속도를 꽉 잡고 대기합니다.
+      if self.prev_speed_limit > 0 and self.nRoadLimitSpeed < self.prev_speed_limit:
+        current_limit = self.prev_speed_limit
+      else:
+        current_limit = self.nRoadLimitSpeed
+    else:
+      # 카메라를 완전히 통과하는 순간 (is_cam이 False가 되는 순간)! 알림용 타겟도 새 제한속도로 뚝 떨어집니다.
+      current_limit = self.nRoadLimitSpeed
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     play_prompt = False
     
     # 💡 1. 5번 모드가 방금 "켜졌을 때" 무조건 안내음 발생
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
       play_prompt = True
-      # 화면 하단 도로명 박스에 활성화 알림 텍스트 표시
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
-    # 💡 2. 제한속도가 바뀌었을 때 (스피드 리밋 변경 감지)
+    # 💡 2. 제한속도가 바뀌었을 때 (카메라 통과 시점에 current_limit이 떨어지면서 정확히 여기서 감지됨!)
     elif current_limit != self.prev_speed_limit:
-      # 현재 5번 모드이고 제한속도가 유효할 때만 안내음!
       if current_limit > 0 and my_driving_mode == 5:
         play_prompt = True
-        # 화면 하단 도로명 박스에 변경된 제한속도를 글자로 띄움
         self.szPosRoadName = f"오토 속도 변경: {current_limit}km/h 🔔"
         
     # 소리 발생 트리거 (띠링~)
@@ -986,7 +996,7 @@ class CarrotServ:
       except Exception:
         pass
         
-    # 다음 비교를 위해 현재 상태 업데이트 (기억하기)
+    # 다음 비교를 위해 현재 상태 업데이트
     self.prev_speed_limit = current_limit
     self.prev_driving_mode = my_driving_mode
     # =========================================================
