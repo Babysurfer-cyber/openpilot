@@ -2387,15 +2387,6 @@ public:
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
 
-       // ▼▼▼ [수정] 크루즈 활성화(longActive) 중에만 'LOCK-ON' 문구 출력! ▼▼▼
-        if (has_lead && longActive) {
-            nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            ui_draw_text(s, bx + 117, by - 95, "", 55, COLOR_GREEN, BOLD); // ⬅️ by-95로 살짝 올림!
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-        // (기존 왼쪽 신호등 표시 로직은 우측 기어박스 자리로 이동하기 위해 삭제됨)
-
         // draw speed
         char speed[32];
         // 1. 현재 속도 계산 (0 미만으로 내려가면 0으로 고정)
