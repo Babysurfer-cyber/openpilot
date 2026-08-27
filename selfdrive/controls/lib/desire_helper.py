@@ -81,9 +81,23 @@ class DesireHelper:
       self.laneChangeDelay = self.params.get_float("LaneChangeDelay") * 0.1
       self.modelTurnSpeedFactor = self.params.get_float("ModelTurnSpeedFactor") * 0.1
 
-  def _make_model_turn_speed(self, modeldata):
+  def _make_model_turn_speed(self, modeldata, v_ego):
     if self.modelTurnSpeedFactor > 0:
-      model_turn_speed = np.interp(self.modelTurnSpeedFactor,
+      # ▼▼▼ 동적 시야(Lookahead) 계산 로직 추가 ▼▼▼
+      v_ego_kph = v_ego * CV.MS_TO_KPH
+
+      if v_ego_kph <= 50.0:
+        dynamic_time = self.modelTurnSpeedFactor
+      elif v_ego_kph >= 100.0:
+        # 설정값에 5.0초(Factor 50)를 더해 한계치 고정
+        dynamic_time = self.modelTurnSpeedFactor + 5.0
+      else:
+        # 1km/h당 0.1초(Factor 1)씩 증가
+        dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 50.0) * 0.1
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+      # 원래 self.modelTurnSpeedFactor가 들어가던 자리에 dynamic_time 적용!
+      model_turn_speed = np.interp(dynamic_time,
                                    modeldata.velocity.t,
                                    modeldata.velocity.x) * CV.MS_TO_KPH * 1.2
       self.model_turn_speed = self.model_turn_speed * 0.9 + model_turn_speed * 0.1
@@ -218,7 +232,9 @@ class DesireHelper:
   def update(self, carstate, modeldata, lateral_active, lane_change_prob, carrotMan, radarState):
     self.frame += 1
     self._update_params_periodic()
-    self._make_model_turn_speed(modeldata)
+    
+    # ▼▼▼ 함수 호출 시 carstate.vEgo를 넘겨주도록 수정 ▼▼▼
+    self._make_model_turn_speed(modeldata, carstate.vEgo)
 
     # counts
     self.carrot_lane_change_count = max(0, self.carrot_lane_change_count - 1)
