@@ -1092,7 +1092,7 @@ class CarrotServ:
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
       (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
-      (vehicle_bump_speed, "hda_bump"),
+      (vehicle_bump_speed, "bump"),
       (vehicle_curve_speed, "curve"), # 💡 [수정] 화면에 표시될 텍스트를 curve로 변경
       (limit_speed, "road"),
     ]
