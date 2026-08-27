@@ -339,6 +339,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ShareData", {PERSISTENT, INT, "0"}},
 
     {"VehicleNaviCanControl", {PERSISTENT, BOOL, "0"}},
+    
+    // ▼▼▼ [추가] 순정 내비 연동(스쿨존, 카메라, 커브) 파라미터 등록 ▼▼▼
+    {"VehicleNaviSchoolZoneControl", {PERSISTENT, BOOL, "0"}},
+    {"VehicleSpeedCameraControlMode", {PERSISTENT, INT, "1"}},
+    {"VehicleSpeedCameraDistanceTime", {PERSISTENT, INT, "60"}},
+    {"VehicleNaviCurveControl", {PERSISTENT, BOOL, "0"}},
+    {"VehicleNaviCurveMppControl", {PERSISTENT, BOOL, "0"}},
+    {"VehicleNaviCurveSpeedFactor", {PERSISTENT, INT, "100"}},
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     // Model Selector
     {"DrivingModelName", {PERSISTENT, STRING}},  // 현재 사용 중인 모델 이름
