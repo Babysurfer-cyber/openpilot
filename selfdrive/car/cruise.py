@@ -710,18 +710,17 @@ class VCruiseCarrot:
 
         # ▼▼▼ [핵심] 과속카메라 판별 (거리가 0보다 크면 무조건 카메라!) ▼▼▼
         is_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
-
-        # ▼▼▼ 카메라 통과 시점까지 오토모드 타겟 변경 보류 로직 ▼▼▼
+        # ▼▼▼ [수정] 카메라 통과 시점에 크루즈 속도를 감속하도록 완벽 보류 ▼▼▼
         if is_cam:
-          # 카메라 앞에서는 하위 로직(sdi_speed)이 물리적 감속을 완벽히 책임지므로,
-          # 오토모드(화면 타겟 속도)는 쫄지 않고 예전 제한속도를 계속 꽉 잡고 대기합니다!
-          effective_limit = self.prev_limit_speed_for_auto
-          if effective_limit <= 0: 
+          # 카메라(MapSource=2) 안내 중에는 제한속도가 깎이더라도 이전 속도를 꽉 잡습니다!
+          if self.prev_limit_speed_for_auto > 0 and raw_limit < self.prev_limit_speed_for_auto:
+            effective_limit = self.prev_limit_speed_for_auto
+          else:
             effective_limit = raw_limit
         else:
-          # 카메라가 끝났거나(통과 완료), 단순 표지판 변경일 때는 즉시 적용!
+          # 카메라를 완전히 통과하여 MapSource가 없어지는 순간, 새 제한속도를 즉시 적용!
           effective_limit = raw_limit
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if effective_limit > 0:
           # 1. 수동 조작 오프셋 업데이트 (무제한 허용)
