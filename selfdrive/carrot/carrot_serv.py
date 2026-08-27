@@ -928,7 +928,7 @@ class CarrotServ:
     vehicle_bump_speed = 250  # <--- [1/3] 초기값 변수 추가
 
     # =========================================================
-    # ▼ [수정] 5번 모드(AUTO) 작동/속도변경 시 안내음 발생 로직 (최종 완성판)
+    # ▼ [수정] 5번 모드(AUTO) 속도 변경 안내음 및 텍스트 알림 로직
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
@@ -941,17 +941,21 @@ class CarrotServ:
     current_limit = self.nRoadLimitSpeed
     play_prompt = False
     
-    # 💡 1. 5번 모드가 방금 "켜졌을 때" 무조건 안내음 발생! (피드백 용도)
+    # 💡 1. 5번 모드가 방금 "켜졌을 때" 무조건 안내음 발생
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
       play_prompt = True
+      # 화면 하단 도로명 박스에 활성화 알림 텍스트 표시
+      self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
-    # 💡 2. 속도가 바뀌었을 때 (0 -> 100, 100 -> 0 모두 감지)
+    # 💡 2. 제한속도가 바뀌었을 때 (스피드 리밋 변경 감지)
     elif current_limit != self.prev_speed_limit:
-      # 현재 제한속도가 0보다 크고(유효하고), 현재 5번 모드일 때만 안내음!
+      # 현재 5번 모드이고 제한속도가 유효할 때만 안내음!
       if current_limit > 0 and my_driving_mode == 5:
         play_prompt = True
+        # 화면 하단 도로명 박스에 변경된 제한속도를 글자로 띄움
+        self.szPosRoadName = f"오토 속도 변경: {current_limit}km/h 🔔"
         
-    # 소리 발생 트리거 파일 생성
+    # 소리 발생 트리거 (띠링~)
     if play_prompt:
       try:
         open("/dev/shm/carrot_prompt", "w").close()
