@@ -917,8 +917,16 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # 💡 [핵심] carcontroller에서 넘어온 완벽한 스위치로 계기판 붉은색 경고 팝업!
-        values['HDA_MODE2'] = 4 if corner_radar_cutin else 1
+        # 💡 [수정] 깜빡이 켠 방향에 BSD 위험이 있으면 2, 코너 레이더 끼어들기가 있으면 4(최우선)
+        bsd_warning_active = (CS.out.leftBlinker and CS.out.leftBlindspot) or \
+                             (CS.out.rightBlinker and CS.out.rightBlindspot)
+        
+        if corner_radar_cutin:
+          values['HDA_MODE2'] = 4
+        elif bsd_warning_active:
+          values['HDA_MODE2'] = 2
+        else:
+          values['HDA_MODE2'] = 1
 
         _make_ccnc_values(
           values, CS, lat_active, frame, hud_control,
