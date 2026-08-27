@@ -877,8 +877,10 @@ class CarrotServ:
       return 250.0
 
     target_speed = max(self.autoCurveSpeedLowerLimit, reference_speed * self.vehicleNaviCurveSpeedFactor)
+    
+    # ▼▼▼ [핵심 수정] 과속카메라 완료시간(autoNaviSpeedCtrlEnd) 대신 1.0초 고정 적용 ▼▼▼
     return self.calculate_current_speed(float(getattr(CS, "vehicleNaviCurveDistance", 0.0)),
-                                        target_speed, self.autoNaviSpeedCtrlEnd, self.autoNaviSpeedDecelRate)
+                                        target_speed, 1.0, self.autoNaviSpeedDecelRate)                                        target_speed, self.autoNaviSpeedCtrlEnd, self.autoNaviSpeedDecelRate)
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_navi(self, remote_ip, sm, pm, vturn_speed, coords, distances, route_speed, gps_service):
