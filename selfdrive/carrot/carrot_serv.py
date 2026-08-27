@@ -203,6 +203,13 @@ class CarrotServ:
     self.autoNaviSpeedCtrlEnd = float(self.params.get_int("AutoNaviSpeedCtrlEnd"))
     self.autoNaviSpeedCtrlMode = self.params.get_int("AutoNaviSpeedCtrlMode")
     self.vehicleNaviCanControl = self.params.get_bool("VehicleNaviCanControl") # <--- 이 줄을 꼭 추가해 주세요!
+    
+    # ▼▼▼ [추가] 커브 감속용 파라미터 로드 ▼▼▼
+    self.vehicleNaviCurveControl = self.params.get_bool("VehicleNaviCurveControl")
+    self.vehicleNaviCurveMppControl = self.params.get_bool("VehicleNaviCurveMppControl")
+    self.vehicleNaviCurveSpeedFactor = min(2.0, max(0.5, self.params.get_int("VehicleNaviCurveSpeedFactor") * 0.01))
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    
     self.autoNaviSpeedSafetyFactor = float(self.params.get_int("AutoNaviSpeedSafetyFactor")) * 0.01
     self.autoNaviSpeedDecelRate = float(self.params.get_int("AutoNaviSpeedDecelRate")) * 0.01
 
@@ -858,6 +865,22 @@ class CarrotServ:
         self.xSpdDist = distance
         self.xSpdType =xSpdType
 
+  # ▼▼▼ [추가] 순정 내비 곡률(커브) 속도 계산 함수 ▼▼▼
+  def _vehicle_navi_curve_speed(self, CS):
+    reference_speed = float(getattr(CS, "vehicleNaviCurveSpeed", 0.0))
+    curvature = float(getattr(CS, "vehicleNaviCurveCurvature", 0.0))
+    route_active = bool(getattr(CS, "vehicleNaviCurveRouteActive", False))
+    route_state = int(getattr(CS, "vehicleNaviCurveRouteState", 1 if route_active else 3))
+    route_allowed = route_active or (self.vehicleNaviCurveMppControl and route_state == 0)
+    
+    if not self.vehicleNaviCurveControl or not route_allowed or reference_speed <= 0 or abs(curvature) < 1e-7:
+      return 250.0
+
+    target_speed = max(self.autoCurveSpeedLowerLimit, reference_speed * self.vehicleNaviCurveSpeedFactor)
+    return self.calculate_current_speed(float(getattr(CS, "vehicleNaviCurveDistance", 0.0)),
+                                        target_speed, self.autoNaviSpeedCtrlEnd, self.autoNaviSpeedDecelRate)
+  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
   def update_navi(self, remote_ip, sm, pm, vturn_speed, coords, distances, route_speed, gps_service):
 
     self.debugText = ""
@@ -926,6 +949,7 @@ class CarrotServ:
     sdi_speed = 250
     hda_active = False
     vehicle_bump_speed = 250  # <--- [1/3] 초기값 변수 추가
+    vehicle_curve_speed = 250 # ▼▼▼ [추가] 커브 속도 변수
 
     # =========================================================
     # ▼ [수정] 5번 모드(AUTO) 속도 변경 안내음 및 텍스트 알림 로직
@@ -988,7 +1012,7 @@ class CarrotServ:
         self.active_carrot = 4
 
     # 2순위: 4BE가 완전히 없을 때만 HDA(4A3) 신호 적용
-    elif CS is not None and CS.speedLimit > 0 and CS.speedLimitDistance > 0:
+    elif CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0:
       sdi_speed = min(sdi_speed,
                       self.calculate_current_speed(CS.speedLimitDistance,
                                                    CS.speedLimit * self.autoNaviSpeedSafetyFactor,
@@ -1051,6 +1075,13 @@ class CarrotServ:
         self.xSpdDist = fake_bump_dist  
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+    # ▼▼▼ [추가] 차량 순정 내비 곡률(커브) 감속 계산 ▼▼▼
+    if CS is not None:
+      vehicle_curve_speed = self._vehicle_navi_curve_speed(CS)
+      if vehicle_curve_speed < 250:
+        self.active_carrot = max(self.active_carrot, 6)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     if self.autoTurnControl not in [2, 3]:    # auto turn speed control
       atc_desired = atc_desired_next = 250
 
@@ -1062,6 +1093,7 @@ class CarrotServ:
       (atc_desired_next, "atc2"),
       (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
       (vehicle_bump_speed, "bump"),  # <--- [3/3] 이 줄을 추가합니다.
+      (vehicle_curve_speed, "hda_curve"), # ▼▼▼ [추가] 커브 소스
       (limit_speed, "road"),
     ]
 
