@@ -484,6 +484,8 @@ class VCruiseCarrot:
     button_kph, button_type, long_pressed = self._prepare_buttons(CS, v_cruise_kph)
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
+    
+    self.button_type_pressed = button_type  # ▼▼▼ [핵심 추가] 오토모드 오프셋 조절을 위해 눌린 버튼 기억 ▼▼▼
 
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
@@ -698,6 +700,9 @@ class VCruiseCarrot:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
         
+      # ▼▼▼ [핵심] is_cam을 클래스 변수(self)로 선언하여 _auto_speed_up 함수에서도 볼 수 있게 함! ▼▼▼
+      self.is_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
+
       if getattr(self, 'current_driving_mode', 3) == 5:
         if not hasattr(self, 'prev_limit_speed_for_auto'):
           self.prev_limit_speed_for_auto = 0
@@ -708,10 +713,8 @@ class VCruiseCarrot:
         # carstate.py에서 알아서 4A3/4BE 우선순위를 정리해 넘겨준 제한속도를 읽어옵니다.
         raw_limit = CS.speedLimit if CS.speedLimit > 0 else self.nRoadLimitSpeed
 
-        # ▼▼▼ [핵심] 과속카메라 판별 (거리가 0보다 크면 무조건 카메라!) ▼▼▼
-        is_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
         # ▼▼▼ [수정] 카메라 통과 시점에 크루즈 속도를 감속하도록 완벽 보류 ▼▼▼
-        if is_cam:
+        if self.is_cam:
           # 카메라(MapSource=2) 안내 중에는 제한속도가 깎이더라도 이전 속도를 꽉 잡습니다!
           if self.prev_limit_speed_for_auto > 0 and raw_limit < self.prev_limit_speed_for_auto:
             effective_limit = self.prev_limit_speed_for_auto
@@ -813,17 +816,26 @@ class VCruiseCarrot:
     if not self._pause_auto_speed_up and self.v_lead_kph + 5 > v_cruise_kph and v_cruise_kph < road_limit_kph and self.d_rel < 60:
       v_cruise_kph = min(v_cruise_kph + 5, road_limit_kph)
     elif self.autoRoadSpeedAdjust < 0 and self.nRoadLimitSpeed != self.nRoadLimitSpeed_last:  # 도로제한속도가 바뀌면, 바뀐속도로 속도를 바꿈.
-      if self.autoRoadSpeedLimitOffset < 0:
+      # ▼▼▼ [버그 픽스] 오토모드(5번)이거나 카메라 안내 중이면 여기서 멋대로 속도를 내리지 않음! ▼▼▼
+      if getattr(self, 'current_driving_mode', 3) == 5 or getattr(self, 'is_cam', False):
+        pass
+      elif self.autoRoadSpeedLimitOffset < 0:
         v_cruise_kph = self.nRoadLimitSpeed * self.autoNaviSpeedSafetyFactor
       else:
         v_cruise_kph = self.nRoadLimitSpeed + self.autoRoadSpeedLimitOffset
     elif self.nRoadLimitSpeed < self.nRoadLimitSpeed_last and self.autoRoadSpeedAdjust > 0:
-      new_road_limit_kph = self.nRoadLimitSpeed * self.autoRoadSpeedAdjust + v_cruise_kph * (1 - self.autoRoadSpeedAdjust)
-      self._add_log(f"AutoSpeed change {v_cruise_kph} -> {new_road_limit_kph:.1f}")
-      v_cruise_kph = min(v_cruise_kph, new_road_limit_kph)
+      # ▼▼▼ [버그 픽스] 오토모드(5번)이거나 카메라 안내 중이면 여기서 멋대로 속도를 내리지 않음! ▼▼▼
+      if getattr(self, 'current_driving_mode', 3) == 5 or getattr(self, 'is_cam', False):
+        pass
+      else:
+        new_road_limit_kph = self.nRoadLimitSpeed * self.autoRoadSpeedAdjust + v_cruise_kph * (1 - self.autoRoadSpeedAdjust)
+        self._add_log(f"AutoSpeed change {v_cruise_kph} -> {new_road_limit_kph:.1f}")
+        v_cruise_kph = min(v_cruise_kph, new_road_limit_kph)
+        
     self.road_limit_kph = road_limit_kph
     self.nRoadLimitSpeed_last = self.nRoadLimitSpeed
     return v_cruise_kph
+
   def _cruise_control(self, enable, cancel_timer, reason):
     if self._cruise_cancel_state: # and self._soft_hold_active != 2:
       self._add_log(reason + " > Cancel state")
