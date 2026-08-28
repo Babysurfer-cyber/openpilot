@@ -957,47 +957,41 @@ class CarrotServ:
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
-    # 초기 변수 세팅
     if not hasattr(self, 'prev_speed_limit'):
       self.prev_speed_limit = self.nRoadLimitSpeed
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
 
-    # ▼▼▼ [핵심] 안내음/글자도 '카메라 통과 시점'에 맞추기 위해 보류 로직 추가 ▼▼▼
+    # ▼▼▼ [핵심 1] cruise.py와 안내음을 완벽히 동기화하기 위한 속도/카메라 판별 ▼▼▼
+    raw_limit = CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else self.nRoadLimitSpeed
     is_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     
     if is_cam:
-      # 카메라 안내 중에는 차량이 실제 타겟 속도를 깎지 않으므로, 알림용 기준 속도도 예전 속도를 꽉 잡고 대기합니다.
-      if self.prev_speed_limit > 0 and self.nRoadLimitSpeed < self.prev_speed_limit:
+      if self.prev_speed_limit > 0 and raw_limit < self.prev_speed_limit:
         current_limit = self.prev_speed_limit
       else:
-        current_limit = self.nRoadLimitSpeed
+        current_limit = raw_limit
     else:
-      # 카메라를 완전히 통과하는 순간 (is_cam이 False가 되는 순간)! 알림용 타겟도 새 제한속도로 뚝 떨어집니다.
-      current_limit = self.nRoadLimitSpeed
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      current_limit = raw_limit
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     play_prompt = False
     
-    # 💡 1. 5번 모드가 방금 "켜졌을 때" 무조건 안내음 발생
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
       play_prompt = True
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
-    # 💡 2. 제한속도가 바뀌었을 때 (카메라 통과 시점에 current_limit이 떨어지면서 정확히 여기서 감지됨!)
     elif current_limit != self.prev_speed_limit:
       if current_limit > 0 and my_driving_mode == 5:
         play_prompt = True
-        self.szPosRoadName = f"오토 속도 변경: {current_limit}km/h 🔔"
+        self.szPosRoadName = f"오토 속도 변경: {int(current_limit)}km/h 🔔"
         
-    # 소리 발생 트리거 (띠링~)
     if play_prompt:
       try:
         open("/dev/shm/carrot_prompt", "w").close()
       except Exception:
         pass
         
-    # 다음 비교를 위해 현재 상태 업데이트
     self.prev_speed_limit = current_limit
     self.prev_driving_mode = my_driving_mode
     # =========================================================
@@ -1081,11 +1075,12 @@ class CarrotServ:
                                                           self.autoNaviSpeedBumpTime,
                                                           bump_decel_rate)
         self.active_carrot = 5
-        self.xSpdType = 22  
-        self.xSpdLimit = self.autoNaviSpeedBumpSpeed
-        self.xSpdDist = fake_bump_dist  
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+        # ▼▼▼ [핵심 2] 방지턱 화면 표시를 위해 final 변수 업데이트 ▼▼▼
+        final_xSpdType = 22  
+        final_xSpdLimit = self.autoNaviSpeedBumpSpeed
+        final_xSpdDist = fake_bump_dist  
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    
     # ▼▼▼ [추가] 차량 순정 내비 곡률(커브) 감속 계산 ▼▼▼
     if CS is not None:
       vehicle_curve_speed = self._vehicle_navi_curve_speed(CS)
@@ -1146,11 +1141,13 @@ class CarrotServ:
     left_spd_sec = 100
     left_tbt_sec = 100
     if self.autoNaviCountDownMode > 0:
-      if self.xSpdType == 22 and self.autoNaviCountDownMode == 1: # speed bump
+      # ▼▼▼ [핵심 3] 카운트다운 로직에도 final 변수 적용 ▼▼▼
+      if final_xSpdType == 22 and self.autoNaviCountDownMode == 1: # speed bump
         pass
       else:
-        if self.xSpdDist > 0:
-          left_spd_sec = min(self.left_spd_sec, int(max(self.xSpdDist - v_ego, 1) / max(1, v_ego) + 0.5))
+        if final_xSpdDist > 0:
+          left_spd_sec = min(self.left_spd_sec, int(max(final_xSpdDist - v_ego, 1) / max(1, v_ego) + 0.5))
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if self.xDistToTurn > 0:
         left_tbt_sec = min(self.left_tbt_sec, int(max(self.xDistToTurn - v_ego, 1) / max(1, v_ego) + 0.5))
@@ -1184,7 +1181,11 @@ class CarrotServ:
     msg.carrotMan.activeCarrot = self.active_carrot
     msg.carrotMan.nRoadLimitSpeed = int(self.nRoadLimitSpeed)
     msg.carrotMan.remote = remote_ip
-    msg.carrotMan.xSpdType = int(self.xSpdType)
+    # ▼▼▼ [핵심 4] 콤마 화면(UI)에 30 대신 정확한 50이 뜨도록 final 변수를 전달 ▼▼▼
+    msg.carrotMan.xSpdType = int(final_xSpdType)
+    msg.carrotMan.xSpdLimit = int(final_xSpdLimit)
+    msg.carrotMan.xSpdDist = int(final_xSpdDist)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     msg.carrotMan.xSpdLimit = int(self.xSpdLimit)
     msg.carrotMan.xSpdDist = int(self.xSpdDist)
     msg.carrotMan.xSpdCountDown = int(left_spd_sec)
