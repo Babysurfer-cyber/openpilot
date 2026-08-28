@@ -962,9 +962,11 @@ class CarrotServ:
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
 
-    # ▼▼▼ [핵심 1] cruise.py와 안내음을 완벽히 동기화하기 위한 속도/카메라 판별 ▼▼▼
+    # ▼▼▼ [핵심 2] 안내음 동기화를 위해 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
     raw_limit = CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else self.nRoadLimitSpeed
-    is_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
+    is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
+    is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
+    is_cam = is_car_cam or is_app_cam
     
     if is_cam:
       if self.prev_speed_limit > 0 and raw_limit < self.prev_speed_limit:
@@ -973,7 +975,6 @@ class CarrotServ:
         current_limit = raw_limit
     else:
       current_limit = raw_limit
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     play_prompt = False
     
@@ -998,16 +999,28 @@ class CarrotServ:
 
     ### 과속카메라, 사고방지턱
 
-    # ▼▼▼ [핵심] 최종 출력용 로컬 변수 생성 (기본값은 4BE) ▼▼▼
-    final_xSpdType = self.xSpdType
-    final_xSpdLimit = self.xSpdLimit
-    final_xSpdDist = self.xSpdDist
+    # ▼▼▼ [핵심 1] 차량 순정 내비게이션(4A3/4BE)을 1순위로 역전 ▼▼▼
+    is_car_navi_active = CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0
+    is_app_active = (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0
 
-    # 1순위: 4BE (내비) 카메라 신호가 살아있는지 엄격하게 검사
-    is_4be_active = (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0
+    sdi_speed = 250
+    hda_active = False
 
-    if is_4be_active:
-      # 4BE (내비) 신호 우선 적용
+    if is_car_navi_active:
+      # 1순위: 차량 순정 내비 (가장 정확함)
+      sdi_speed = min(sdi_speed,
+                      self.calculate_current_speed(CS.speedLimitDistance,
+                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
+                                                   self.autoNaviSpeedCtrlEnd,
+                                                   self.autoNaviSpeedDecelRate))
+      hda_active = True
+      final_xSpdLimit = CS.speedLimit
+      final_xSpdDist = CS.speedLimitDistance
+      final_xSpdType = 1  
+      self.active_carrot = max(self.active_carrot, 2)
+      
+    elif is_app_active:
+      # 2순위: 스마트폰 앱 (CarrotMan 등)
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
       sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
@@ -1015,42 +1028,23 @@ class CarrotServ:
       if self.xSpdType == 4 or (self.xSpdType in [100, 101] and self.xSpdDist <= 0):
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
-
-    # 2순위: 4BE가 완전히 없을 때만 HDA(4A3) 신호 적용
-    elif CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0:
-      sdi_speed = min(sdi_speed,
-                      self.calculate_current_speed(CS.speedLimitDistance,
-                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
-                                                   self.autoNaviSpeedCtrlEnd,
-                                                   self.autoNaviSpeedDecelRate))
-      hda_active = True
+        
+      final_xSpdLimit = self.xSpdLimit
+      final_xSpdDist = self.xSpdDist
+      final_xSpdType = self.xSpdType
       
-      # [버그 픽스] self 변수(4BE 공간)는 냅두고 화면 출력용 final 변수만 HDA로 조작!
-      final_xSpdLimit = CS.speedLimit
-      final_xSpdDist = CS.speedLimitDistance
-      final_xSpdType = 1  
-      self.active_carrot = max(self.active_carrot, 2)
+    else:
+      final_xSpdLimit = 0
+      final_xSpdDist = 0
+      final_xSpdType = -1
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
     atc_desired, self.atcType, self.atcSpeed, self.atcDist = self.update_auto_turn(v_ego*3.6, sm, self.xTurnInfo, self.xDistToTurn, True)
     atc_desired_next, _, _, _ = self.update_auto_turn(v_ego*3.6, sm, self.xTurnInfoNext, self.xDistToTurnNext, False)
 
-    if self.nSdiType  >= 0: # or self.active_carrot > 0:
-      pass
-      # self.debugText = (
-      #   f"Atc:{atc_desired:.1f}," +
-      #   f"{self.xTurnInfo}:{self.xDistToTurn:.1f}, " +
-      #   f"I({self.nTBTNextRoadWidth},{self.roadcate}) " +
-      #   f"Atc2:{atc_desired_next:.1f}," +
-      #   f"{self.xTurnInfoNext},{self.xDistToTurnNext:.1f}"
-      # )
-      #self.debugText = "" #f" {self.nSdiType}/{self.nSdiSpeedLimit}/{self.nSdiDist},BLOCK:{self.nSdiBlockType}/{self.nSdiBlockSpeed}/{self.nSdiBlockDist}, PLUS:{self.nSdiPlusType}/{self.nSdiPlusSpeedLimit}/{self.nSdiPlusDist}"
-    #elif self.nGoPosDist > 0 and self.active_carrot > 1:
-    #  self.debugText = " 목적지:{:.1f}km/{:.1f}분 남음".format(self.nGoPosDist/1000., self.nGoPosTime / 60)
-    else:
-      #self.debugText = ""
-      pass
+    vehicle_bump_speed = 250  
+    vehicle_curve_speed = 250 
 
     # ▼▼▼ [2/3] RAM 디스크에서 방지턱 거리 읽어와서 속도 계산 ▼▼▼
     if getattr(self, 'vehicleNaviCanControl', False) and self.autoNaviSpeedCtrlMode >= 2:
@@ -1062,12 +1056,8 @@ class CarrotServ:
         pass
 
       if bump_dist > 0:
-        # ▼▼▼ [수정] 방지턱 도망감 해결 및 고속 주행 시 조기 감속 적용 ▼▼▼
-        # 1. 현재 속도(v_ego) 1.0초 이동 거리만큼 당겨줍니다 (최소 10m 보장)
         bump_offset = 10.0 + v_ego * 2.2
         fake_bump_dist = max(0.0, bump_dist - bump_offset)
-
-        # 2. 방지턱은 카메라보다 더 부드럽고 일찍 감속하도록 감속률을 낮춥니다 (기본 설정값의 70% 수준)
         bump_decel_rate = self.autoNaviSpeedDecelRate * 0.8
 
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
@@ -1075,31 +1065,28 @@ class CarrotServ:
                                                           self.autoNaviSpeedBumpTime,
                                                           bump_decel_rate)
         self.active_carrot = 5
-        # ▼▼▼ [핵심 2] 방지턱 화면 표시를 위해 final 변수 업데이트 ▼▼▼
         final_xSpdType = 22  
         final_xSpdLimit = self.autoNaviSpeedBumpSpeed
         final_xSpdDist = fake_bump_dist  
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     # ▼▼▼ [추가] 차량 순정 내비 곡률(커브) 감속 계산 ▼▼▼
     if CS is not None:
       vehicle_curve_speed = self._vehicle_navi_curve_speed(CS)
       if vehicle_curve_speed < 250:
         self.active_carrot = max(self.active_carrot, 6)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    if self.autoTurnControl not in [2, 3]:    # auto turn speed control
+    if self.autoTurnControl not in [2, 3]:
       atc_desired = atc_desired_next = 250
 
-    if self.autoTurnControl not in [1,2]:    # auto turn control
+    if self.autoTurnControl not in [1,2]:
       self.atcType = "none"
 
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
-      (sdi_speed, "HDA" if hda_active else "bump" if self.xSpdType == 22 else "section" if self.xSpdType == 4 else "police" if self.xSpdType == 100 else "waze" if self.xSpdType == 101 else "CAM"),
+      (sdi_speed, "HDA" if hda_active else "bump" if final_xSpdType == 22 else "section" if final_xSpdType == 4 else "police" if final_xSpdType == 100 else "waze" if final_xSpdType == 101 else "CAM"),
       (vehicle_bump_speed, "bump"),
-      (vehicle_curve_speed, "curve"), # 💡 [수정] 화면에 표시될 텍스트를 curve로 변경
+      (vehicle_curve_speed, "curve"), 
       (limit_speed, "road"),
     ]
 
@@ -1112,7 +1099,6 @@ class CarrotServ:
         speed_n_sources.append((route_speed, "route"))
     elif self.turnSpeedControlMode in [3, 4]:
       speed_n_sources.append((route_speed, "route"))
-      #speed_n_sources.append((self.calculate_current_speed(dist, speed * self.mapTurnSpeedFactor, 0, 1.2), "route"))
 
     model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit)
     if model_turn_speed < 200 and abs(vturn_speed) < 120:
@@ -1132,22 +1118,16 @@ class CarrotServ:
         self.gas_pressed_state = False
       self.source_last = source
 
-     # if desired_speed < self.gas_override_speed:
-      #  source = "gas"
-      #  desired_speed = self.gas_override_speed
-
-      self.debugText += f"route={route_speed:.1f}"#f"desired={desired_speed:.1f},{source},g={self.gas_override_speed:.0f}"
+      self.debugText += f"route={route_speed:.1f}"
 
     left_spd_sec = 100
     left_tbt_sec = 100
     if self.autoNaviCountDownMode > 0:
-      # ▼▼▼ [핵심 3] 카운트다운 로직에도 final 변수 적용 ▼▼▼
-      if final_xSpdType == 22 and self.autoNaviCountDownMode == 1: # speed bump
+      if final_xSpdType == 22 and self.autoNaviCountDownMode == 1: 
         pass
       else:
         if final_xSpdDist > 0:
           left_spd_sec = min(self.left_spd_sec, int(max(final_xSpdDist - v_ego, 1) / max(1, v_ego) + 0.5))
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if self.xDistToTurn > 0:
         left_tbt_sec = min(self.left_tbt_sec, int(max(self.xDistToTurn - v_ego, 1) / max(1, v_ego) + 0.5))
@@ -1174,20 +1154,16 @@ class CarrotServ:
 
       self.left_sec = left_sec
 
-
     self._update_cmd()
     msg = messaging.new_message('carrotMan')
     msg.valid = True
     msg.carrotMan.activeCarrot = self.active_carrot
     msg.carrotMan.nRoadLimitSpeed = int(self.nRoadLimitSpeed)
     msg.carrotMan.remote = remote_ip
-    # ▼▼▼ [핵심 4] 콤마 화면(UI)에 30 대신 정확한 50이 뜨도록 final 변수를 전달 ▼▼▼
+    # ▼▼▼ [핵심 4] 화면(UI) 변수에 중복 덮어쓰기가 제거되었습니다! ▼▼▼
     msg.carrotMan.xSpdType = int(final_xSpdType)
     msg.carrotMan.xSpdLimit = int(final_xSpdLimit)
     msg.carrotMan.xSpdDist = int(final_xSpdDist)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-    msg.carrotMan.xSpdLimit = int(self.xSpdLimit)
-    msg.carrotMan.xSpdDist = int(self.xSpdDist)
     msg.carrotMan.xSpdCountDown = int(left_spd_sec)
     msg.carrotMan.xTurnInfo = int(self.xTurnInfo)
     msg.carrotMan.xDistToTurn = int(self.xDistToTurn)
@@ -1203,7 +1179,7 @@ class CarrotServ:
     msg.carrotMan.carrotArg = self.carrotArg
     msg.carrotMan.trafficState = self.traffic_state
 
-    msg.carrotMan.xPosSpeed = float(v_ego_kph) #float(self.nPosSpeed)
+    msg.carrotMan.xPosSpeed = float(v_ego_kph) 
     msg.carrotMan.xPosAngle = float(self.bearing)
     msg.carrotMan.xPosLat = float(self.vpPosPointLat)
     msg.carrotMan.xPosLon = float(self.vpPosPointLon)
@@ -1212,12 +1188,12 @@ class CarrotServ:
     msg.carrotMan.nGoPosTime = self.nGoPosTime
     msg.carrotMan.szSdiDescr = self._get_sdi_descr(-1 if self.nSdiType == 0 and self.nSdiDist == 0 else self.nSdiType)
 
-    #coords_str = ";".join([f"{x},{y}" for x, y in coords])
     coords_str = ";".join([f"{x:.2f},{y:.2f},{d:.2f}" for (x, y), d in zip(coords, distances, strict=False)])
     msg.carrotMan.naviPaths = coords_str
 
     msg.carrotMan.leftSec = int(self.carrot_left_sec)
     pm.send('carrotMan', msg)
+
 
     inst = messaging.new_message('navInstructionCarrot')
     if self.active_carrot > 1 and self.active_kisa_count <= 0:
