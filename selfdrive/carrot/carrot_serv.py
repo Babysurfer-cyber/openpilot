@@ -208,6 +208,7 @@ class CarrotServ:
     self.vehicleNaviCurveControl = self.params.get_bool("VehicleNaviCurveControl")
     self.vehicleNaviCurveMppControl = self.params.get_bool("VehicleNaviCurveMppControl")
     self.vehicleNaviCurveSpeedFactor = min(2.0, max(0.5, self.params.get_int("VehicleNaviCurveSpeedFactor") * 0.01))
+    self.vehicleNaviCurveControlEnd = max(0.0, float(self.params.get_int("VehicleNaviCurveCtrlEnd")))
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     self.autoNaviSpeedSafetyFactor = float(self.params.get_int("AutoNaviSpeedSafetyFactor")) * 0.01
@@ -878,7 +879,7 @@ class CarrotServ:
 
     target_speed = max(self.autoCurveSpeedLowerLimit, reference_speed * self.vehicleNaviCurveSpeedFactor)
     return self.calculate_current_speed(float(getattr(CS, "vehicleNaviCurveDistance", 0.0)),
-                                        target_speed, self.autoNaviSpeedCtrlEnd, self.autoNaviSpeedDecelRate)
+                                        target_speed, self.vehicleNaviCurveControlEnd, self.autoNaviSpeedDecelRate)
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_navi(self, remote_ip, sm, pm, vturn_speed, coords, distances, route_speed, gps_service):
