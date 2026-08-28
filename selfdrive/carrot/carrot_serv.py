@@ -962,14 +962,26 @@ class CarrotServ:
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
 
-    # ▼▼▼ [핵심 2] 안내음 동기화를 위해 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
-    raw_limit = CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else self.nRoadLimitSpeed
+    # ▼▼▼ [핵심 1] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
     is_cam = is_car_cam or is_app_cam
     
+    # 💡 [화면용] 제한속도 표시는 발견 즉시 바뀌어야 하므로 raw_limit에 즉각 반영!
+    if is_car_cam:
+      raw_limit = CS.speedLimit
+    elif is_app_cam:
+      raw_limit = self.xSpdLimit
+    elif CS is not None and getattr(CS, 'speedLimit', 0) > 0:
+      raw_limit = CS.speedLimit
+    else:
+      raw_limit = self.nRoadLimitSpeed
+
+    # 💡 [소리용] 띠링 안내음은 카메라 통과할 때까지 예전 속도를 쥐고 대기!
     if is_cam:
-      if self.prev_speed_limit > 0 and raw_limit < self.prev_speed_limit:
+      if self.prev_speed_limit <= 0:
+        current_limit = 0
+      elif raw_limit < self.prev_speed_limit:
         current_limit = self.prev_speed_limit
       else:
         current_limit = raw_limit
@@ -1158,7 +1170,9 @@ class CarrotServ:
     msg = messaging.new_message('carrotMan')
     msg.valid = True
     msg.carrotMan.activeCarrot = self.active_carrot
-    msg.carrotMan.nRoadLimitSpeed = int(self.nRoadLimitSpeed)
+    # ▼▼▼ [핵심 2] 화면 제한속도(표지판)는 보류 없이 즉각(raw_limit) 반응하도록 수정! ▼▼▼
+    msg.carrotMan.nRoadLimitSpeed = int(raw_limit)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     msg.carrotMan.remote = remote_ip
     # ▼▼▼ [핵심 4] 화면(UI) 변수에 중복 덮어쓰기가 제거되었습니다! ▼▼▼
     msg.carrotMan.xSpdType = int(final_xSpdType)
@@ -1202,7 +1216,9 @@ class CarrotServ:
       instruction = inst.navInstructionCarrot
       instruction.distanceRemaining = self.nGoPosDist
       instruction.timeRemaining = self.nGoPosTime
-      instruction.speedLimit = self.nRoadLimitSpeed / 3.6 if self.nRoadLimitSpeed > 0 else 0
+      # ▼▼▼ [핵심 3] 내비게이션 안내용 속도 표지판도 즉각 반응 ▼▼▼
+      instruction.speedLimit = raw_limit / 3.6 if raw_limit > 0 else 0
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       instruction.maneuverDistance = float(self.nTBTDist)
       instruction.maneuverSecondaryText = self.szNearDirName
       if self.szFarDirName and len(self.szFarDirName):
