@@ -980,8 +980,8 @@ class CarrotServ:
     # 💡 [소리용] 띠링 안내음은 카메라 통과할 때까지 예전 속도를 쥐고 대기!
     if is_cam:
       if self.prev_speed_limit <= 0:
-        current_limit = 0
-      elif raw_limit < self.prev_speed_limit:
+        current_limit = 0  # <--- 제한속도 없던 길(0)이면 통과할 때까지 0으로 입 꾹 닫고 대기!
+      elif raw_limit > 0 and raw_limit < self.prev_speed_limit:
         current_limit = self.prev_speed_limit
       else:
         current_limit = raw_limit
