@@ -700,8 +700,20 @@ class VCruiseCarrot:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
         
-      # ▼▼▼ [핵심] is_cam을 클래스 변수(self)로 선언하여 _auto_speed_up 함수에서도 볼 수 있게 함! ▼▼▼
-      self.is_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
+      # ▼▼▼ [핵심] 순정 내비 뿐만 아니라 스마트폰 앱 카메라도 통과 시점까지 완벽하게 보류! ▼▼▼
+      is_car_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
+      is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
+      self.is_cam = is_car_cam or is_app_cam
+
+      # 💡 [데이터용] 화면 표지판은 발견 즉시 신호를 받아와야 하므로 raw_limit에 즉각 반영!
+      if is_car_cam:
+        raw_limit = CS.speedLimit
+      elif is_app_cam:
+        raw_limit = self.xSpdLimit
+      elif CS.speedLimit > 0:
+        raw_limit = CS.speedLimit
+      else:
+        raw_limit = self.nRoadLimitSpeed
 
       if getattr(self, 'current_driving_mode', 3) == 5:
         if not hasattr(self, 'prev_limit_speed_for_auto'):
@@ -710,18 +722,19 @@ class VCruiseCarrot:
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
 
-        # carstate.py에서 알아서 4A3/4BE 우선순위를 정리해 넘겨준 제한속도를 읽어옵니다.
-        raw_limit = CS.speedLimit if CS.speedLimit > 0 else self.nRoadLimitSpeed
-
-        # ▼▼▼ [수정] 카메라 통과 시점에 크루즈 속도를 감속하도록 완벽 보류 ▼▼▼
+        # 💡 [액션용] 실제 변속(깜빡임)은 카메라 통과 시점까지 대기!
         if self.is_cam:
-          # 카메라(MapSource=2) 안내 중에는 제한속도가 깎이더라도 이전 속도를 꽉 잡습니다!
-          if self.prev_limit_speed_for_auto > 0 and raw_limit < self.prev_limit_speed_for_auto:
+          # 카메라 안내 중: 절대 속도를 떨어뜨리지 않음!
+          if self.prev_limit_speed_for_auto <= 0:
+            # 1. 제한속도가 없던 길(0)에서 카메라가 나타난 경우 -> 통과할 때까지 계속 없는 상태(0) 유지!
+            effective_limit = 0
+          elif raw_limit > 0 and raw_limit < self.prev_limit_speed_for_auto:
+            # 2. 제한속도가 높은 길(80)에서 낮은 카메라(50)가 나타난 경우 -> 예전 높은 속도(80) 유지!
             effective_limit = self.prev_limit_speed_for_auto
           else:
             effective_limit = raw_limit
         else:
-          # 카메라를 완전히 통과하여 MapSource가 없어지는 순간, 새 제한속도를 즉시 적용!
+          # 카메라를 완전히 통과하여 신호가 사라지는 순간, 새 제한속도를 즉시 적용하여 변속!
           effective_limit = raw_limit
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
