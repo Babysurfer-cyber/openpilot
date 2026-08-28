@@ -761,7 +761,7 @@ class VCruiseCarrot:
               
             # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
-              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0)
+              self.user_speed_offset = min(self.user_speed_offset + 10.0, 30.0)
 
             self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
