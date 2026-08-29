@@ -16,21 +16,17 @@ from openpilot.common.params import Params
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+
 ButtonType = structs.CarState.ButtonEvent.Type
 
 PREV_BUTTON_SAMPLES = 8
 CLUSTER_SAMPLE_RATE = 20  # frames
 STANDSTILL_THRESHOLD = 12 * 0.03125 * CV.KPH_TO_MS
 
-# ▼▼▼ [추가] 순정 내비 감속 전용 상수 ▼▼▼
+# ▼▼▼ [추가] 방지턱 전용 상수 ▼▼▼
 VEHICLE_NAVI_MAX_EVENT_DISTANCE = 2500.0
 VEHICLE_NAVI_PASSED_EVENT_DISTANCE = 30.0
 VEHICLE_NAVI_MAX_EVENTS = 32
-VEHICLE_NAVI_CURVE_MAX_DISTANCE = 1500.0
-VEHICLE_NAVI_CURVE_DISTANCE_FACTOR = 2.0
-VEHICLE_NAVI_CURVE_SHORT_SPOT_MAX_DISTANCE = 10.0
-VEHICLE_NAVI_CURVE_SHORT_SPOT_MAX_SPEED = 20.0
-VEHICLE_NAVI_CURVE_TARGET_LAT_ACCEL = 1.9
 # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: ButtonType.decelCruise,
@@ -38,6 +34,7 @@ BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: Bu
 
 GearShifter = structs.CarState.GearShifter
 READY_COUNT_OK = 200
+
 
 NUMERIC_TO_TZ = {
     840: "America/New_York",   # 미국 (US) → 동부 시간대
@@ -109,30 +106,15 @@ class CarState(CarStateBase):
     self.ccnc_0x162 = None    
     self.hda_info_4a3 = None    
     
-    # ▼▼▼ [추가] 순정 내비 카메라, 방지턱, 커브 감속 변수 초기화 ▼▼▼
+    # ▼▼▼ [추가] 순정 내비 방지턱 트래킹 초기화 ▼▼▼
     self.navi_segment_4b9 = None
     self.navi_profile_4be = None
-    self.navi_profile_4ba = None
-    
     self.vehicleNaviEvents = []
-    self.vehicleNaviCurves = []
-    
     self.vehicleNaviSegmentTimestamp = 0
     self.vehicleNaviProfileTimestamp = 0
-    self.vehicleNaviCurveTimestamp = 0
     self.vehicleNaviRouteResetTimestamp = 0
-    self.vehicleNaviCurveRouteActive = False
-    self.vehicleNaviCurveRouteState = 3
-
     self.frame_for_params = 0
     self.vehicleNaviCanControl = False
-    
-    # 파라미터 로드
-    self.op_params = Params()
-    self.vehicleNaviCurveSpeedFactor = min(2.0, max(0.5, self.op_params.get_int("VehicleNaviCurveSpeedFactor") * 0.01))
-    self.vehicleNaviCurveLowerLimit = max(5.0, self.op_params.get_int("AutoCurveSpeedLowerLimit"))
-    self.vehicleNaviCurveDecelRate = max(0.01, self.op_params.get_int("AutoNaviSpeedDecelRate") * 0.01)
-    self.vehicleNaviCurveControlEnd = max(0.0, self.op_params.get_int("VehicleNaviCurveCtrlEnd")) # <--- 전용 파라미터로 변경
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.tcs = None    
@@ -153,8 +135,8 @@ class CarState(CarStateBase):
 
     self.params = CarControllerParams(CP)
 
-    self.main_enabled = True if self.op_params.get_int("AutoEngage") == 2 else False
-    self.gear_shifter = GearShifter.drive 
+    self.main_enabled = True if Params().get_int("AutoEngage") == 2 else False
+    self.gear_shifter = GearShifter.drive # Gear_init for Nexo ?? unknown 21.02.23.LSW
 
     self.totalDistance = 0.0
     self.speedLimitDistance = 0
@@ -170,14 +152,17 @@ class CarState(CarStateBase):
     self.rf_distance = 0
     self.lr_distance = 0
     self.rr_distance = 0
+    #self.lf_lateral = 0
+    #self.rf_lateral = 0
 
-    fingerprints_str = self.op_params.get("FingerPrints")
+    fingerprints_str = Params().get("FingerPrints")
     fingerprints = ast.literal_eval(fingerprints_str)
-    
+    #print("fingerprints =", fingerprints)
     ecu_disabled = False
     if self.CP.openpilotLongitudinalControl and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC):
       ecu_disabled = True
 
+    
     self.HAS_LFA_BUTTON = True if 913 in fingerprints[0] else False
     self.CRUISE_BUTTON_ALT = True if 1007 in fingerprints[0] else False
 
@@ -207,14 +192,18 @@ class CarState(CarStateBase):
 
       def add_if_seen(parser, name, ignore_counter = False):
         msg = parser.dbc.name_to_msg.get(name)
-        if not msg: return
-        if msg.address not in parser.seen_addresses: return
-        if msg.address in parser.addresses: return
-        parser._add_message(name, ignore_counter = ignore_counter)
+        if not msg:
+          print(f"{name} not in DBC")
+          return
+        if msg.address not in parser.seen_addresses:
+          return
+        if msg.address in parser.addresses:
+          return
+        parser._add_message(name, ignore_counter = ignore_counter)   # ← 이름으로 등록
 
       def add_and_cache(parser, name: str, attr: str, ignore_counter: bool = False):
         add_if_seen(parser, name, ignore_counter)
-        if name in parser.vl:   
+        if name in parser.vl:   # 등록 성공했을 때만
           setattr(self, attr, parser.vl[name])
           return True
         return False
@@ -227,7 +216,16 @@ class CarState(CarStateBase):
         self.cp.enable_capture = self.cp_cam.enable_capture = False
         if self.cp_alt is not None:
           self.cp_alt.enable_capture = False
-      elif not canfd:
+      elif self.controls_ready_count == 101:
+        print("cp_cam.seen_addresses =", self.cp_cam.seen_addresses)
+      elif self.controls_ready_count == 102:
+        print("cp.seen_addresses =", self.cp.seen_addresses)
+      elif self.controls_ready_count == 103:
+        if self.cp_alt is not None:
+          print("cp_alt.seen_addresses =", self.cp_alt.seen_addresses)
+        else:
+          print("cp_alt.seen_addresses = None")
+      if not canfd:
         if self.controls_ready_count == 104:
           if not add_and_cache(self.cp_cam, "FCA11", "fca11"):
             add_and_cache(self.cp, "FCA11", "fca11")
@@ -257,9 +255,12 @@ class CarState(CarStateBase):
           add_and_cache(self.cp_cam, "CCNC_0x162", "ccnc_0x162")
         elif self.controls_ready_count == 123:        
           add_and_cache(self.cp, "HDA_INFO_4A3", "hda_info_4a3")
+          
+          # ▼▼▼ [추가] 4B9, 4BE 방지턱 메시지 허용 ▼▼▼
           add_and_cache(self.cp, "NEW_MSG_4B9", "navi_segment_4b9")
           add_and_cache(self.cp, "NEW_MSG_4BE", "navi_profile_4be")
-          add_and_cache(self.cp, "NEW_MSG_4BA", "navi_profile_4ba") # 커브 추가
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          
           add_and_cache(self.cp, "STEER_TOUCH_2AF", "steer_touch_2af")
         elif self.controls_ready_count == 124:
           add_and_cache(self.cp, self.cruise_btns_msg_canfd, "cruise_buttons_msg")
@@ -276,6 +277,10 @@ class CarState(CarStateBase):
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
          
+          
+          
+        
+    
   def update(self, can_parsers) -> structs.CarState:
     self.monitor_fingerprint(can_parsers, self.CP.flags & HyundaiFlags.CANFD)
     cp = can_parsers[Bus.pt]
@@ -311,8 +316,12 @@ class CarState(CarStateBase):
       self.cluster_speed_counter = 0
 
       # Mimic how dash converts to imperial.
+      # Sorento is the only platform where CF_Clu_VehicleSpeed is already imperial when not is_metric
+      # TODO: CGW_USM1->CF_Gway_DrLockSoundRValue may describe this
       if not self.is_metric and self.CP.carFingerprint not in (CAR.KIA_SORENTO,):
         self.cluster_speed = math.floor(self.cluster_speed * CV.KPH_TO_MPH + CV.KPH_TO_MPH)
+
+    #ret.vEgoCluster = self.cluster_speed * speed_conv
 
     ret.steeringAngleDeg = cp.vl["SAS11"]["SAS_Angle"]
     ret.steeringRateDeg = cp.vl["SAS11"]["SAS_Speed"]
@@ -326,7 +335,8 @@ class CarState(CarStateBase):
 
     # cruise state
     if self.CP.openpilotLongitudinalControl:
-      ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK 
+      # These are not used for engage/disengage since openpilot keeps track of state using the buttons
+      ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK #cp.vl["TCS13"]["ACCEnable"] == 0
       ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
@@ -334,18 +344,20 @@ class CarState(CarStateBase):
       self.main_enabled = ret.cruiseState.available = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
       ret.cruiseState.enabled = cp_cruise.vl["SCC12"]["ACCMode"] != 0
       ret.cruiseState.standstill = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 4.
-      ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.
+      ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.  # Shows 'Cruise Control' on dash
       ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
+
       ret.pcmCruiseGap = cp_cruise.vl["SCC11"]["TauGapSet"]
 
+    # TODO: Find brake pressure
     ret.brake = 0
     if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
-      ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2 
-      ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2 
+      ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2  # 2 includes regen braking by user on HEV/EV
+      ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2  # 0 OFF, 1 ERROR, 2 ACTIVE, 3 READY
       ret.parkingBrake = cp.vl["TCS13"]["PBRAKE_ACT"] == 1
       ret.espDisabled = cp.vl["TCS11"]["TCS_PAS"] == 1
       ret.espActive = cp.vl["TCS11"]["ABS_ACT"] == 1
-      ret.accFaulted = cp.vl["TCS13"]["ACCEnable"] != 0 
+      ret.accFaulted = cp.vl["TCS13"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
       ret.brakeLights = bool(cp.vl["TCS13"]["BrakeLight"] or ret.brakePressed)
 
     if self.CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV | HyundaiFlags.FCEV):
@@ -360,6 +372,8 @@ class CarState(CarStateBase):
       ret.gas = cp.vl["EMS12"]["PV_AV_CAN"] / 100.
       ret.gasPressed = bool(cp.vl["EMS16"]["CF_Ems_AclAct"])
 
+    # Gear Selection via Cluster - For those Kia/Hyundai which are not fully discovered, we can use the Cluster Indicator for Gear Selection,
+    # as this seems to be standard over all cars, but is not the preferred method.
     if self.CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV):
       gear = cp.vl["ELECT_GEAR"]["Elect_Gear_Shifter"]
       ret.gearStep = cp.vl["ELECT_GEAR"]["Elect_Gear_Step"]
@@ -377,20 +391,29 @@ class CarState(CarStateBase):
       ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
     else:
       gear = cp.vl["ELECT_GEAR"]["Elect_Gear_Shifter"]
+      gear_disp = cp.vl["ELECT_GEAR"]
+
       gear_shifter = GearShifter.unknown
-      if gear == 1546: gear_shifter = GearShifter.drive
-      elif gear == 2314: gear_shifter = GearShifter.neutral
-      elif gear == 2569: gear_shifter = GearShifter.park
-      elif gear == 2566: gear_shifter = GearShifter.reverse
+
+      if gear == 1546:  # Thank you for Neokii  # fix PolorBear 22.06.05
+        gear_shifter = GearShifter.drive
+      elif gear == 2314:
+        gear_shifter = GearShifter.neutral
+      elif gear == 2569:
+        gear_shifter = GearShifter.park
+      elif gear == 2566:
+        gear_shifter = GearShifter.reverse
+
       if gear_shifter != GearShifter.unknown and self.gear_shifter != gear_shifter:
         self.gear_shifter = gear_shifter
+
       ret.gearShifter = self.gear_shifter
 
     if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR and (not self.CP.openpilotLongitudinalControl or self.CP.flags & HyundaiFlags.CAMERA_SCC):
       aeb_src = "FCA11" if self.CP.flags & HyundaiFlags.USE_FCA.value else "SCC12"
       aeb_sig = "FCA_CmdAct" if self.CP.flags & HyundaiFlags.USE_FCA.value else "AEB_CmdAct"
       aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
-      scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1 
+      scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1  # sometimes only SCC system shows an FCW
       aeb_braking = cp_cruise.vl[aeb_src]["CF_VSM_DecCmdAct"] != 0 or cp_cruise.vl[aeb_src][aeb_sig] != 0
       ret.stockFcw = (aeb_warning or scc_warning) and not aeb_braking
       ret.stockAeb = aeb_warning and aeb_braking
@@ -399,20 +422,25 @@ class CarState(CarStateBase):
       ret.leftBlindspot = cp.vl["LCA11"]["CF_Lca_IndLeft"] != 0
       ret.rightBlindspot = cp.vl["LCA11"]["CF_Lca_IndRight"] != 0
 
-    self.steer_state = cp.vl["MDPS12"]["CF_Mdps_ToiActive"] 
+    self.steer_state = cp.vl["MDPS12"]["CF_Mdps_ToiActive"]  # 0 NOT ACTIVE, 1 ACTIVE
     prev_cruise_buttons = self.cruise_buttons[-1]
+    #self.cruise_buttons.extend(cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"])
+    #carrot {{
+    #if self.CRUISE_BUTTON_ALT and cp.vl["CRUISE_BUTTON_ALT"]["SET_ME_1"] == 1:
+    #  self.cruise_buttons_alt = True
 
     cruise_button = [Buttons.NONE]
     if self.cruise_buttons_alt:
       lfa_button = cp.vl["CRUISE_BUTTON_LFA"]["CruiseSwLfa"]
       cruise_button = [Buttons.LFA_BUTTON] if lfa_button > 0 else [cp.vl["CRUISE_BUTTON_ALT"]["CruiseSwState"]]
-    elif self.HAS_LFA_BUTTON and cp.vl["BCM_PO_11"]["LFA_Pressed"] == 1: 
+    elif self.HAS_LFA_BUTTON and cp.vl["BCM_PO_11"]["LFA_Pressed"] == 1:  # for K5
       cruise_button = [Buttons.LFA_BUTTON]
     else:
       cruise_button = cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"]
     self.cruise_buttons.extend(cruise_button)
-    
+    # }} carrot
     prev_main_buttons = self.main_buttons[-1]
+    #self.cruise_buttons.extend(cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"])
     if self.cruise_buttons_alt:
       self.main_buttons.extend(cp.vl_all["CRUISE_BUTTON_ALT"]["CruiseSwMain"])
     else:
@@ -421,6 +449,7 @@ class CarState(CarStateBase):
 
     ret.buttonEvents = [*create_button_events(self.cruise_buttons[-1], prev_cruise_buttons, BUTTONS_DICT),
                         *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise})]
+
 
     if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
       tpms_unit = cp.vl["TPMS11"]["UNIT"] * 0.725 if int(cp.vl["TPMS11"]["UNIT"]) > 0 else 1.
@@ -455,12 +484,9 @@ class CarState(CarStateBase):
 
     return ret
 
-  # ▼▼▼ [추가] 순정 내비 곡률(커브), 카메라, 방지턱 종합 파싱 함수들 ▼▼▼
+  # ▼▼▼ [추가] 순정 내비 방지턱 데이터 파싱 및 RAM 디스크 저장 (카메라 무시) ▼▼▼
   def _clear_vehicle_navi_events(self):
     self.vehicleNaviEvents = []
-    
-  def _clear_vehicle_navi_curves(self):
-    self.vehicleNaviCurves = []
 
   @staticmethod
   def _vehicle_navi_message_timestamp(cp, name):
@@ -490,6 +516,7 @@ class CarState(CarStateBase):
     if val == 6 and 0 < offset <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
       return "bump", 0, 6
 
+    # ▼▼▼ 카메라 및 국도 제한속도 구역 디코딩 복구 ▼▼▼
     kind = val & 0xF
     speed_code = val >> 4
     if speed_code > 0:
@@ -511,95 +538,7 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents.sort(key=lambda event: event["target"])
     self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
 
-  @staticmethod
-  def _decode_adasis_curvature(value):
-    value = int(value)
-    if not 0 <= value < 1023:
-      return None
-    coded = value - 511
-    magnitude = abs(coded)
-    sign = -1 if coded < 0 else 1
-    if magnitude <= 64: decoded = coded
-    elif magnitude <= 128: decoded = 2 * (coded - sign * 32)
-    elif magnitude <= 192: decoded = 4 * (coded - sign * 80)
-    elif magnitude <= 256: decoded = 8 * (coded - sign * 136)
-    elif magnitude <= 320: decoded = 16 * (coded - sign * 196)
-    elif magnitude <= 384: decoded = 32 * (coded - sign * 258)
-    elif magnitude <= 448: decoded = 64 * (coded - sign * 321)
-    else: decoded = 128 * (coded - sign * 384)
-    return decoded / 100000.0
-
-  @staticmethod
-  def _decode_vehicle_navi_curve(values):
-    if int(values.get("PROSHORT_PROFILE_TYPE", 0)) != 1: return None
-    offset = int(values.get("PROSHORT_OFFSET", 8191))
-    distance = int(values.get("PROSHORT_DISTANCE", 1023))
-    raw_curvature = int(values.get("PROSHORT_VALUE_0", 1023))
-    if not 0 <= offset <= VEHICLE_NAVI_CURVE_MAX_DISTANCE or raw_curvature == 1023: return None
-    curvature = CarState._decode_adasis_curvature(raw_curvature)
-    if curvature is None: return None
-    return {
-      "offset": offset,
-      "span": distance * VEHICLE_NAVI_CURVE_DISTANCE_FACTOR if 0 <= distance < 1023 else 0.0,
-      "curvature": curvature, 
-      "raw_curvature": raw_curvature
-    }
-
-  @staticmethod
-  def _vehicle_navi_curve_reference_speed(curvature):
-    if abs(curvature) < 1e-7: return 250.0
-    return min(250.0, max(5.0, math.sqrt(VEHICLE_NAVI_CURVE_TARGET_LAT_ACCEL / abs(curvature)) * CV.MS_TO_KPH))
-
-  def _add_vehicle_navi_curve(self, curve):
-    target = self.totalDistance + curve["offset"]
-    reference_speed = self._vehicle_navi_curve_reference_speed(curve["curvature"])
-    
-    short_spot = 0.0 < curve["span"] <= VEHICLE_NAVI_CURVE_SHORT_SPOT_MAX_DISTANCE
-    if short_spot and reference_speed <= VEHICLE_NAVI_CURVE_SHORT_SPOT_MAX_SPEED:
-      return
-
-    nearest = min(self.vehicleNaviCurves, key=lambda item: abs(item["target"] - target), default=None)
-    if nearest is not None and abs(nearest["target"] - target) <= 2.0:
-      nearest.update(target=target, span=curve["span"], curvature=curve["curvature"], speed=reference_speed)
-    else:
-      self.vehicleNaviCurves.append({"target": target, "span": curve["span"], "curvature": curve["curvature"], "speed": reference_speed})
-    self.vehicleNaviCurves.sort(key=lambda item: item["target"])
-    self.vehicleNaviCurves = self.vehicleNaviCurves[:64]
-
-  def _update_vehicle_navi_curve_profile(self, cp, ret):
-    ret.vehicleNaviCurveDistance = 0.0
-    ret.vehicleNaviCurveSpeed = 0.0
-    ret.vehicleNaviCurveCurvature = 0.0
-    ret.vehicleNaviCurveRouteActive = self.vehicleNaviCurveRouteActive
-    ret.vehicleNaviCurveRouteState = self.vehicleNaviCurveRouteState
-
-    if self.navi_profile_4ba is not None:
-      timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4BA")
-      if timestamp > self.vehicleNaviCurveTimestamp:
-        self.vehicleNaviCurveTimestamp = timestamp
-        curve = self._decode_vehicle_navi_curve(self.navi_profile_4ba)
-        if curve is not None and timestamp > self.vehicleNaviRouteResetTimestamp:
-          self._add_vehicle_navi_curve(curve)
-
-    self.vehicleNaviCurves = [curve for curve in self.vehicleNaviCurves if curve["target"] >= self.totalDistance]
-    candidates = []
-    for curve in self.vehicleNaviCurves:
-      if curve["speed"] >= 250: continue
-      distance = curve["target"] - self.totalDistance
-      
-      target_speed = max(self.vehicleNaviCurveLowerLimit, curve["speed"] * self.vehicleNaviCurveSpeedFactor)
-      safe_speed = target_speed / CV.MS_TO_KPH
-      decel_distance = max(0.0, distance - safe_speed * self.vehicleNaviCurveControlEnd)
-      preview_speed = math.sqrt(safe_speed ** 2 + 2 * self.vehicleNaviCurveDecelRate * decel_distance) * CV.MS_TO_KPH
-      candidates.append((preview_speed, distance, curve))
-
-    if candidates:
-      _, distance, curve = min(candidates, key=lambda item: item[0])
-      ret.vehicleNaviCurveDistance = distance
-      ret.vehicleNaviCurveSpeed = curve["speed"]
-      ret.vehicleNaviCurveCurvature = curve["curvature"]
-
-  def _update_vehicle_navi_events(self, cp, ret):
+  def _update_vehicle_navi_events(self, cp):
     if not getattr(self, 'vehicleNaviCanControl', False):
       return 0.0, 0.0
 
@@ -607,25 +546,9 @@ class CarState(CarStateBase):
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
       if timestamp > self.vehicleNaviSegmentTimestamp:
         self.vehicleNaviSegmentTimestamp = timestamp
-        segment = self._decode_vehicle_navi_segment(self.navi_segment_4b9)
-        if segment["calculated_route"] == 1:
-          if self.vehicleNaviCurveRouteState != 1:
-            self._clear_vehicle_navi_curves()
-          self.vehicleNaviCurveRouteState = 1
-          self.vehicleNaviCurveRouteActive = True
-        elif segment["calculated_route"] == 0:
-          if self.vehicleNaviCurveRouteState != 0:
-            self._clear_vehicle_navi_curves()
-          self.vehicleNaviCurveRouteState = 0
-          self.vehicleNaviCurveRouteActive = False
-        if segment["calculated_route"] == 2:
-          self.vehicleNaviCurveRouteState = 2
-          self.vehicleNaviCurveRouteActive = False
+        if self._decode_vehicle_navi_segment(self.navi_segment_4b9)["calculated_route"] == 2:
           self.vehicleNaviRouteResetTimestamp = timestamp
           self._clear_vehicle_navi_events()
-          self._clear_vehicle_navi_curves()
-
-    self._update_vehicle_navi_curve_profile(cp, ret)
 
     if self.navi_profile_4be is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4BE")
@@ -638,6 +561,8 @@ class CarState(CarStateBase):
 
     self.vehicleNaviEvents = [e for e in self.vehicleNaviEvents if e["target"] >= self.totalDistance - VEHICLE_NAVI_PASSED_EVENT_DISTANCE]
     bumps = [e for e in self.vehicleNaviEvents if e["type"] == "bump" and e["target"] > self.totalDistance]
+    
+    # ▼▼▼ 카메라와 일반구역 데이터 추출 복구 ▼▼▼
     cameras = [e for e in self.vehicleNaviEvents if e["type"] == "camera" and e["target"] > self.totalDistance]
     zones = [e for e in self.vehicleNaviEvents if e["type"] == "speed_limit_zone"]
     
@@ -645,10 +570,13 @@ class CarState(CarStateBase):
     cam_dist = 0.0
     cam_limit = 0.0
     
+    # ▼▼▼ [추가] 4BE 카메라 속도별 거리 제한 필터링 ▼▼▼
     valid_cameras = []
     for c in cameras:
       c_dist = c["target"] - self.totalDistance
       c_limit = c["speed"]
+      
+      # 80 미만은 300m 이하일 때, 80 이상은 600m 이하일 때만 유효한 카메라로 인정!
       if c_limit < 80 and c_dist <= 300:
         valid_cameras.append(c)
       elif c_limit >= 80 and c_dist <= 600:
@@ -658,8 +586,10 @@ class CarState(CarStateBase):
       cam_dist = valid_cameras[0]["target"] - self.totalDistance
       cam_limit = valid_cameras[0]["speed"]
     elif zones:
+      # 유효한 카메라가 없거나 너무 멀리 있으면 일반 제한속도(zone)를 따름
       cam_dist = 0.0
       cam_limit = zones[-1]["speed"]
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
@@ -672,6 +602,8 @@ class CarState(CarStateBase):
 
   def update_speed_limit(self, ret, speed_limit_cam):
     self.totalDistance += ret.vEgo * DT_CTRL
+    
+    # [수정] 엑셀(gasPressed)을 밟아도 카메라 거리를 0으로 날리지 않도록 조건 제거!
     if ret.speedLimit > 0 and speed_limit_cam:
       if self.speedLimitDistance <= self.totalDistance:
         self.speedLimitDistance = self.totalDistance + ret.speedLimit * 6
@@ -919,9 +851,9 @@ class CarState(CarStateBase):
     # ▼▼▼ [수정] 토글 상태 갱신 및 4A3/4BE 우선순위 로직 실행 ▼▼▼
     self.frame_for_params += 1
     if self.frame_for_params % 100 == 0:
-      self.vehicleNaviCanControl = self.op_params.get_bool("VehicleNaviCanControl")
+      self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
-    cam_limit, cam_dist = self._update_vehicle_navi_events(cp, ret)
+    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
     
     # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
     # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
@@ -951,8 +883,8 @@ class CarState(CarStateBase):
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
-    # ▼▼▼ [수정] 4B9, 4BE, 4BA 등록 ▼▼▼
-    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4BA", math.nan)]
+    # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
+    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan)]
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
@@ -972,4 +904,4 @@ class CarState(CarStateBase):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-    }
+      }
