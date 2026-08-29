@@ -572,7 +572,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "사각지대에 차량이 감지되니 대기하세요",
       "",
       AlertStatus.userPrompt, AlertSize.small,
-      Priority.MID, VisualAlert.none, AudibleAlert.promptDistracted, .1),
+      Priority.MID, VisualAlert.none, AudibleAlert.none, .1),
   },
 
   EventName.laneChange: {
