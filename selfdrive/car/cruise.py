@@ -757,12 +757,13 @@ class VCruiseCarrot:
                 
             # [규칙 2] 속도 상향 (가속 구간)
             elif effective_limit > self.prev_limit_speed_for_auto:
-              # 급가속을 방지하기 위해 현재 속도 기준으로 마이너스 오프셋 적용 (최대 -10.0 하한선)
-              self.user_speed_offset = min(0.0, max(float(self.v_ego_kph_set - effective_limit), -10.0))
+              # 급가속 방지(최대 -10 하한선) + 기존 크루즈 세팅 속도보다 떨어지는 현상 완벽 차단!
+              self.user_speed_offset = max(float(v_cruise_kph - effective_limit), -10.0)
               
             # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
-              self.user_speed_offset = min(self.user_speed_offset + 10.0, 30.0)
+              # 부드러운 감속(+10) + 제한속도가 조금(5) 내릴 때 오히려 속도가 튀어오르는 버그 완벽 차단!
+              self.user_speed_offset = min(self.user_speed_offset + 10.0, 30.0, float(v_cruise_kph - effective_limit))
 
             self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
