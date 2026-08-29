@@ -263,18 +263,6 @@ struct CarState {
   speedBumpDistance @81 :Float32;  # <-- 추가
   schoolZoneActive @82 :Bool;      # <-- 추가
 
-  # ▼▼▼ 여기서부터 추가 (83번 ~ 91번) ▼▼▼
-  vehicleNaviActive @83 :Bool; 
-  vehicleNaviSectionActive @84 :Bool; 
-  vehicleNaviSpeed @85 :Float32; 
-  vehicleNaviAvailable @86 :Bool; 
-  vehicleNaviCurveDistance @87 :Float32; 
-  vehicleNaviCurveSpeed @88 :Float32; 
-  vehicleNaviCurveCurvature @89 :Float32; 
-  vehicleNaviCurveRouteActive @90 :Bool; 
-  vehicleNaviCurveRouteState @91 :UInt8; 
-  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
   struct Tpms {
     fl @0 :Float32;
     fr @1 :Float32;
