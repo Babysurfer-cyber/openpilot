@@ -750,11 +750,11 @@ class VCruiseCarrot:
             
             # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
             if self.prev_limit_speed_for_auto <= 0:
-              if (self.v_ego_kph_set - effective_limit) >= 30.0:
+              # 실제 속도가 아닌 '기존 크루즈 세팅 속도'를 기준으로 오프셋 계산 (깔끔한 10단위 유지)
+              if (v_cruise_kph - effective_limit) >= 30.0:
                 self.user_speed_offset = 30.0
               else:
-                # [수정] 무조건 +10이 아니라, 현재 속도에 맞춰 +10 ~ -10 사이로 유연하게 완충!
-                self.user_speed_offset = max(min(float(self.v_ego_kph_set - effective_limit), 10.0), -10.0)
+                self.user_speed_offset = max(min(float(v_cruise_kph - effective_limit), 10.0), -10.0)
                 
             # [규칙 2] 속도 상향 (가속 구간)
             elif effective_limit > self.prev_limit_speed_for_auto:
