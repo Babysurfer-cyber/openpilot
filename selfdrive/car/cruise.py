@@ -665,15 +665,16 @@ class VCruiseCarrot:
       self.stationary_lead_timer = 0
     # ==============================================================
 
-    # ▼▼▼ [신규 추가] 감속 목표 속도 도달 후 5초 유지 시 당근크루즈 자동 해제 및 복귀 ▼▼▼
     # ==============================================================
+    # ▼ [신규 추가] 감속 목표 속도 도달 후 5초 유지 시 당근크루즈 자동 해제 및 복귀 ▼
     if getattr(self, 'carrot_cruise_active', False):
       if not hasattr(self, 'target_speed_reach_timer'):
         self.target_speed_reach_timer = 0
         
       # desiredSpeed가 유효한 감속 지시 중이고 (예: 200km/h 미만), 
-      # 현재 차량 속도가 그 목표 속도 부근(+1km/h 오차 허용)까지 충분히 떨어졌을 때
-      if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1:
+      # 현재 차량 속도가 그 목표 속도 부근(+1km/h 오차 허용)까지 충분히 떨어졌으며,
+      # [추가] 동시에 현재 차량 속도가 60km/h 이하일 때만 타이머 작동!
+      if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
         self.target_speed_reach_timer += 1
         
         if self.target_speed_reach_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
@@ -686,9 +687,9 @@ class VCruiseCarrot:
             v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
             self._v_cruise_kph_at_brake = 0
             
-          self._add_log(f"Carrot Cruise OFF & Restore (Target Speed {self.desiredSpeed} Reached)")
+          self._add_log(f"Carrot Cruise OFF & Restore (Target Speed {self.desiredSpeed} Reached & <= 60)")
       else:
-        self.target_speed_reach_timer = 0  # 목표 속도를 벗어나면 타이머 초기화
+        self.target_speed_reach_timer = 0  # 목표 속도를 벗어나거나 60 초과면 타이머 초기화
     else:
       self.target_speed_reach_timer = 0
     # ==============================================================
@@ -751,8 +752,8 @@ class VCruiseCarrot:
             # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
             if self.prev_limit_speed_for_auto <= 0:
               # 실제 속도가 아닌 '기존 크루즈 세팅 속도'를 기준으로 오프셋 계산 (깔끔한 10단위 유지)
-              if (v_cruise_kph - effective_limit) >= 30.0:
-                self.user_speed_offset = 30.0
+              if (v_cruise_kph - effective_limit) >= 20.0:
+                self.user_speed_offset = 20.0
               else:
                 self.user_speed_offset = max(min(float(v_cruise_kph - effective_limit), 10.0), -10.0)
                 
@@ -764,7 +765,7 @@ class VCruiseCarrot:
             # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
               # 부드러운 감속(+10) + 제한속도가 조금(5) 내릴 때 오히려 속도가 튀어오르는 버그 완벽 차단!
-              self.user_speed_offset = min(self.user_speed_offset + 10.0, 30.0, float(v_cruise_kph - effective_limit))
+              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit))
 
             self.prev_limit_speed_for_auto = effective_limit
             self.auto_mode_applied = True
