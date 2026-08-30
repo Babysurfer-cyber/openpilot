@@ -86,16 +86,14 @@ class DesireHelper:
       # ▼▼▼ 동적 시야(Lookahead) 계산 로직 추가 ▼▼▼
       v_ego_kph = v_ego * CV.MS_TO_KPH
 
-      if v_ego_kph <= 40.0:
-        # 40km/h 이하에서는 사용자가 설정한 기본값 유지
+      if v_ego_kph <= 50.0:
         dynamic_time = self.modelTurnSpeedFactor
+      elif v_ego_kph >= 100.0:
+        # 설정값에 5.0초(Factor 50)를 더해 한계치 고정
+        dynamic_time = self.modelTurnSpeedFactor + 5.0
       else:
-        # 40km/h 초과 시 1km/h당 0.1초(UI 기준 1)씩 증가 (최대 100km/h까지만 계산)
-        speed_diff = min(v_ego_kph, 100.0) - 40.0
-        dynamic_time = self.modelTurnSpeedFactor + (speed_diff * 0.1)
-        
-        # 어떤 경우에도 최종 결과값이 9.0초(UI 기준 90)를 넘지 않도록 완벽하게 차단
-        dynamic_time = min(dynamic_time, 9.0)
+        # 1km/h당 0.1초(Factor 1)씩 증가
+        dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 50.0) * 0.1
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       # 원래 self.modelTurnSpeedFactor가 들어가던 자리에 dynamic_time 적용!
