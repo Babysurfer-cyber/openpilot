@@ -176,22 +176,25 @@ class LongitudinalPlanner:
       #accel_limits_turns = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_limits, self.CP)
       a_lat_max = 3.0
       
-      # --- [V-Turn 감속 시점 동적 보간 로직 (30km/h: 0m ~ 100km/h: 20m 앞당김)] ---
-      # 1. 속도에 비례하여 앞당길 거리(offset_dist) 계산 
-      #    8.33 m/s (약 30 km/h) 이하에서는 0m
-      #    27.78 m/s (약 100 km/h) 이상에서는 20m로 고정
-      offset_dist = float(np.interp(v_ego, [8.33, 27.78], [0.0, 20.0]))
+      # --- [V-Turn 감속 시점 시간(Time) 기반 보정 로직] ---
+      # 1. 내가 원하는 '미리 밟는 시간(초)' 설정 (회원님의 아이디어!)
+      #    n초 = 현재 속도로 n초 이동할 거리만큼 당겨서 밟음
+      #    (0.5 ~ 2.0 사이에서 취향껏 조절 가능)
+      lookahead_time = 2.0  
       
-      # 2. 기본값은 현재 위치의 곡률
+      # 2. 오프셋 거리 계산: 거리는 속도(v_ego: m/s) x 시간(초)
+      offset_dist = v_ego * lookahead_time 
+      
+      # 3. 기본값은 현재 위치의 곡률
       max_curv = abs(sm['controlsState'].desiredCurvature)
       
-      # 3. AI 모델(modelV2)이 내다본 미래 경로를 스캔하여 커브를 미리 발견 (offset_dist > 0 일 때만 연산)
-      if offset_dist > 0.0:
+      # 4. AI 모델(modelV2)이 내다본 미래 경로를 스캔 (단, 차가 정지 상태(v_ego < 1.0)가 아닐 때만)
+      if offset_dist > 1.0:
         model_msg = sm['modelV2']
         if len(model_msg.position.x) == ModelConstants.IDX_N and len(model_msg.orientationRate.z) == ModelConstants.IDX_N:
           for i in range(ModelConstants.IDX_N):
             if model_msg.position.x[i] > offset_dist:
-              break  # 설정한 앞당김 거리(offset_dist)까지만 스캔
+              break  # 설정한 시간만큼 앞당긴 거리까지만 스캔
               
             vel = max(model_msg.velocity.x[i], 1.0)  # 0으로 나누기 방지
             curv = abs(model_msg.orientationRate.z[i] / vel)  # 미래의 곡률 계산
