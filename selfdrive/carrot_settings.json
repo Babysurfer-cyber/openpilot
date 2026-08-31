@@ -741,7 +741,7 @@
       "group": "감속제어",
       "name": "AutoCurveSpeedFactor",
       "title": "커브속도 조절비율(100%)",
-      "descr": "높으면 커브속도가 느려집니다.",
+      "descr": "높으면 커브속도가 느려집니다.(곡률 과장)",
       "egroup": "DECEL",
       "etitle": "CurveSpeedFactor(100%)",
       "edescr": "Higher value: slow curve speed",
