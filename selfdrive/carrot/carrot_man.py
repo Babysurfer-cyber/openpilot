@@ -914,41 +914,23 @@ class CarrotMan:
 
     modelData = sm['modelV2']
     v_ego = max(CS.vEgo, 0.1)
-    
-    # 1. 우선 가공되지 않은 순수 원본(Raw) 데이터를 추출합니다.
-    raw_orientation_rate = np.array(modelData.orientationRate.z)
+    # Set the curve sensitivity
+    orientation_rate = np.array(modelData.orientationRate.z) * self.autoCurveSpeedFactor
     velocity = np.array(modelData.velocity.x)
 
-    # 2. 조작이 들어가지 않은 순수 도로 곡률(raw_max_curve)을 먼저 계산합니다.
-    max_index = np.argmax(np.abs(raw_orientation_rate))
-    curv_direction = np.sign(raw_orientation_rate[max_index])
-    raw_max_pred_lat_acc = np.amax(np.abs(raw_orientation_rate) * velocity)
-    raw_max_curve = raw_max_pred_lat_acc / (v_ego**2)
+    # Get the maximum lat accel from the model
+    max_index = np.argmax(np.abs(orientation_rate))
+    curv_direction = np.sign(orientation_rate[max_index])
+    max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity)
 
-    # ==============================================================
-    # 3. ▼ [핵심] 곡률 크기에 따른 동적 배율(Multiplier) 계산 ▼
-    # 곡률(1/R) 기준점: 0.002(완만, 반경 500m), 0.010(보통, 반경 100m), 0.020(급커브, 반경 50m)
-    curve_bp = [0.002, 0.010, 0.020]
-    
-    # 곡률이 작을 때(완만) -> 1.2배 더 뻥튀기해서 확실히 감속 (더 많이 보정)
-    # 곡률이 클 때(급커브) -> 0.8배 축소해서 너무 쫄지 않게 (조금 덜 보정)
-    factor_multipliers = [1.2, 1.0, 0.8]  
-    
-    dynamic_multiplier = np.interp(raw_max_curve, curve_bp, factor_multipliers)
-    # ==============================================================
-
-    # 4. 사용자가 설정한 Factor에 동적 배율을 곱해 최종 곡률(max_curve)을 구합니다.
-    final_factor = self.autoCurveSpeedFactor * dynamic_multiplier
-    max_curve = raw_max_curve * final_factor
+    # Get the maximum curve based on the current velocity
+    max_curve = max_pred_lat_acc / (v_ego**2)
 
     # Set the target lateral acceleration
     adjusted_target_lat_a = TARGET_LAT_A * self.autoCurveSpeedAggressiveness
 
-    # (안전장치) 0으로 나누기 방지 (직선 도로일 경우)
-    if max_curve < 1e-5:
-      return 250 * curv_direction
-
     # Get the target velocity for the maximum curve
+    #turnSpeed = max(abs(adjusted_target_lat_a / max_curve)**0.5  * 3.6, self.autoCurveSpeedLowerLimit)
     turnSpeed = max(abs(adjusted_target_lat_a / max_curve)**0.5  * 3.6, 5)
     turnSpeed = min(turnSpeed, 250)
     return turnSpeed * curv_direction
