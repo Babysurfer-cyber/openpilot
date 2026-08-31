@@ -180,7 +180,7 @@ class LongitudinalPlanner:
       # 1. 내가 원하는 '미리 밟는 시간(초)' 설정 (회원님의 아이디어!)
       #    n초 = 현재 속도로 n초 이동할 거리만큼 당겨서 밟음
       #    (0.5 ~ 2.0 사이에서 취향껏 조절 가능)
-      lookahead_time = 2.0  
+      lookahead_time = 3.0  
       
       # 2. 오프셋 거리 계산: 거리는 속도(v_ego: m/s) x 시간(초)
       offset_dist = v_ego * lookahead_time 
