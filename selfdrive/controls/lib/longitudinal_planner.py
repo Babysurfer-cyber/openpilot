@@ -176,26 +176,29 @@ class LongitudinalPlanner:
       #accel_limits_turns = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_limits, self.CP)
       a_lat_max = 3.0
       
-      # --- [V-Turn 감속 시점 동적 보간 로직 (0km/h: 0m ~ 100km/h: 20m 앞당김)] ---
-      # 1. 속도에 비례하여 앞당길 거리(offset_dist) 계산 (27.78 m/s = 100 km/h)
-      offset_dist = float(np.interp(v_ego, [0.0, 27.78], [0.0, 20.0]))
+      # --- [V-Turn 감속 시점 동적 보간 로직 (30km/h: 0m ~ 100km/h: 20m 앞당김)] ---
+      # 1. 속도에 비례하여 앞당길 거리(offset_dist) 계산 
+      #    8.33 m/s (약 30 km/h) 이하에서는 0m
+      #    27.78 m/s (약 100 km/h) 이상에서는 20m로 고정
+      offset_dist = float(np.interp(v_ego, [8.33, 27.78], [0.0, 20.0]))
       
       # 2. 기본값은 현재 위치의 곡률
       max_curv = abs(sm['controlsState'].desiredCurvature)
       
-      # 3. AI 모델(modelV2)이 내다본 미래 경로를 스캔하여 커브를 미리 발견
-      model_msg = sm['modelV2']
-      if len(model_msg.position.x) == ModelConstants.IDX_N and len(model_msg.orientationRate.z) == ModelConstants.IDX_N:
-        for i in range(ModelConstants.IDX_N):
-          if model_msg.position.x[i] > offset_dist:
-            break  # 설정한 앞당김 거리(offset_dist)까지만 스캔
+      # 3. AI 모델(modelV2)이 내다본 미래 경로를 스캔하여 커브를 미리 발견 (offset_dist > 0 일 때만 연산)
+      if offset_dist > 0.0:
+        model_msg = sm['modelV2']
+        if len(model_msg.position.x) == ModelConstants.IDX_N and len(model_msg.orientationRate.z) == ModelConstants.IDX_N:
+          for i in range(ModelConstants.IDX_N):
+            if model_msg.position.x[i] > offset_dist:
+              break  # 설정한 앞당김 거리(offset_dist)까지만 스캔
+              
+            vel = max(model_msg.velocity.x[i], 1.0)  # 0으로 나누기 방지
+            curv = abs(model_msg.orientationRate.z[i] / vel)  # 미래의 곡률 계산
             
-          vel = max(model_msg.velocity.x[i], 1.0)  # 0으로 나누기 방지
-          curv = abs(model_msg.orientationRate.z[i] / vel)  # 미래의 곡률 계산
-          
-          # 스캔 구간 내에서 가장 심한 커브(최대 곡률)를 저장
-          if curv > max_curv:
-            max_curv = curv
+            # 스캔 구간 내에서 가장 심한 커브(최대 곡률)를 저장
+            if curv > max_curv:
+              max_curv = curv
       # -------------------------------------------------------------------------
       
       # 현재 곡률 대신 미리 찾아낸 미래의 최대 곡률(max_curv)을 넣어서 감속을 일찍 유발
