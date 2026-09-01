@@ -176,35 +176,36 @@ class LongitudinalPlanner:
       #accel_limits_turns = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_limits, self.CP)
       a_lat_max = 3.0
       
-      # --- [V-Turn 감속 시점 시간(Time) 기반 보정 로직] ---
-      # 1. 내가 원하는 '미리 밟는 시간(초)' 설정 (회원님의 아이디어!)
-      #    n초 = 현재 속도로 n초 이동할 거리만큼 당겨서 밟음
-      #    (0.5 ~ 2.0 사이에서 취향껏 조절 가능)
-      lookahead_time = 3.0  
+      # --- [Carrot-wip V-Turn 로직 이식 (UI '비율' 슬라이더 연동 버전)] ---
       
-      # 2. 오프셋 거리 계산: 거리는 속도(v_ego: m/s) x 시간(초)
-      offset_dist = v_ego * lookahead_time 
+      # 1. UI(Params)에서 '비율(AutoCurveSpeedFactor)' 값 실시간으로 읽어오기
+      # (예: UI에서 100으로 설정되어 있으면 1.0, 80이면 0.8)
+      try:
+        curve_factor = self.params.get_int("AutoCurveSpeedFactor") * 0.01
+        if curve_factor <= 0.01: 
+          curve_factor = 1.0  # 값이 없거나 0이면 기본값 1.0 적용
+      except:
+        curve_factor = 1.0
+        
+      model_msg = sm['modelV2']
       
-      # 3. 기본값은 현재 위치의 곡률
-      max_curv = abs(sm['controlsState'].desiredCurvature)
-      
-      # 4. AI 모델(modelV2)이 내다본 미래 경로를 스캔 (단, 차가 정지 상태(v_ego < 1.0)가 아닐 때만)
-      if offset_dist > 1.0:
-        model_msg = sm['modelV2']
-        if len(model_msg.position.x) == ModelConstants.IDX_N and len(model_msg.orientationRate.z) == ModelConstants.IDX_N:
-          for i in range(ModelConstants.IDX_N):
-            if model_msg.position.x[i] > offset_dist:
-              break  # 설정한 시간만큼 앞당긴 거리까지만 스캔
-              
-            vel = max(model_msg.velocity.x[i], 1.0)  # 0으로 나누기 방지
-            curv = abs(model_msg.orientationRate.z[i] / vel)  # 미래의 곡률 계산
-            
-            # 스캔 구간 내에서 가장 심한 커브(최대 곡률)를 저장
-            if curv > max_curv:
-              max_curv = curv
+      # 2. 모델 예측 데이터(미래 33개 점)가 유효한지 확인
+      if len(model_msg.orientationRate.z) == ModelConstants.IDX_N and len(model_msg.velocity.x) == ModelConstants.IDX_N:
+        # 3. AI 모델의 곡률(orientation_rate)에 curve_factor(UI 비율)를 곱해서 민감도를 조작!
+        orientation_rate = np.array(model_msg.orientationRate.z) * curve_factor
+        velocity = np.array(model_msg.velocity.x)
+        
+        # 4. 미래 궤적(100m 앞까지) 전체에서 예상되는 최대 원심력(횡가속도) 산출
+        max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity)
+        
+        # 5. 찾아낸 최대 원심력을 현재 속도(v_ego) 기준의 곡률로 역산 (0으로 나누기 방지)
+        max_curv = max_pred_lat_acc / max(v_ego**2, 0.1)
+      else:
+        # 모델 데이터가 튀거나 없을 때는 순정(현재 위치 곡률)에 비율만 곱해서 안전하게 폴백(Fallback)
+        max_curv = abs(sm['controlsState'].desiredCurvature) * curve_factor
       # -------------------------------------------------------------------------
       
-      # 현재 곡률 대신 미리 찾아낸 미래의 최대 곡률(max_curv)을 넣어서 감속을 일찍 유발
+      # 최종적으로 찾아낸 미래 최대 곡률(max_curv)을 마찰원 계산 함수에 투입
       accel_limits_turns = limit_accel_in_turns(v_ego, max_curv, accel_limits, a_lat_max)
     else:
       accel_limits = [ACCEL_MIN, ACCEL_MAX]
