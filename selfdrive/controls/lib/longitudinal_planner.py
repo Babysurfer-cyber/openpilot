@@ -164,20 +164,25 @@ class LongitudinalPlanner:
         curve_factor = 1.0
 
       model_msg = sm['modelV2']
+      
       if len(model_msg.orientationRate.z) > 0 and len(model_msg.velocity.x) > 0:
-        orientation_rate = np.array(model_msg.orientationRate.z) * curve_factor
+        orientation_rate = np.array(model_msg.orientationRate.z)
         velocity = np.array(model_msg.velocity.x)
         
-        # 1. 당근파일럿 오리지널: 미래 100m 앞까지 모든 점 중 가장 심한 원심력 픽업
-        max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity)
-        max_curve = max_pred_lat_acc / max(v_ego**2, 0.1)
+        # 1. 당근 오리지널 로직: 예상 횡가속도(max_pred_lat_acc)를 먼저 구함
+        #    여기에 curve_factor(비율)를 곱해야 수학적으로 완벽히 동일함!
+        max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity) * curve_factor
+        
+        # 2. 곡률로 역산 (v_ego 0으로 나누기 방지)
+        v_ego_safe = max(v_ego, 0.1)
+        max_curve = max_pred_lat_acc / (v_ego_safe**2)
 
-        # 2. 곡률이 발생했다면 안전 속도(turnSpeed) 계산
+        # 3. 목표 감속 속도 계산 및 덮어쓰기
         if max_curve > 0.0001:
-          # 시속 5km/h 최하한선 (m/s 변환)
+          # 시속 5km/h(1.38 m/s) 하한선 적용
           turn_speed_ms = max(abs(TARGET_LAT_A / max_curve)**0.5, 5.0 / 3.6)
           
-          # 3. 🔥핵심: 셋팅된 크루즈 속도(v_cruise)를 커브 안전 속도로 깎아내림!
+          # 목표 속도(v_cruise)가 안전 속도(turn_speed_ms)보다 높으면 깎아내림
           v_cruise = min(v_cruise, turn_speed_ms)
     # -------------------------------------------------------------------
 
