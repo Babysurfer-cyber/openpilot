@@ -151,6 +151,36 @@ class LongitudinalPlanner:
     self.mpc.mode = carrot.mode
     v_cruise = self.v_cruise_kph * CV.KPH_TO_MS
 
+    # --- [당근파일럿 V-Turn 완벽 이식: 목표 속도(v_cruise) 강제 제어] ---
+    if self.mpc.mode == 'acc':
+      TARGET_LAT_A = 1.9  # 당근파일럿 순정 승차감 한계치 (1.9G)
+      
+      # UI에서 설정한 커브 비율 가져오기
+      try:
+        curve_factor = self.params.get_int("AutoCurveSpeedFactor") * 0.01
+        if curve_factor <= 0.01: 
+          curve_factor = 1.0
+      except:
+        curve_factor = 1.0
+
+      model_msg = sm['modelV2']
+      if len(model_msg.orientationRate.z) > 0 and len(model_msg.velocity.x) > 0:
+        orientation_rate = np.array(model_msg.orientationRate.z) * curve_factor
+        velocity = np.array(model_msg.velocity.x)
+        
+        # 1. 당근파일럿 오리지널: 미래 100m 앞까지 모든 점 중 가장 심한 원심력 픽업
+        max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity)
+        max_curve = max_pred_lat_acc / max(v_ego**2, 0.1)
+
+        # 2. 곡률이 발생했다면 안전 속도(turnSpeed) 계산
+        if max_curve > 0.0001:
+          # 시속 5km/h 최하한선 (m/s 변환)
+          turn_speed_ms = max(abs(TARGET_LAT_A / max_curve)**0.5, 5.0 / 3.6)
+          
+          # 3. 🔥핵심: 셋팅된 크루즈 속도(v_cruise)를 커브 안전 속도로 깎아내림!
+          v_cruise = min(v_cruise, turn_speed_ms)
+    # -------------------------------------------------------------------
+
     vCluRatio = sm['carState'].vCluRatio
     if vCluRatio > 0.5:
       self.vCluRatio = vCluRatio
@@ -173,40 +203,11 @@ class LongitudinalPlanner:
       #accel_limits = [A_CRUISE_MIN, get_max_accel(v_ego)]
       accel_limits = [A_CRUISE_MIN, carrot.get_carrot_accel(v_ego)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
-      #accel_limits_turns = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_limits, self.CP)
       a_lat_max = 3.0
       
-      # --- [Carrot-wip V-Turn 로직 이식 (UI '비율' 슬라이더 연동 버전)] ---
-      
-      # 1. UI(Params)에서 '비율(AutoCurveSpeedFactor)' 값 실시간으로 읽어오기
-      # (예: UI에서 100으로 설정되어 있으면 1.0, 80이면 0.8)
-      try:
-        curve_factor = self.params.get_int("AutoCurveSpeedFactor") * 0.01
-        if curve_factor <= 0.01: 
-          curve_factor = 1.0  # 값이 없거나 0이면 기본값 1.0 적용
-      except:
-        curve_factor = 1.0
-        
-      model_msg = sm['modelV2']
-      
-      # 2. 모델 예측 데이터(미래 33개 점)가 유효한지 확인
-      if len(model_msg.orientationRate.z) == ModelConstants.IDX_N and len(model_msg.velocity.x) == ModelConstants.IDX_N:
-        # 3. AI 모델의 곡률(orientation_rate)에 curve_factor(UI 비율)를 곱해서 민감도를 조작!
-        orientation_rate = np.array(model_msg.orientationRate.z) * curve_factor
-        velocity = np.array(model_msg.velocity.x)
-        
-        # 4. 미래 궤적(100m 앞까지) 전체에서 예상되는 최대 원심력(횡가속도) 산출
-        max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity)
-        
-        # 5. 찾아낸 최대 원심력을 현재 속도(v_ego) 기준의 곡률로 역산 (0으로 나누기 방지)
-        max_curv = max_pred_lat_acc / max(v_ego**2, 0.1)
-      else:
-        # 모델 데이터가 튀거나 없을 때는 순정(현재 위치 곡률)에 비율만 곱해서 안전하게 폴백(Fallback)
-        max_curv = abs(sm['controlsState'].desiredCurvature) * curve_factor
-      # -------------------------------------------------------------------------
-      
-      # 최종적으로 찾아낸 미래 최대 곡률(max_curv)을 마찰원 계산 함수에 투입
-      accel_limits_turns = limit_accel_in_turns(v_ego, max_curv, accel_limits, a_lat_max)
+      # 당근파일럿은 목표 속도에서 이미 감속하므로, 
+      # 여기는 당장 발밑의 조향 곡률만 체크하는 '최후의 안전 보루'로 남겨둡니다.
+      accel_limits_turns = limit_accel_in_turns(v_ego, sm['controlsState'].desiredCurvature, accel_limits, a_lat_max)
     else:
       accel_limits = [ACCEL_MIN, ACCEL_MAX]
       accel_limits_turns = [ACCEL_MIN, ACCEL_MAX]
