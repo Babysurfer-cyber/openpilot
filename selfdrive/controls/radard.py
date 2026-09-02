@@ -817,16 +817,18 @@ class RadarD:
       self.radar_state.leadOne = chosen
       self.radar_detected = detected
 
-  def _corner_update_state(self, CS, side: str, cur_long: float, cur_lat: float, lane_edge: float, max_lat_dist: float):
-    # 1. 값이 없거나 너무 멀면 대기 (외곽 최대 감시망은 동적으로 계산된 max_lat_dist 적용) 전방 30m 까지 감시
-    if cur_lat <= 0.01 or cur_lat > max_lat_dist or cur_long > 30.0: 
+  # 파라미터에 comp_lat (곡률이 제거된 Y좌표)를 추가로 받습니다.
+  def _corner_update_state(self, CS, side: str, cur_long: float, raw_lat: float, comp_lat: float, lane_edge: float, max_lat_dist: float):
+    # 1. 값이 없거나 너무 멀면 대기 (위치 판별은 날것의 raw_lat 사용!)
+    if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 30.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
       return False, 0.0, 0.0
     else:
       self._corner_missing_cnt[side] = 0      
-      self._corner_hist[side].append((cur_long, cur_lat))
+      # 💡 히스토리에 raw_lat과 comp_lat을 모두 저장합니다.
+      self._corner_hist[side].append((cur_long, raw_lat, comp_lat))
 
     h = self._corner_hist[side]
     n = len(h)
@@ -834,26 +836,25 @@ class RadarD:
       return False, 0.0, 0.0
 
     past_long = (h[0][0] + h[1][0]) / 2.0
-    past_lat  = (h[0][1] + h[1][1]) / 2.0
     curr_long = (h[-1][0] + h[-2][0]) / 2.0
-    curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
+    
+    # 💡 속도 계산은 착시가 제거된 comp_lat을 사용! (커브길 유령 속도 원천 차단)
+    past_comp_lat  = (h[0][2] + h[1][2]) / 2.0
+    curr_comp_lat  = (h[-1][2] + h[-2][2]) / 2.0
     
     time_diff = max((n - 2) * DT_MDL, DT_MDL) 
 
     v_long_rel = (curr_long - past_long) / time_diff
-    v_lat = (curr_lat - past_lat) / time_diff
+    v_lat = (curr_comp_lat - past_comp_lat) / time_diff
 
-    # 3. 💡 내 차(EV6) 제원과 차선에 맞춘 4단계 맞춤형 정밀 방어! (감시용)
-    if cur_lat <= (lane_edge - 0.3):
-      # ① 초근접 구역 (내차로 0.2m 이내): 이미 내 차와 겹침/충돌 임박
+    # 3. 방어 구역 판별은 회원님 로직 그대로 휘어진 차선(lane_edge)과 날것(raw_lat)을 비교!
+    if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.2  
-    elif cur_lat <= (lane_edge):  
-      # ② 중간 구역 (내차로 0.2m 이내 ~ 내차로 바깥): 슬금슬금 좁혀오는 차량 방어
+    elif raw_lat <= (lane_edge):  
       v_lat_threshold = -0.05    
-    elif cur_lat <= (lane_edge + 0.3):  
+    elif raw_lat <= (lane_edge + 0.3):  
       v_lat_threshold = -0.1    
     else:              
-      # ③ 외곽 구역 (차선 반폭 ~ ): 좁혀오는 차량 방어
       v_lat_threshold = -0.2  
 
     is_cutting_in = v_lat < v_lat_threshold
@@ -936,16 +937,23 @@ class RadarD:
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
     # -------------------------------------------------------------------------
-    # 💡 [곡률 보정 삭제] 이중 보정으로 인한 커브길 오인식 버그 해결!
+    # 💡 [천재적인 투트랙 로직] '위치'는 콤마 차선을 쓰되, '측면 이동 속도(v_lat)'는 곡률 보정이 필요함!
     # -------------------------------------------------------------------------
+    # 1. AI 경로(도로가 휜 정도) 추출
+    path_y_left = float(np.interp(left_long, md.position.x, md.position.y)) if left_long > 0 else 0.0
+    path_y_right = float(np.interp(right_long, md.position.x, md.position.y)) if right_long > 0 else 0.0
+
+    # 2. 속도 계산용: 날것의 좌표에서 도로가 휜 만큼을 빼서(abs) 반듯하게 편 좌표
+    comp_left_lat = float(abs(raw_left_lat - path_y_left))
+    comp_right_lat = float(abs(raw_right_lat - path_y_right))
+
+    # 3. 위치 계산용: 회원님의 원본 그대로 날것의 절댓값 좌표
     compensated_left_lat = float(abs(raw_left_lat))
     compensated_right_lat = float(abs(raw_right_lat))
 
-    # -------------------------------------------------------------------------
-    # 💡 [방어 구역 적용] 3단계 방어 로직 통과 여부 확인
-    # -------------------------------------------------------------------------
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, right_lane_edge, right_max_dist)
+    # 4. _corner_update_state에 날것(위치용)과 보정값(속도용)을 동시에 던져줌!
+    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
 
     # -------------------------------------------------------------------------
     # 💡 [핵심 반영] 감속 개입 조건: 현재 차선폭의 10%를 동적 마진으로 추가!
