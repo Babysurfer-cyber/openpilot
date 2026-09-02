@@ -939,9 +939,15 @@ class RadarD:
     # -------------------------------------------------------------------------
     # 💡 [천재적인 투트랙 로직] '위치'는 콤마 차선을 쓰되, '측면 이동 속도(v_lat)'는 곡률 보정이 필요함!
     # -------------------------------------------------------------------------
-    # 1. AI 경로(도로가 휜 정도) 추출
-    path_y_left = float(np.interp(left_long, md.position.x, md.position.y)) if left_long > 0 else 0.0
-    path_y_right = float(np.interp(right_long, md.position.x, md.position.y)) if right_long > 0 else 0.0
+    # 1. AI 경로(도로가 휜 정도) 추출 (부팅 시 빈 데이터 참조 방지 안전장치 추가)
+    path_y_left = 0.0
+    path_y_right = 0.0
+    
+    if md is not None and len(md.position.x) > 0 and len(md.position.y) > 0:
+      if left_long > 0.0:
+        path_y_left = float(np.interp(left_long, md.position.x, md.position.y))
+      if right_long > 0.0:
+        path_y_right = float(np.interp(right_long, md.position.x, md.position.y))
 
     # 2. 속도 계산용: 날것의 좌표에서 도로가 휜 만큼을 빼서(abs) 반듯하게 편 좌표
     comp_left_lat = float(abs(raw_left_lat - path_y_left))
