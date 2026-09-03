@@ -937,29 +937,43 @@ class RadarD:
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
     # -------------------------------------------------------------------------
-    # 💡 [천재적인 투트랙 로직] '위치'는 콤마 차선을 쓰되, '측면 이동 속도(v_lat)'는 곡률 보정이 필요함!
+    # 💡 [천재적인 투트랙 로직 + 기하학적 착시 완벽 보정] 
     # -------------------------------------------------------------------------
-    # 1. AI 경로(도로가 휜 정도) 추출 (부팅 시 빈 데이터 참조 방지 안전장치 추가)
+    # 1. AI 경로(도로가 휜 정도) 추출 및 코사인(cos) 투영 비율 계산
     path_y_left = 0.0
     path_y_right = 0.0
+    cos_theta_left = 1.0
+    cos_theta_right = 1.0
     
     if md is not None and len(md.position.x) > 0 and len(md.position.y) > 0:
       if left_long > 0.0:
         path_y_left = float(np.interp(left_long, md.position.x, md.position.y))
+        # [기하학적 착시 보정] 차가 가까워질수록 Y좌표 차이가 좁아지는 현상 상쇄
+        tan_theta_left = (2.0 * path_y_left) / max(left_long, 1.0)
+        cos_theta_left = 1.0 / math.sqrt(1.0 + tan_theta_left**2)
+        
       if right_long > 0.0:
         path_y_right = float(np.interp(right_long, md.position.x, md.position.y))
+        tan_theta_right = (2.0 * path_y_right) / max(right_long, 1.0)
+        cos_theta_right = 1.0 / math.sqrt(1.0 + tan_theta_right**2)
 
-    # 2. 속도 계산용: 날것의 좌표에서 도로가 휜 만큼을 빼서(abs) 반듯하게 편 좌표
-    comp_left_lat = float(abs(raw_left_lat - path_y_left))
-    comp_right_lat = float(abs(raw_right_lat - path_y_right))
+    # 2. 부호 강제 정렬 (왼쪽 레이더는 무조건 +, 오른쪽 레이더는 무조건 -)
+    # 레이더 원시 데이터의 부호가 꼬여서 계산이 뒤집히는 것을 원천 차단
+    signed_left_lat = float(abs(raw_left_lat))
+    signed_right_lat = -float(abs(raw_right_lat))
 
-    # 3. 위치 계산용: 회원님의 원본 그대로 날것의 절댓값 좌표
+    # 3. 속도 계산용: 부호 정렬된 좌표에서 휜 만큼을 빼고 코사인 투영! (완벽한 직교 거리 추출)
+    comp_left_lat = float(abs(signed_left_lat - path_y_left)) * cos_theta_left
+    comp_right_lat = float(abs(signed_right_lat - path_y_right)) * cos_theta_right
+
+    # 4. 위치 계산용: 회원님의 원본 그대로 날것의 절댓값 좌표
     compensated_left_lat = float(abs(raw_left_lat))
     compensated_right_lat = float(abs(raw_right_lat))
 
-    # 4. _corner_update_state에 날것(위치용)과 보정값(속도용)을 동시에 던져줌!
+    # 5. _corner_update_state에 날것(위치용)과 보정값(속도용)을 동시에 던져줌!
     left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
     right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
+    # -------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------
     # 💡 [핵심 반영] 감속 개입 조건: 현재 차선폭의 10%를 동적 마진으로 추가!
