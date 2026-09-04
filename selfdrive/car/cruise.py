@@ -979,18 +979,24 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
-    # ▼▼▼ [추가 2] 당근크루즈 중 재가속 차단 및 타력주행(코스팅) 완벽 유지! ▼▼▼
+    # ▼▼▼ [추가 2] 당근크루즈 중 재가속 차단 및 가속 페달 개입 시 자동 복귀! ▼▼▼
     if getattr(self, 'carrot_cruise_active', False):
       if CS.gasPressed:
-        # 1. 엑셀을 밟을 때: 목표 속도도 내 차 속도에 맞춰 같이 끌어올려줌 
-        v_cruise_kph = self.v_ego_kph_set
+        # 1. 엑셀을 밟을 때: 당근크루즈 즉시 강제 해제 및 기존 크루즈 속도(+버튼 효과) 복귀!
+        self.carrot_cruise_active = False
+        self._pause_auto_speed_up = False  # 가속 제한 해제
+        
+        # 금고에 보관해둔 기존 크루즈 속도(예: 100km/h) 꺼내오기
+        if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+          v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+          self._v_cruise_kph_at_brake = 0
+          
+        self._add_log("Carrot Cruise OFF & Restore (Gas Override)")
       else:
         # 2. 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
-        # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 엑셀 개입을 완벽히 차단합니다.
+        # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 시스템 가속을 완벽히 차단합니다.
         v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 2)) 
-      
-      # 3. 가속 로직 정지: 눈치 없는 오토 스피드 업 엔진 강제 셧다운
-      self._pause_auto_speed_up = True                     
+        self._pause_auto_speed_up = True                     
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     return self._auto_speed_up(v_cruise_kph)
