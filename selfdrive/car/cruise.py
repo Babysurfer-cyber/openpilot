@@ -639,58 +639,58 @@ class VCruiseCarrot:
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
-    # ▼ [추가] 전방 정지차량 5초 연속 감지 시 당근크루즈 자동 해제 및 기존 속도 복귀
+    # ▼ [통합 복귀 로직] 가속 페달, 정지차량 5초, 목표속도 5초 도달 시 
+    # 당근크루즈 자동 해제 및 기존 속도(오토모드 완벽 동기화) 복귀
     # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
-      if not hasattr(self, 'stationary_lead_timer'):
+      restore_triggered = False
+      restore_reason = ""
+      
+      if not hasattr(self, 'stationary_lead_timer'): self.stationary_lead_timer = 0
+      if not hasattr(self, 'target_speed_reach_timer'): self.target_speed_reach_timer = 0
+      
+      # 1. 가속 페달 개입
+      if CS.gasPressed:
+        restore_triggered = True
+        restore_reason = "Gas Override"
+        
+      # 2. 전방 정지차량 5초 연속 감지
+      elif self.d_rel > 0 and self.v_lead_kph < 3:
+        self.stationary_lead_timer += 1
+        if self.stationary_lead_timer >= 500:  # 5초
+          restore_triggered = True
+          restore_reason = "Stationary 5s"
+      else:
         self.stationary_lead_timer = 0
         
-      # 전방 차량 존재(d_rel > 0) 및 앞차의 속도가 3km/h 미만(정지 상태)인지 확인
-      if self.d_rel > 0 and self.v_lead_kph < 3:
-        self.stationary_lead_timer += 1
+      # 3. 감속 목표 속도 도달 후 5초 유지
+      if not restore_triggered:
+        if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
+          self.target_speed_reach_timer += 1
+          if self.target_speed_reach_timer >= 500:  # 5초
+            restore_triggered = True
+            restore_reason = f"Target Speed {self.desiredSpeed} Reached"
+        else:
+          self.target_speed_reach_timer = 0
+
+      # 🚀 복귀 트리거 발동
+      if restore_triggered:
+        self.carrot_cruise_active = False
+        self.stationary_lead_timer = 0
+        self.target_speed_reach_timer = 0
+        self._pause_auto_speed_up = False
         
-        if self.stationary_lead_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
-          self.carrot_cruise_active = False
-          self.stationary_lead_timer = 0
+        # 금고 속도로 복귀
+        if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+          v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+          self._v_cruise_kph_at_brake = 0
           
-          # 💡 LFA 버튼(또는 엑셀) 해제 시처럼 금고에 넣어둔 기존 크루즈 목표 속도로 복귀!
-          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-            v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
-            self._v_cruise_kph_at_brake = 0
-            
-          self._add_log("Carrot Cruise OFF & Restore (Stationary 5s)")
-      else:
-        self.stationary_lead_timer = 0  # 앞차가 움직이거나 사라지면 타이머 초기화
+          # ★ 핵심: 오토모드(5번)가 이 복귀 속도를 무시하지 않고 즉시 동기화하도록 가짜 +버튼 신호 발생!
+          button_type = ButtonType.accelCruise 
+          
+        self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
     else:
       self.stationary_lead_timer = 0
-    # ==============================================================
-
-    # ==============================================================
-    # ▼ [신규 추가] 감속 목표 속도 도달 후 5초 유지 시 당근크루즈 자동 해제 및 복귀 ▼
-    if getattr(self, 'carrot_cruise_active', False):
-      if not hasattr(self, 'target_speed_reach_timer'):
-        self.target_speed_reach_timer = 0
-        
-      # desiredSpeed가 유효한 감속 지시 중이고 (예: 200km/h 미만), 
-      # 현재 차량 속도가 그 목표 속도 부근(+1km/h 오차 허용)까지 충분히 떨어졌으며,
-      # [추가] 동시에 현재 차량 속도가 60km/h 이하일 때만 타이머 작동!
-      if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
-        self.target_speed_reach_timer += 1
-        
-        if self.target_speed_reach_timer >= 500:  # 100Hz 루프 기준 5초 (500 프레임)
-          self.carrot_cruise_active = False
-          self.target_speed_reach_timer = 0
-          
-          # 금고에 넣어둔 기존 크루즈 목표 속도(예: 100km/h)로 복귀
-          # (복귀해도 desiredSpeed가 60이라면 시스템이 알아서 브레이크를 잡아 60을 유지합니다!)
-          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-            v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
-            self._v_cruise_kph_at_brake = 0
-            
-          self._add_log(f"Carrot Cruise OFF & Restore (Target Speed {self.desiredSpeed} Reached & <= 60)")
-      else:
-        self.target_speed_reach_timer = 0  # 목표 속도를 벗어나거나 60 초과면 타이머 초기화
-    else:
       self.target_speed_reach_timer = 0
     # ==============================================================
 
@@ -979,24 +979,13 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
-    # ▼▼▼ [추가 2] 당근크루즈 중 재가속 차단 및 가속 페달 개입 시 자동 복귀! ▼▼▼
+    # ▼▼▼ [추가 2] 당근크루즈 중 타력주행(코스팅) 완벽 유지 ▼▼▼
+    # (가속 페달 등 복귀 로직은 _update_cruise_buttons 함수로 통합됨)
     if getattr(self, 'carrot_cruise_active', False):
-      if CS.gasPressed:
-        # 1. 엑셀을 밟을 때: 당근크루즈 즉시 강제 해제 및 기존 크루즈 속도(+버튼 효과) 복귀!
-        self.carrot_cruise_active = False
-        self._pause_auto_speed_up = False  # 가속 제한 해제
-        
-        # 금고에 보관해둔 기존 크루즈 속도(예: 100km/h) 꺼내오기
-        if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-          v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
-          self._v_cruise_kph_at_brake = 0
-          
-        self._add_log("Carrot Cruise OFF & Restore (Gas Override)")
-      else:
-        # 2. 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
-        # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 시스템 가속을 완벽히 차단합니다.
-        v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 2)) 
-        self._pause_auto_speed_up = True                     
+      # 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
+      # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 시스템 가속을 완벽히 차단합니다.
+      v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 2)) 
+      self._pause_auto_speed_up = True                     
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     return self._auto_speed_up(v_cruise_kph)
