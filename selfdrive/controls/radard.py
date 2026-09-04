@@ -888,20 +888,49 @@ class RadarD:
     abs_steering = abs(CS.steeringAngleDeg)
 
     # -------------------------------------------------------------------------
-    # 💡 [초정밀 퓨전] 차선의 반폭(lane_edge), 최대 감시폭(max_dist), 그리고 차선폭(lane_width)을 동시 추출
+    # 💡 [추가] 목표 거리(target_long)에서의 도로 곡률을 계산하여 '미래 예상 조향각' 산출
+    # -------------------------------------------------------------------------
+    def get_predicted_steering(target_long, md, CS):
+      if md is None or len(md.position.x) < 3:
+        return abs(CS.steeringAngleDeg)
+        
+      # 최소 5m 앞부터 계산 (0m 부근은 2차 미분 시 노이즈 발생 우려)
+      x_c = max(5.0, float(target_long))
+      dx = 5.0
+      
+      # 상대방 차량 위치(x_c) 기준 앞뒤 5m 간격의 Y좌표 추출
+      y_c = float(np.interp(x_c, md.position.x, md.position.y))
+      y_p = float(np.interp(x_c + dx, md.position.x, md.position.y))
+      y_m = float(np.interp(x_c - dx, md.position.x, md.position.y))
+      
+      # 2차 미분(f'')을 이용한 곡률(Curvature) 계산 공식: |y_p - 2*y_c + y_m| / dx^2
+      curvature = abs(y_p - 2.0 * y_c + y_m) / (dx ** 2)
+      
+      # 곡률(1/m) ➡️ 예상 조향각(Degree)으로 스케일링 변환 
+      # (축거 2.8m * 조향비 13 * 180/pi ≒ 약 2000)
+      # ex) 곡률 반경 200m -> 조향각 약 10도 / 곡률 반경 50m -> 조향각 약 40도
+      predicted_steering = curvature * 2000.0
+      
+      # 현재 내 차의 실제 조향각과, 상대방 위치의 미래 조향각 중 "더 꺾인(위험한)" 값을 채택!
+      return max(predicted_steering, abs(CS.steeringAngleDeg))
+
+    # -------------------------------------------------------------------------
+    # 💡 [초정밀 퓨전] 미래 예상 조향각 기반 동적 차선 폭 제어
     # -------------------------------------------------------------------------
     def get_lane_edge(target_long, is_left):
-      # 💡 [추가/핵심] 대상 차량이 10m 이내로 들어오면 카메라가 앞차에 가려져 차선을 잃으므로 
-      # 모델 값을 무시하고 가장 안정적인 기본값(2.25m, 2.75m, 2.6m)으로 강제 고정!
+      # 대상 차량이 10m 이내면 기본값 고정
       if target_long < 10.0:
         return 2.25, 2.75, 2.6
 
-      # ▼▼▼ [수정] 시속 60 이상은 조향 10도 이상, 그 외(저속)는 30도 이상일 때 기본값 강제 적용! ▼▼▼
+      # ▼▼▼ [핵심] 기존 현재 조향각(abs_steering)을 '상대방 위치의 곡률 기반 조향각'으로 교체! ▼▼▼
+      pred_steering = get_predicted_steering(target_long, md, CS)
+      
       v_ego_kph = CS.vEgo * 3.6
-      if (v_ego_kph >= 60.0 and abs_steering >= 10.0) or (v_ego_kph < 60.0 and abs_steering >= 30.0):
+      
+      # 내 차가 직진 중이어도, 저 멀리 상대방이 커브에 진입 중이라면 미리 방어막(기본값)을 씌움!
+      if (v_ego_kph >= 60.0 and pred_steering >= 10.0) or (v_ego_kph < 60.0 and pred_steering >= 30.0):
         return 2.25, 2.75, 2.6
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+      
       if md is None or len(md.laneLineProbs) < 3:
         return 2.25, 2.75, 2.6
     
@@ -927,7 +956,6 @@ class RadarD:
         max_search_dist = lane_edge + (lane_width - 1.9) * 0.6
         max_search_dist = max(lane_edge, max_search_dist)
         
-        # 💡 계산된 차선 정보 반환
         return lane_edge, max_search_dist, lane_width
       
       return 2.25, 2.75, 2.6
