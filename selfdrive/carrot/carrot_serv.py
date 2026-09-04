@@ -1046,7 +1046,7 @@ class CarrotServ:
       if bump_dist > 0:
         bump_offset = 25.0 + v_ego * 2.0
         fake_bump_dist = max(0.0, bump_dist - bump_offset)
-        bump_decel_rate = self.autoNaviSpeedDecelRate * 1.0
+        bump_decel_rate = self.autoNaviSpeedDecelRate * 0.8
 
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
                                                           self.autoNaviSpeedBumpSpeed,
