@@ -928,7 +928,7 @@ class RadarD:
       v_ego_kph = CS.vEgo * 3.6
       
       # 내 차가 직진 중이어도, 저 멀리 상대방이 커브에 진입 중이라면 미리 방어막(기본값)을 씌움!
-      if (v_ego_kph >= 60.0 and pred_steering >= 7.0) or (v_ego_kph < 60.0 and pred_steering >= 30.0):
+      if (v_ego_kph >= 60.0 and pred_steering >= 10.0) or (v_ego_kph < 60.0 and pred_steering >= 30.0):
         return 2.25, 2.75, 2.6
       
       if md is None or len(md.laneLineProbs) < 3:
