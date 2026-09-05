@@ -6,13 +6,19 @@ import os
 from aiohttp import web
 from openpilot.common.realtime import set_core_affinity
 
-from .server.app_factory import make_app
-from .server.core import DEFAULT_SETTINGS_PATH, WEB_DIR, _settings_cache
+from .server.app import make_app
+from .server.config import DEFAULT_SETTINGS_PATH, WEB_DIR
+from .server.services.settings import settings_cache as _settings_cache
 
 
 def main():
+  # Core affinity is tunable via env. The default shares the background core
+  # pool used by Carrot WebRTC; its dedicated video encoder is pinned separately.
+  # Format: comma-separated core ids, e.g. CARROT_WEB_CORES="2,3".
   try:
-    set_core_affinity([0, 1, 2, 3])
+    cores_env = os.environ.get("CARROT_WEB_CORES", "")
+    cores = [int(c) for c in cores_env.split(",") if c.strip() != ""] or [0, 1, 2, 3]
+    set_core_affinity(cores)
   except Exception:
     print("[carrot_server] failed to set core affinity")
 
