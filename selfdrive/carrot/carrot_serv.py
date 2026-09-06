@@ -1048,13 +1048,19 @@ class CarrotServ:
         fake_bump_dist = max(0.0, bump_dist - bump_offset)
         bump_decel_rate = self.autoNaviSpeedDecelRate * 0.9
 
+        # ▼▼▼ [수정] 제한속도가 30인 경우 타겟 속도에서 5 감속 ▼▼▼
+        target_bump_speed = self.autoNaviSpeedBumpSpeed
+        if self.nRoadLimitSpeed == 30:
+          target_bump_speed -= 5
+
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
-                                                          self.autoNaviSpeedBumpSpeed,
+                                                          target_bump_speed,
                                                           self.autoNaviSpeedBumpTime,
                                                           bump_decel_rate)
         self.active_carrot = 5
         final_xSpdType = 22  
-        final_xSpdLimit = self.autoNaviSpeedBumpSpeed
+        final_xSpdLimit = target_bump_speed
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         final_xSpdDist = fake_bump_dist  
     
     if self.autoTurnControl not in [2, 3]:
