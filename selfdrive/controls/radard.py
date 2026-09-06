@@ -434,7 +434,6 @@ class RadarD:
     self.leadTwo = None
     self.leadCutIn = empty_lead()
 
-    # ▼▼▼ [수정] 가로(Y)와 세로(X)를 함께 저장하여 속도 벡터를 구하기 위함 ▼▼▼
     self._corner_hist = {
       "L": deque(maxlen=10),
       "R": deque(maxlen=10),
@@ -442,6 +441,12 @@ class RadarD:
     # [추가] 신호가 끊겼을 때 바로 지우지 않고 기다려주는 카운터
     self._corner_missing_cnt = {"L": 0, "R": 0} 
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
+    
+    # ▼▼▼ [추가] 가속도(aLead) 계산을 위한 세로 속도 히스토리 ▼▼▼
+    self._corner_v_hist = {
+      "L": deque(maxlen=10),
+      "R": deque(maxlen=10),
+    }
 
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
@@ -532,11 +537,9 @@ class RadarD:
       if self.enable_radar_tracks >= 3:
         self._pick_lead_one_from_state()
 
-      # ▼▼▼ [추가] 시속 60km 이하에서는 앞앞차(Lead Two) 인식 강제 취소! ▼▼▼
-      # self.v_ego는 m/s 단위이므로 3.6을 곱해 km/h로 변환하여 비교합니다.
+      # 시속 60km 이하에서는 앞앞차(Lead Two) 인식 강제 취소
       if self.v_ego * 3.6 <= 60.0:
         self.radar_state.leadTwo = {'status': False}
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def publish(self, pm: messaging.PubMaster):
     assert self.radar_state is not None
@@ -824,7 +827,8 @@ class RadarD:
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
-      return False, 0.0, 0.0
+        self._corner_v_hist[side].clear()  # <-- [추가] 속도 히스토리도 초기화
+      return False, 0.0, 0.0, 0.0          # <-- [수정] 리턴값 4개로 변경 (a_lead 추가)
     else:
       self._corner_missing_cnt[side] = 0      
       # 💡 히스토리에 raw_lat과 comp_lat을 모두 저장합니다.
@@ -833,7 +837,7 @@ class RadarD:
     h = self._corner_hist[side]
     n = len(h)
     if n < 5:
-      return False, 0.0, 0.0
+      return False, 0.0, 0.0, 0.0
 
     past_long = (h[0][0] + h[1][0]) / 2.0
     curr_long = (h[-1][0] + h[-2][0]) / 2.0
@@ -847,6 +851,28 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_comp_lat - past_comp_lat) / time_diff
 
+    # ==========================================================
+    # 💡 [핵심 추가] 전방 차량과 완벽히 동일한 가속도(aLead) 도출 로직
+    # ==========================================================
+    self._corner_v_hist[side].append(v_long_rel)
+    vh = self._corner_v_hist[side]
+    vn = len(vh)
+    
+    if vn >= 5:
+      past_v = (vh[0] + vh[1]) / 2.0
+      curr_v = (vh[-1] + vh[-2]) / 2.0
+      time_diff_v = max((vn - 2) * DT_MDL, DT_MDL)
+      
+      # 상대 가속도 계산
+      a_rel = (curr_v - past_v) / time_diff_v
+      
+      # aLead = 내 차의 가속도(aEgo) + 상대 가속도(a_rel)
+      # 노이즈로 인한 급브레이크/급가속 튐 현상을 막기 위해 현실적인 수치(-4.0 ~ +3.0)로 클리핑
+      a_lead = float(np.clip(CS.aEgo + a_rel, -4.0, 3.0))
+    else:
+      a_lead = 0.0
+    # ==========================================================
+
     # 3. 방어 구역 판별은 회원님 로직 그대로 휘어진 차선(lane_edge)과 날것(raw_lat)을 비교!
     if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.2  
@@ -859,7 +885,7 @@ class RadarD:
 
     is_cutting_in = v_lat < v_lat_threshold
 
-    return is_cutting_in, v_long_rel, v_lat
+    return is_cutting_in, v_long_rel, v_lat, a_lead
 
 
   def corner_radar(self, CS, md, lead_dict):
@@ -979,9 +1005,9 @@ class RadarD:
     comp_left_lat = compensated_left_lat
     comp_right_lat = compensated_right_lat
 
-    # _corner_update_state에 날것(위치용)과 보정값(속도용)을 동일하게 던져줌!
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
+    # _corner_update_state에 날것(위치용)과 보정값(속도용)을 동일하게 던져줌! (4개로 받기)
+    left_cutin, left_vrel, left_vlat, left_alead = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
+    right_cutin, right_vrel, right_vlat, right_alead = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
     # -------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------
@@ -1000,13 +1026,13 @@ class RadarD:
 
     if left_ok and right_ok:
       if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
+        lat_dist, long_dist, v_rel, v_lat, a_lead = +abs_left_lat, left_long, left_vrel, left_vlat, left_alead
       else:
-        lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
+        lat_dist, long_dist, v_rel, v_lat, a_lead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
     elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
+      lat_dist, long_dist, v_rel, v_lat, a_lead = +abs_left_lat, left_long, left_vrel, left_vlat, left_alead
     else:
-      lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
+      lat_dist, long_dist, v_rel, v_lat, a_lead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
@@ -1018,9 +1044,10 @@ class RadarD:
         lead_dict['vRel'] = v_rel             
         lead_dict['vLead'] = actual_vLead 
         lead_dict['vLeadK'] = actual_vLead
-        lead_dict['aLead'] = 0.0              
-        lead_dict['aLeadK'] = 0.0
+        lead_dict['aLead'] = a_lead              # <-- [핵심 1] 진짜 가속도 주입!
+        lead_dict['aLeadK'] = a_lead             # <-- [핵심 1] 진짜 가속도 주입!
         lead_dict['vLat'] = v_lat
+        lead_dict['aLeadTau'] = 0.3              # <-- [핵심 2] 전방 비전 차량과 동일한 시스템 반응계수(0.3) 부여!
         lead_dict['modelProb'] = 0.8
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
@@ -1031,9 +1058,10 @@ class RadarD:
       lead_dict['vRel'] = v_rel             
       lead_dict['vLead'] = actual_vLead
       lead_dict['vLeadK'] = actual_vLead
-      lead_dict['aLead'] = 0.0
-      lead_dict['aLeadK'] = 0.0
+      lead_dict['aLead'] = a_lead              # <-- [핵심 1] 진짜 가속도 주입!
+      lead_dict['aLeadK'] = a_lead             # <-- [핵심 1] 진짜 가속도 주입!
       lead_dict['vLat'] = v_lat
+      lead_dict['aLeadTau'] = 0.3              # <-- [핵심 2] 전방 비전 차량과 동일한 시스템 반응계수(0.3) 부여!
       lead_dict['modelProb'] = 0.8
       lead_dict['radarTrackId'] = -1
       lead_dict['radar'] = True
