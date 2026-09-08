@@ -20,7 +20,6 @@ MAX_BUILD_PROGRESS = 100
 def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   env = os.environ.copy()
   env['SCONS_PROGRESS'] = "1"
-  env['PYTHONUNBUFFERED'] = "1"
   nproc = os.cpu_count()
   if nproc is None:
     nproc = 2
@@ -36,14 +35,13 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   compile_output: list[bytes] = []
   for n in (nproc, nproc/2, 1):
     compile_output.clear()
-    scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", "--cache-populate", *extra_args], cwd=BASEDIR, env=env,
-                                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    assert scons.stdout is not None
+    scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", "--cache-populate", *extra_args], cwd=BASEDIR, env=env, stderr=subprocess.PIPE)
+    assert scons.stderr is not None
 
-    # Read progress and build output from scons and update spinner.
+    # Read progress from stderr and update spinner
     while scons.poll() is None:
       try:
-        line = scons.stdout.readline()
+        line = scons.stderr.readline()
         if line is None:
           continue
         line = line.rstrip()
@@ -54,9 +52,7 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
           spinner.update_progress(MAX_BUILD_PROGRESS * min(1., i / TOTAL_SCONS_NODES), 100.)
         elif len(line):
           compile_output.append(line)
-          line_text = line.decode('utf8', 'replace')
-          spinner.update(line_text)
-          print(line_text)
+          print(line.decode('utf8', 'replace'))
       except Exception:
         pass
 
@@ -65,8 +61,8 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
 
   if scons.returncode != 0:
     # Read remaining output
-    if scons.stdout is not None:
-      compile_output += scons.stdout.read().split(b'\n')
+    if scons.stderr is not None:
+      compile_output += scons.stderr.read().split(b'\n')
 
     # Build failed log errors
     error_s = b"\n".join(compile_output).decode('utf8', 'replace')
