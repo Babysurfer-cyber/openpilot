@@ -968,6 +968,17 @@ class RadarD:
       
       return 2.25, 2.75, 2.6
 
+    # ▼▼▼ [여기서부터 누락된 코드 복구!] ▼▼▼
+    left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
+    right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
+
+    compensated_left_lat = float(abs(raw_left_lat))
+    compensated_right_lat = float(abs(raw_right_lat))
+    
+    comp_left_lat = compensated_left_lat
+    comp_right_lat = compensated_right_lat
+    # ▲▲▲ [여기까지 누락된 코드 복구!] ▲▲▲
+
     # [수정] 리턴 값 3개로 받기
     left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
     right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
