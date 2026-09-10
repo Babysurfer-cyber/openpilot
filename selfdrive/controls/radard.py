@@ -441,12 +441,6 @@ class RadarD:
     # [추가] 신호가 끊겼을 때 바로 지우지 않고 기다려주는 카운터
     self._corner_missing_cnt = {"L": 0, "R": 0} 
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
-    
-    # ▼▼▼ [추가] 가속도(aLead) 계산을 위한 세로 속도 히스토리 ▼▼▼
-    self._corner_v_hist = {
-      "L": deque(maxlen=10),
-      "R": deque(maxlen=10),
-    }
 
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
@@ -827,22 +821,19 @@ class RadarD:
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
-        self._corner_v_hist[side].clear()  # <-- [추가] 속도 히스토리도 초기화
-      return False, 0.0, 0.0, 0.0          # <-- [수정] 리턴값 4개로 변경 (a_lead 추가)
+      return False, 0.0, 0.0    # <-- [수정] 3개만 리턴 (가속도 제외)
     else:
       self._corner_missing_cnt[side] = 0      
-      # 💡 히스토리에 raw_lat과 comp_lat을 모두 저장합니다.
       self._corner_hist[side].append((cur_long, raw_lat, comp_lat))
 
     h = self._corner_hist[side]
     n = len(h)
     if n < 5:
-      return False, 0.0, 0.0, 0.0
+      return False, 0.0, 0.0
 
     past_long = (h[0][0] + h[1][0]) / 2.0
     curr_long = (h[-1][0] + h[-2][0]) / 2.0
     
-    # 💡 속도 계산은 착시가 제거된 comp_lat을 사용! (커브길 유령 속도 원천 차단)
     past_comp_lat  = (h[0][2] + h[1][2]) / 2.0
     curr_comp_lat  = (h[-1][2] + h[-2][2]) / 2.0
     
@@ -851,29 +842,9 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_comp_lat - past_comp_lat) / time_diff
 
-    # ==========================================================
-    # 💡 [핵심 추가] 전방 차량과 완벽히 동일한 가속도(aLead) 도출 로직
-    # ==========================================================
-    self._corner_v_hist[side].append(v_long_rel)
-    vh = self._corner_v_hist[side]
-    vn = len(vh)
-    
-    if vn >= 5:
-      past_v = (vh[0] + vh[1]) / 2.0
-      curr_v = (vh[-1] + vh[-2]) / 2.0
-      time_diff_v = max((vn - 2) * DT_MDL, DT_MDL)
-      
-      # 상대 가속도 계산
-      a_rel = (curr_v - past_v) / time_diff_v
-      
-      # aLead = 내 차의 가속도(aEgo) + 상대 가속도(a_rel)
-      # 노이즈로 인한 급브레이크/급가속 튐 현상을 막기 위해 현실적인 수치(-4.0 ~ +3.0)로 클리핑
-      a_lead = float(np.clip(CS.aEgo + a_rel, -4.0, 3.0))
-    else:
-      a_lead = 0.0
-    # ==========================================================
+    # ▼▼▼ aLead(상대 가속도) 계산 로직 전체 삭제 ▼▼▼
 
-    # 3. 방어 구역 판별은 회원님 로직 그대로 휘어진 차선(lane_edge)과 날것(raw_lat)을 비교!
+    # 3. 방어 구역 판별
     if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.2  
     elif raw_lat <= (lane_edge):  
@@ -885,7 +856,7 @@ class RadarD:
 
     is_cutting_in = v_lat < v_lat_threshold
 
-    return is_cutting_in, v_long_rel, v_lat, a_lead
+    return is_cutting_in, v_long_rel, v_lat
 
 
   def corner_radar(self, CS, md, lead_dict):
@@ -997,57 +968,33 @@ class RadarD:
       
       return 2.25, 2.75, 2.6
 
-    # 💡 3개의 리턴 값을 받도록 수정
-    left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
-    right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
-
-    # -------------------------------------------------------------------------
-    # 💡 [천재적인 역발상: 이중 보정(Double Compensation) 완벽 제거!] 
-    # -------------------------------------------------------------------------
-    # 순정 코너 레이더는 이미 차량의 요레이트(Yaw rate)를 바탕으로 커브길을 보정하여
-    # '내 주행 경로 대비 측면 거리'를 내보내고 있었습니다.
-    # 여기서 모델의 path_y를 또 빼버리면 이중 보정이 되어 안쪽 차선 차량이 
-    # 훅 들어오는 역효과(v_lat 급증)가 발생합니다.
+    # [수정] 리턴 값 3개로 받기
+    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
     
-    # 따라서, 위치와 속도 계산 모두 순정 레이더가 보내주는 절댓값 좌표를 그대로 믿고 사용합니다!
-    compensated_left_lat = float(abs(raw_left_lat))
-    compensated_right_lat = float(abs(raw_right_lat))
-    
-    comp_left_lat = compensated_left_lat
-    comp_right_lat = compensated_right_lat
-
-    # _corner_update_state에 날것(위치용)과 보정값(속도용)을 동일하게 던져줌! (4개로 받기)
-    left_cutin, left_vrel, left_vlat, left_alead = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat, right_alead = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
-    # -------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------
-    # 💡 [핵심 반영] 감속 개입 조건: 현재 차선폭의 10%를 동적 마진으로 추가!
-    # -------------------------------------------------------------------------
     left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + (left_lane_width * 0.1)) and (left_long > 0.0)
     right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + (right_lane_width * 0.1)) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
 
-
-    # 시스템에 넘겨줄 위치 결정 (기존 로직 유지용 절댓값 변수 선언)
     abs_left_lat = abs(raw_left_lat)
     abs_right_lat = abs(raw_right_lat)
 
+    # [수정] a_lead 변수 제외
     if left_ok and right_ok:
       if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat, a_lead = +abs_left_lat, left_long, left_vrel, left_vlat, left_alead
+        lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
       else:
-        lat_dist, long_dist, v_rel, v_lat, a_lead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
+        lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
     elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat, a_lead = +abs_left_lat, left_long, left_vrel, left_vlat, left_alead
+      lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
     else:
-      lat_dist, long_dist, v_rel, v_lat, a_lead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
+      lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 이하 상태 덮어쓰기 로직 동일
+    # [수정] aLead 덮어쓰기 로직 삭제 (비전 데이터 유지 또는 0 처리)
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
@@ -1055,10 +1002,10 @@ class RadarD:
         lead_dict['vRel'] = v_rel             
         lead_dict['vLead'] = actual_vLead 
         lead_dict['vLeadK'] = actual_vLead
-        lead_dict['aLead'] = a_lead              # <-- [핵심 1] 진짜 가속도 주입!
-        lead_dict['aLeadK'] = a_lead             # <-- [핵심 1] 진짜 가속도 주입!
+        # lead_dict['aLead'] = a_lead     <-- 삭제
+        # lead_dict['aLeadK'] = a_lead    <-- 삭제
         lead_dict['vLat'] = v_lat
-        lead_dict['aLeadTau'] = 0.3              # <-- [핵심 2] 전방 비전 차량과 동일한 시스템 반응계수(0.3) 부여!
+        lead_dict['aLeadTau'] = 0.3       # 반응계수는 유지!
         lead_dict['modelProb'] = 0.8
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
@@ -1069,10 +1016,10 @@ class RadarD:
       lead_dict['vRel'] = v_rel             
       lead_dict['vLead'] = actual_vLead
       lead_dict['vLeadK'] = actual_vLead
-      lead_dict['aLead'] = a_lead              # <-- [핵심 1] 진짜 가속도 주입!
-      lead_dict['aLeadK'] = a_lead             # <-- [핵심 1] 진짜 가속도 주입!
+      # lead_dict['aLead'] = a_lead       <-- 삭제
+      # lead_dict['aLeadK'] = a_lead      <-- 삭제
       lead_dict['vLat'] = v_lat
-      lead_dict['aLeadTau'] = 0.3              # <-- [핵심 2] 전방 비전 차량과 동일한 시스템 반응계수(0.3) 부여!
+      lead_dict['aLeadTau'] = 0.3         # 반응계수는 유지!
       lead_dict['modelProb'] = 0.8
       lead_dict['radarTrackId'] = -1
       lead_dict['radar'] = True
