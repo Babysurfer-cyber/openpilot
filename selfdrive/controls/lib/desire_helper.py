@@ -122,11 +122,8 @@ class DesireHelper:
         model_turn_speed = 200.0
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-      # ▼▼▼ 감속은 즉각적으로 내리꽂고, 가속 시엔 부드럽게 (이전 논의 반영) ▼▼▼
-      if model_turn_speed < self.model_turn_speed:
-        self.model_turn_speed = model_turn_speed 
-      else:
-        self.model_turn_speed = self.model_turn_speed * 0.8 + model_turn_speed * 0.2
+      # ▼▼▼ 감속, 가속 모두 0.8 / 0.2 비율로 (빠르면서도 부드럽게) 반영 ▼▼▼
+      self.model_turn_speed = self.model_turn_speed * 0.8 + model_turn_speed * 0.2
         
     else:
       self.model_turn_speed = 200.0
