@@ -83,24 +83,51 @@ class DesireHelper:
 
   def _make_model_turn_speed(self, modeldata, v_ego):
     if self.modelTurnSpeedFactor > 0:
-      # ▼▼▼ 동적 시야(Lookahead) 계산 로직 추가 ▼▼▼
       v_ego_kph = v_ego * CV.MS_TO_KPH
 
       if v_ego_kph <= 40.0:
         dynamic_time = self.modelTurnSpeedFactor
       elif v_ego_kph >= 80.0:
-        # 시속 80km/h 이상일 때 최대 6.0초를 더해 한계치 고정
         dynamic_time = self.modelTurnSpeedFactor + 6.0
       else:
-        # 시속 40부터 80까지 1km/h당 0.15초씩 증가 (40 * 0.15 = 6.0)
         dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 40.0) * 0.15
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-      # 원래 self.modelTurnSpeedFactor가 들어가던 자리에 dynamic_time 적용!
-      model_turn_speed = np.interp(dynamic_time,
-                                   modeldata.velocity.t,
-                                   modeldata.velocity.x) * CV.MS_TO_KPH * 1.2
-      self.model_turn_speed = self.model_turn_speed * 0.8 + model_turn_speed * 0.2
+      # ▼▼▼ [혁신적인 수정] Vturn/HDA의 '거리 기반 물리 감속 봉투' 로직 완전 이식 ▼▼▼
+      t_idxs = np.array(modeldata.velocity.t)
+      v_preds = np.array(modeldata.velocity.x)
+      x_preds = np.array(modeldata.position.x)
+
+      # 설정된 미래 시간(dynamic_time) 이내의 모델 데이터만 추출
+      valid_idx = t_idxs <= dynamic_time
+      if np.any(valid_idx):
+        v_preds_valid = v_preds[valid_idx]
+        x_preds_valid = x_preds[valid_idx]
+
+        # 1. 시야 내에서 가장 속도가 낮은 지점(커브의 최고 정점)과 그곳까지의 남은 거리(m) 추출
+        min_idx = np.argmin(v_preds_valid)
+        v_min_ms = v_preds_valid[min_idx]
+        dist_to_min = x_preds_valid[min_idx]
+
+        # 2. '감속 봉투(Approach Envelope)' 물리 공식 적용
+        a_decel = 1.0  # 목표 감속력 (1.0 m/s^2, 더 급격히 밟길 원하면 1.2로 수정)
+        response_dist = v_ego * 1.0  # 브레이크 반응 딜레이 여유 (1.0초 거리만큼 미리 감속 시작)
+        braking_dist = max(0.0, dist_to_min - response_dist)
+
+        # 등가속도 물리 공식 (v = sqrt(v_min^2 + 2 * a * s))으로 현재 위치에서 달성해야 할 타겟 속도 역산
+        approach_ms = float(np.sqrt(max(0.0, v_min_ms**2 + 2.0 * a_decel * braking_dist)))
+        
+        # 기존 모델턴의 1.2 보정치 유지
+        model_turn_speed = approach_ms * CV.MS_TO_KPH * 1.2
+      else:
+        model_turn_speed = 200.0
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+      # ▼▼▼ 감속은 즉각적으로 내리꽂고, 가속 시엔 부드럽게 (이전 논의 반영) ▼▼▼
+      if model_turn_speed < self.model_turn_speed:
+        self.model_turn_speed = model_turn_speed 
+      else:
+        self.model_turn_speed = self.model_turn_speed * 0.8 + model_turn_speed * 0.2
+        
     else:
       self.model_turn_speed = 200.0
 
