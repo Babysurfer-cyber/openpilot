@@ -863,7 +863,7 @@ class RadarD:
     # ▼▼▼ [핵심 보정 추가] 코너 레이더 0.3초 지연 보정 (Kinematic Rotation) ▼▼▼
     # 레이더의 지연 시간(0.3초) 동안 내 차가 커브를 돌며 틀어진 각도(Yaw)를 계산하여,
     # 과거의 레이더 좌표를 현재 내 차의 시야 방향에 맞게 삼각함수로 회전시켜(보정) 줍니다.
-    CORNER_RADAR_DELAY = 0.5  # 레이더 지연 시간 0.3초
+    CORNER_RADAR_DELAY = 0.7  # 레이더 지연 시간 0.n초
     yaw_rate = CS.yawRate     # 현재 내 차의 회전 각속도 (rad/s)
     theta = yaw_rate * CORNER_RADAR_DELAY
     
