@@ -92,35 +92,43 @@ class DesireHelper:
       else:
         dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 40.0) * 0.15
 
-      # ▼▼▼ [안전장치 추가] try...except 방어 코드 ▼▼▼
+      # ▼▼▼ [안전장치 추가] try...except로 에러 발생 시 시스템 다운 방지 ▼▼▼
       try:
         t_idxs = np.array(modeldata.velocity.t)
         v_preds = np.array(modeldata.velocity.x)
         x_preds = np.array(modeldata.position.x)
 
+        # 설정된 미래 시간(dynamic_time) 이내의 모델 데이터만 추출
         valid_idx = t_idxs <= dynamic_time
         if np.any(valid_idx):
           v_preds_valid = v_preds[valid_idx]
           x_preds_valid = x_preds[valid_idx]
 
+          # 1. 시야 내에서 가장 속도가 낮은 지점(커브의 최고 정점)과 그곳까지의 남은 거리(m) 추출
           min_idx = np.argmin(v_preds_valid)
           v_min_ms = v_preds_valid[min_idx]
           dist_to_min = x_preds_valid[min_idx]
 
-          a_decel = 1.0
-          response_dist = v_ego * 1.0
+          # 2. '감속 봉투(Approach Envelope)' 물리 공식 적용
+          a_decel = 1.0  # 목표 감속력 (1.0 m/s^2)
+          response_dist = v_ego * 1.0  # 브레이크 반응 딜레이 여유 (1.0초 거리만큼 미리 감속 시작)
           braking_dist = max(0.0, dist_to_min - response_dist)
 
+          # 등가속도 물리 공식 (v = sqrt(v_min^2 + 2 * a * s))으로 현재 위치에서 달성해야 할 타겟 속도 역산
           approach_ms = float(np.sqrt(max(0.0, v_min_ms**2 + 2.0 * a_decel * braking_dist)))
+          
+          # 기존 모델턴의 1.2 보정치 유지
           model_turn_speed_target = approach_ms * CV.MS_TO_KPH * 1.2
         else:
           model_turn_speed_target = 200.0
 
       except (AttributeError, TypeError, ValueError, IndexError):
+        # 데이터가 깨지거나 비정상일 때는 안전하게 제한 해제
         model_turn_speed_target = 200.0
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       # ▼▼▼ 감속, 가속 모두 0.8 / 0.2 비율로 (빠르면서도 부드럽게) 반영 ▼▼▼
+      # (try 블록 밖으로 빼서 무조건 필터를 거치게 함)
       self.model_turn_speed = self.model_turn_speed * 0.8 + model_turn_speed_target * 0.2
         
     else:
