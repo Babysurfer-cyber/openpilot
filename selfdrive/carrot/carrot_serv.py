@@ -1059,7 +1059,7 @@ class CarrotServ:
                                                           bump_decel_rate)
         self.active_carrot = 5
         final_xSpdType = 22  
-        final_xSpdLimit = target_bump_speed
+        final_xSpdLimit = self.autoNaviSpeedBumpSpeed
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         final_xSpdDist = fake_bump_dist  
     
