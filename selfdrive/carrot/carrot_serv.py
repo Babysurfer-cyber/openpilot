@@ -1092,7 +1092,7 @@ class CarrotServ:
     # =========================================================
     if my_driving_mode == 5:
       # 오토모드: 모델 커브 속도에 여유를 주고(* 1.1 + 10), 내비게이션(vturn) 조건 삭제
-      model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit) * 1.1 + 10
+      model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit) * 1.0 + 10
       if model_turn_speed < 200:
         speed_n_sources.append((model_turn_speed, "MODEL"))
     else:
