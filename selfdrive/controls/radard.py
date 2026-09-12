@@ -983,8 +983,8 @@ class RadarD:
     left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
     right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
     
-    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + (left_lane_width * 0.1)) and (left_long > 0.0)
-    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + (right_lane_width * 0.1)) and (right_long > 0.0)
+    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + (left_lane_width * 0.15)) and (left_long > 0.0)
+    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + (right_lane_width * 0.15)) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
