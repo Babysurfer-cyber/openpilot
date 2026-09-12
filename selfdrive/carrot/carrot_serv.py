@@ -1091,8 +1091,8 @@ class CarrotServ:
     # ▼ [수정된 모델 턴 감속] 오토모드(5번)와 일반 모드 분리
     # =========================================================
     if my_driving_mode == 5:
-      # 오토모드: 모델 커브 속도에 여유를 주고(* 1.1 + 10), 내비게이션(vturn) 조건 삭제
-      model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit) * 1.0 + 10
+      # 오토모드: 모델 커브 속도에 여유를 주고, 내비게이션(vturn) 조건 삭제
+      model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit) * 1.1
       if model_turn_speed < 200:
         speed_n_sources.append((model_turn_speed, "MODEL"))
     else:
