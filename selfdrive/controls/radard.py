@@ -852,7 +852,7 @@ class RadarD:
     elif raw_lat <= (lane_edge + 0.3):  
       v_lat_threshold = -0.1    
     else:              
-      v_lat_threshold = -0.5  
+      v_lat_threshold = -0.3  
 
     is_cutting_in = v_lat < v_lat_threshold
 
