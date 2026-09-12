@@ -970,11 +970,6 @@ class CarrotServ:
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
       play_prompt = True
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
-
-    elif current_limit != self.prev_speed_limit:
-      if current_limit > 0 and my_driving_mode == 5:
-        play_prompt = True
-        self.szPosRoadName = f"오토 속도 변경: {int(current_limit)}km/h 🔔"
         
     if play_prompt:
       try:
