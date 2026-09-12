@@ -772,22 +772,19 @@ class VCruiseCarrot:
             self.auto_mode_applied = True
 
           # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
-          v_cruise_kph = float(effective_limit + self.user_speed_offset)
+          new_v_cruise_kph = float(effective_limit + self.user_speed_offset)
+          
+          # ▼▼▼ [추가] 실질적인 속도 변화가 발생했을 때만 안내음 발생 ▼▼▼
+          if int(new_v_cruise_kph) != int(v_cruise_kph):
+            try:
+              open("/dev/shm/carrot_prompt", "w").close()
+            except Exception:
+              pass
+            self._add_log(f"오토 속도 변경: {int(new_v_cruise_kph)}km/h 🔔")
+          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          
+          v_cruise_kph = new_v_cruise_kph
           self.last_auto_speed = v_cruise_kph
-
-        else:
-          self.prev_limit_speed_for_auto = 0
-          self.auto_mode_applied = False
-          self.user_speed_offset = 10.0
-          self.last_auto_speed = 0.0
-        
-    except Exception as e:
-      self._add_log(f"Auto Mode Error: {e}")
-    # ==============================================================
-    
-    # 🚨 주의: 반드시 5번 모드 오프셋 계산이 끝난 직후에 _update_cruise_state(시스템 자동개입)가 실행되어야 합니다!
-    v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
-    return v_cruise_kph
 
   ## desiredSpeed :
   #   leadCar_distance, leadCar_speed, leadCar_accel,
