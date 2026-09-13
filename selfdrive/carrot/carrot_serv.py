@@ -973,26 +973,35 @@ class CarrotServ:
 
     elif current_limit != self.prev_speed_limit:
       if current_limit > 0 and my_driving_mode == 5:
-        # ▼▼▼ [추가] 오토모드에서 실제 속도가 변하지 않으면 알림 생략 ▼▼▼
+        # ▼▼▼ [수정] 오토모드에서 실제 속도가 변하지 않으면 완벽하게 알림 생략 ▼▼▼
         # 현재 크루즈에 설정된 진짜 속도를 확인합니다.
         current_set_kph = int(CS.cruiseState.speed * 3.6 + 0.5) if CS is not None and getattr(CS, 'cruiseState', None) is not None and CS.cruiseState.speed > 0 else 0
         
         skip_prompt = False
-        # 정보가 없던 도로(0)에서 제한속도가 나타났을 때
-        if self.prev_speed_limit <= 0 and current_set_kph > 0:
-          diff = current_set_kph - current_limit
-          # cruise.py 로직에 의해 속도가 그대로 유지되는 구간이면 알림 생략! (예: 90으로 달리는데 80구간 진입)
-          if -10 <= diff <= 10 or diff >= 20:
+        if current_set_kph > 0:
+          # cruise.py의 오토모드 오프셋 계산 공식을 그대로 가져와서 0.1초 뒤의 예상 속도 확인!
+          if self.prev_speed_limit <= 0:
+            diff = current_set_kph - current_limit
+            offset = 20.0 if diff >= 20.0 else max(min(float(diff), 10.0), -10.0)
+          elif current_limit > self.prev_speed_limit:
+            offset = max(min(float(current_set_kph - self.prev_speed_limit), 10.0), float(current_set_kph - current_limit))
+          else:
+            old_offset = float(current_set_kph - self.prev_speed_limit)
+            offset = min(old_offset + 10.0, 20.0, float(current_set_kph - current_limit))
+
+          expected_speed = current_limit + offset
+
+          # 계산된 예상 속도가 현재 내 크루즈 속도와 완전히 똑같다면 띠링 소리 생략!
+          if int(expected_speed) == current_set_kph:
             skip_prompt = True
 
-        # 속도 변화가 있는 경우에만 소리와 화면 알림 띄우기!
+        # 속도 변화가 있는 '진짜 상황'에만 소리와 화면 알림 띄우기!
         if not skip_prompt:
           play_prompt = True
           self.szPosRoadName = f"오토 속도 변경: {int(current_limit)}km/h 🔔"
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
     if play_prompt:
-
       try:
         open("/dev/shm/carrot_prompt", "w").close()
       except Exception:
