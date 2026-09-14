@@ -723,20 +723,27 @@ class VCruiseCarrot:
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
 
-        # 💡 [액션용] 실제 변속(깜빡임)은 카메라 통과 시점까지 대기!
-        if self.is_cam:
-          # 카메라 안내 중: 절대 속도를 떨어뜨리지 않음!
+        # ▼▼▼ [추가] 오토모드 속도 제어 전용 변수 (UI 화면 변수와 완벽 분리) ▼▼▼
+        auto_is_cam = is_car_cam
+        auto_raw_limit = CS.speedLimit if CS.speedLimit > 0 else 0
+        if not hasattr(self, 'was_auto_cam'): self.was_auto_cam = False
+
+        if auto_is_cam:
+          self.was_auto_cam = True  # 카메라 구간 진입 기억
           if self.prev_limit_speed_for_auto <= 0:
-            # 1. 제한속도가 없던 길(0)에서 카메라가 나타난 경우 -> 통과할 때까지 계속 없는 상태(0) 유지!
             effective_limit = 0
-          elif raw_limit > 0 and raw_limit < self.prev_limit_speed_for_auto:
-            # 2. 제한속도가 높은 길(80)에서 낮은 카메라(50)가 나타난 경우 -> 예전 높은 속도(80) 유지!
+          elif auto_raw_limit > 0 and auto_raw_limit < self.prev_limit_speed_for_auto:
             effective_limit = self.prev_limit_speed_for_auto
           else:
-            effective_limit = raw_limit
+            effective_limit = auto_raw_limit
         else:
-          # 카메라를 완전히 통과하여 신호가 사라지는 순간, 새 제한속도를 즉시 적용하여 변속!
-          effective_limit = raw_limit
+          if self.was_auto_cam:
+            # 1. 4A3 카메라를 방금 통과함! -> 속도 변경 승인
+            effective_limit = auto_raw_limit
+            self.was_auto_cam = False
+          else:
+            # 2. 카메라가 없는 구간 -> 4BE 신호가 바뀌어도 무시하고 기존 속도 유지!
+            effective_limit = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else auto_raw_limit
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if effective_limit > 0:
