@@ -955,15 +955,40 @@ class CarrotServ:
       raw_limit = self.nRoadLimitSpeed
 
     # 💡 [소리용] 띠링 안내음은 카메라 통과할 때까지 예전 속도를 쥐고 대기!
-    if is_cam:
-      if self.prev_speed_limit <= 0:
-        current_limit = 0  # <--- 제한속도 없던 길(0)이면 통과할 때까지 0으로 입 꾹 닫고 대기!
-      elif raw_limit > 0 and raw_limit < self.prev_speed_limit:
-        current_limit = self.prev_speed_limit
+    if my_driving_mode == 5:
+      # ▼▼▼ [추가] 오토모드 안내음 전용 변수 (UI 화면 변수와 완벽 분리) ▼▼▼
+      auto_is_cam = is_car_cam
+      auto_raw_limit = CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else 0
+      if not hasattr(self, 'was_auto_cam_serv'): self.was_auto_cam_serv = False
+
+      if auto_is_cam:
+        self.was_auto_cam_serv = True
+        if self.prev_speed_limit <= 0:
+          current_limit = 0
+        elif auto_raw_limit > 0 and auto_raw_limit < self.prev_speed_limit:
+          current_limit = self.prev_speed_limit
+        else:
+          current_limit = auto_raw_limit
+      else:
+        if self.was_auto_cam_serv:
+          # 카메라 통과 순간
+          current_limit = auto_raw_limit
+          self.was_auto_cam_serv = False
+        else:
+          # 일반 도로(4BE) 진입 및 변경 시 무시 (기존 유지)
+          current_limit = self.prev_speed_limit if self.prev_speed_limit > 0 else auto_raw_limit
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    else:
+      # 5번 모드가 아닐 때 (기존 방식 유지)
+      if is_cam:
+        if self.prev_speed_limit <= 0:
+          current_limit = 0  # <--- 제한속도 없던 길(0)이면 통과할 때까지 0으로 입 꾹 닫고 대기!
+        elif raw_limit > 0 and raw_limit < self.prev_speed_limit:
+          current_limit = self.prev_speed_limit
+        else:
+          current_limit = raw_limit
       else:
         current_limit = raw_limit
-    else:
-      current_limit = raw_limit
 
     play_prompt = False
     
