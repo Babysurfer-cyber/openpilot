@@ -1123,7 +1123,7 @@ class CarrotServ:
     else:
       # 기존 모드: 오리지널 로직 유지
       model_turn_speed = max(sm['modelV2'].meta.modelTurnSpeed, self.autoCurveSpeedLowerLimit) * 1.1
-      if model_turn_speed < 200:
+      if model_turn_speed < 200 and abs(vturn_speed) < 150:
         speed_n_sources.append((model_turn_speed, "MODEL"))
 
     desired_speed, source = min(speed_n_sources, key=lambda x: x[0])
