@@ -975,8 +975,8 @@ class CarrotServ:
           current_limit = auto_raw_limit
           self.was_auto_cam_serv = False
         else:
-          # 일반 도로(4BE) 진입 및 변경 시 무시 (기존 유지)
-          current_limit = self.prev_speed_limit if self.prev_speed_limit > 0 else auto_raw_limit
+          # 일반 도로(4BE) 진입 및 변경 시 무조건 100% 차단!
+          current_limit = self.prev_speed_limit
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     else:
       # 5번 모드가 아닐 때 (기존 방식 유지)
