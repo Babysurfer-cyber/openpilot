@@ -742,8 +742,8 @@ class VCruiseCarrot:
             effective_limit = auto_raw_limit
             self.was_auto_cam = False
           else:
-            # 2. 카메라가 없는 구간 -> 4BE 신호가 바뀌어도 무시하고 기존 속도 유지!
-            effective_limit = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else auto_raw_limit
+            # 2. 카메라가 없는 구간 -> 4BE 신호 무조건 100% 차단! (0이든 뭐든 무시)
+            effective_limit = self.prev_limit_speed_for_auto
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if effective_limit > 0:
