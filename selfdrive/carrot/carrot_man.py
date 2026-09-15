@@ -25,7 +25,6 @@ import ssl
 import cereal.messaging as messaging
 from openpilot.common.realtime import Ratekeeper, set_core_affinity
 from openpilot.common.params import Params
-from openpilot.common.filter_simple import MyMovingAverage
 from openpilot.system.hardware import PC, TICI
 from openpilot.selfdrive.navd.helpers import Coordinate
 from opendbc.car.common.conversions import Conversions as CV
@@ -33,6 +32,11 @@ from opendbc.car.common.conversions import Conversions as CV
 from openpilot.selfdrive.carrot.carrot_serv import CarrotServ
 
 from openpilot.common.gps import get_gps_location_service
+
+# ▼▼▼ [추가] 비전 커브 계산에 필요한 라이브러리 추가 ▼▼▼
+from dataclasses import dataclass
+from openpilot.selfdrive.modeld.constants import ModelConstants
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 try:
   from shapely.geometry import LineString
@@ -191,6 +195,101 @@ def calculate_curvature(p1, p2, p3):
     #curvature_cache[key] = curvature
     return curvature
 
+# =====================================================================
+# ▼▼▼ [추가] 최신 당근파일럿 Vision Curve Geometry 로직 이식 ▼▼▼
+# =====================================================================
+NO_LIMIT_KPH = 250.0
+MIN_MODEL_SPEED = 3.0
+MAX_MODEL_TIME = 6.0
+MAX_PREVIEW_DISTANCE = 180.0
+TARGET_LAT_ACCEL = 1.9
+APPROACH_DECEL = 1.0
+APPROACH_JERK = 0.8
+RESPONSE_TIME = 1.0
+RELEASE_HOLD = 0.35
+RELEASE_RATE_KPH = 7.2
+
+@dataclass(frozen=True)
+class CurveSpeed:
+  approach_kph: float = NO_LIMIT_KPH
+  curve_kph: float = NO_LIMIT_KPH
+  distance: float = 0.0
+  direction: float = 1.0
+
+def curve_speed(model, v_ego, sensitivity=1.0, lower_limit_kph=30.0, *, speed_ratio=1.0, a_ego=0.0):
+  if not all(math.isfinite(value) for value in (v_ego, sensitivity, lower_limit_kph, speed_ratio, a_ego)):
+    return None
+  if sensitivity <= 0.0 or v_ego < 0.0:
+    return None
+  ratio = speed_ratio if 0.5 < speed_ratio <= 1.2 else 1.0
+  try:
+    values = (model.position.x, model.position.y, model.position.z,
+              model.velocity.x, model.orientationRate.z)
+    if any(len(value) != ModelConstants.IDX_N for value in values):
+      return None
+    end = int(np.searchsorted(ModelConstants.T_IDXS, MAX_MODEL_TIME, side="right"))
+    position = np.asarray(values[:3], dtype=float)[:, :end]
+    velocity, yaw_rate = np.asarray(values[3:], dtype=float)[:, :end]
+  except (AttributeError, TypeError, ValueError):
+    return None
+  if not np.all(np.isfinite(position)):
+    return None
+  distance = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(position, axis=1), axis=0))]
+  max_distance = min(MAX_PREVIEW_DISTANCE, max(30.0, v_ego * MAX_MODEL_TIME))
+  valid = np.isfinite(velocity) & np.isfinite(yaw_rate) & (velocity >= MIN_MODEL_SPEED)
+  curvature = np.divide(yaw_rate, velocity, out=np.zeros_like(yaw_rate), where=valid)
+  response_time = RESPONSE_TIME + (max(0.0, a_ego) + APPROACH_DECEL) / (2.0 * APPROACH_JERK)
+  response_distance = v_ego * response_time
+  floor_ms = max(5.0, lower_limit_kph) * ratio / 3.6
+  lateral_budget = TARGET_LAT_ACCEL / float(np.clip(sensitivity, 0.5, 3.0))
+  best = CurveSpeed()
+  found_valid = False
+  for i in range(len(distance)):
+    start = min(max(i - 1, 0), len(distance) - 3)
+    neighbourhood = slice(start, start + 3)
+    if distance[i] > max_distance or not np.all(valid[neighbourhood]):
+      continue
+    if distance[start + 2] - distance[start] < 0.05:
+      continue
+    found_valid = True
+    curve = float(np.median(curvature[neighbourhood]))
+    if abs(curve) < 1e-6:
+      continue
+    curve_ms = max(floor_ms, math.sqrt(lateral_budget / abs(curve)))
+    braking_distance = max(0.0, distance[i] - response_distance)
+    approach_ms = math.sqrt(curve_ms**2 + 2.0 * APPROACH_DECEL * braking_distance)
+    approach_kph = min(NO_LIMIT_KPH, approach_ms * 3.6 / ratio)
+    if approach_kph < best.approach_kph:
+      best = CurveSpeed(approach_kph, min(NO_LIMIT_KPH, curve_ms * 3.6 / ratio),
+                        float(distance[i]), math.copysign(1.0, curve))
+  return best if found_valid else None
+
+class VisionCurveSpeed:
+  def __init__(self):
+    self.speed = NO_LIMIT_KPH
+    self.direction = 1.0
+    self.last_time = None
+    self.release_since = None
+
+  def update(self, result, now):
+    if not math.isfinite(now):
+      return self.speed * self.direction
+    dt = 0.0 if self.last_time is None else max(0.0, min(now - self.last_time, 0.2))
+    self.last_time = now
+    target = result.approach_kph if result is not None else NO_LIMIT_KPH
+    if target <= self.speed:
+      self.speed = target
+      if result is not None:
+        self.direction = result.direction
+      self.release_since = None
+    else:
+      if self.release_since is None:
+        self.release_since = now
+      if now - self.release_since >= RELEASE_HOLD:
+        self.speed = min(target, self.speed + RELEASE_RATE_KPH * dt)
+    return self.speed * self.direction
+# =====================================================================
+
 class CarrotMan:
   def __init__(self):
     print("************************************************CarrotMan init************************************************")
@@ -211,8 +310,8 @@ class CarrotMan:
     self.ip_address = "0.0.0.0"
     self.remote_addr = None
 
-    self.turn_speed_last = 250
-    self.curvatureFilter = MyMovingAverage(20)
+    # ▼▼▼ 구형 지우고 최신 vision_curve_speed 적용 ▼▼▼
+    self.vision_curve_speed = VisionCurveSpeed()
     self.carrot_curve_speed_params()
 
     self.carrot_zmq_thread = threading.Thread(target=self.carrot_cmd_zmq, args=[])
@@ -901,39 +1000,23 @@ class CarrotMan:
 
   def carrot_curve_speed(self, sm):
     self.carrot_curve_speed_params()
-    if not sm.alive['carState'] and not sm.alive['modelV2']:
-        return 250
-    #print(len(sm['modelV2'].orientationRate.z))
-    if len(sm['modelV2'].orientationRate.z) == 0:
+    if not sm.alive['carState'] or not sm.alive['modelV2']:
         return 250
 
-    return self.vturn_speed(sm['carState'], sm)
-
-  def vturn_speed(self, CS, sm):
-    TARGET_LAT_A = 1.9  # m/s^2
-
-    modelData = sm['modelV2']
+    # ▼▼▼ 내부 탑재된 최신 비전 커브 감속 로직 적용 ▼▼▼
+    CS = sm['carState']
     v_ego = max(CS.vEgo, 0.1)
-    # Set the curve sensitivity
-    orientation_rate = np.array(modelData.orientationRate.z) * self.autoCurveSpeedFactor
-    velocity = np.array(modelData.velocity.x)
+    a_ego = CS.aEgo
+    now_time = time.monotonic()
 
-    # Get the maximum lat accel from the model
-    max_index = np.argmax(np.abs(orientation_rate))
-    curv_direction = np.sign(orientation_rate[max_index])
-    max_pred_lat_acc = np.amax(np.abs(orientation_rate) * velocity)
+    # 내부 함수 curve_speed 호출
+    curve_res = curve_speed(sm['modelV2'], v_ego, a_ego=a_ego)
+    
+    # 내부 클래스 VisionCurveSpeed 업데이트 호출
+    turnSpeed = self.vision_curve.update(curve_res, now_time)
 
-    # Get the maximum curve based on the current velocity
-    max_curve = max_pred_lat_acc / (v_ego**2)
-
-    # Set the target lateral acceleration
-    adjusted_target_lat_a = TARGET_LAT_A * self.autoCurveSpeedAggressiveness
-
-    # Get the target velocity for the maximum curve
-    #turnSpeed = max(abs(adjusted_target_lat_a / max_curve)**0.5  * 3.6, self.autoCurveSpeedLowerLimit)
-    turnSpeed = max(abs(adjusted_target_lat_a / max_curve)**0.5  * 3.6, 5)
-    turnSpeed = min(turnSpeed, 250)
-    return turnSpeed * curv_direction
+    return turnSpeed
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def carrot_navi_thread(self):
     self.carrot_navi_tcp_server(7712)
