@@ -1000,23 +1000,18 @@ class CarrotMan:
 
   def carrot_curve_speed(self, sm):
     self.carrot_curve_speed_params()
-    if not sm.alive['carState'] or not sm.alive['modelV2']:
-        return 250
+    if not all(sm.alive[name] and sm.valid[name] for name in ('carState', 'modelV2')):
+      return self.vision_curve_speed.update(None, time.monotonic())
 
-    # ▼▼▼ 내부 탑재된 최신 비전 커브 감속 로직 적용 ▼▼▼
-    CS = sm['carState']
-    v_ego = max(CS.vEgo, 0.1)
-    a_ego = CS.aEgo
-    now_time = time.monotonic()
+    return self.vturn_speed(sm['carState'], sm)
 
-    # 내부 함수 curve_speed 호출
-    curve_res = curve_speed(sm['modelV2'], v_ego, a_ego=a_ego)
-    
-    # 내부 클래스 VisionCurveSpeed 업데이트 호출
-    turnSpeed = self.vision_curve.update(curve_res, now_time)
-
-    return turnSpeed
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+  def vturn_speed(self, CS, sm):
+    # 최신 Vision Curve Logic 적용 (회원님 설정값 완벽 연동)
+    result = curve_speed(sm['modelV2'], CS.vEgo, self.autoCurveSpeedFactor,
+                         self.carrot_serv.autoCurveSpeedLowerLimit,
+                         speed_ratio=getattr(CS, 'vCluRatio', 1.0), a_ego=CS.aEgo)
+                         
+    return self.vision_curve_speed.update(result, time.monotonic())
 
   def carrot_navi_thread(self):
     self.carrot_navi_tcp_server(7712)
