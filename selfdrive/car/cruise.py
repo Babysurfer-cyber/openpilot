@@ -715,25 +715,25 @@ class VCruiseCarrot:
           self.was_auto_cam = False      # 카메라 통과 여부 플래그
           self.pending_cam_limit = 0     # 카메라 통과 후 적용할 속도 메모리
 
-        # 오토모드 전용 변수 (순정 4A3 카메라 신호만 신뢰)
+        # ▼▼▼ [오토모드(5번) 전용 로직] 4BE 신호 완전 무시, 오직 4A3 카메라만 신뢰 ▼▼▼
         auto_is_cam = is_car_cam
         auto_raw_limit = CS.speedLimit if CS.speedLimit > 0 else 0
 
-        # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지 (4BE 신호 완전 무시)
+        # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
         effective_limit = self.prev_limit_speed_for_auto
 
         if auto_is_cam:
           self.was_auto_cam = True  # 카메라 구간 진입 기억
           if auto_raw_limit > 0:
-            self.pending_cam_limit = auto_raw_limit  # 현재 카메라 속도를 암기만 해둠!
+            self.pending_cam_limit = auto_raw_limit  # 통과 시점 적용을 위해 암기만 해둠!
 
         else:
           if self.was_auto_cam:
-            # 1. 4A3 카메라를 방금 통과함! -> 보류(암기)해둔 카메라 속도를 드디어 적용
+            # 1. 4A3 카메라 방금 통과 완료! -> 암기해둔 속도를 드디어 적용
             if self.pending_cam_limit > 0:
               effective_limit = self.pending_cam_limit
             self.was_auto_cam = False
-          # 2. 카메라가 없는 일반 구간(4BE) 진입 및 속도 표지판 변경 시 무조건 100% 무시! (effective_limit 유지됨)
+          # 2. 카메라가 없는 일반 구간(4BE) 진입 및 속도 표지판 변경 시 무조건 아무것도 안 함! (완벽 무시)
 
         # -------------------------------------------------------------------
         # 여기서부터 오프셋 계산 (기존 규칙 1,2,3 100% 유지)
