@@ -89,11 +89,11 @@ class DesireHelper:
       if v_ego_kph <= 60.0:
         dynamic_time = self.modelTurnSpeedFactor
       elif v_ego_kph >= 100.0:
-        # 시속 100km/h 이상일 때 최대 4.0초를 더해 한계치 고정
-        dynamic_time = self.modelTurnSpeedFactor + 4.0
+        # 시속 100km/h 이상일 때 최대 2.0초를 더해 한계치 고정
+        dynamic_time = self.modelTurnSpeedFactor + 2.0
       else:
-        # 시속 60부터 100까지 1km/h당 0.1초씩 증가 (40 * 0.1 = 4.0)
-        dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 60.0) * 0.1
+        # 시속 60부터 100까지 1km/h당 0.05초씩 증가 (40 * 0.05 = 2.0)
+        dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 60.0) * 0.05
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       # 원래 self.modelTurnSpeedFactor가 들어가던 자리에 dynamic_time 적용!
