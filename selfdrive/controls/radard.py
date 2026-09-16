@@ -860,23 +860,15 @@ class RadarD:
 
 
   def corner_radar(self, CS, md, lead_dict):
-    # ▼▼▼ [핵심 보정 추가] 코너 레이더 0.3초 지연 보정 (Kinematic Rotation) ▼▼▼
-    # 레이더의 지연 시간(0.3초) 동안 내 차가 커브를 돌며 틀어진 각도(Yaw)를 계산하여,
-    # 과거의 레이더 좌표를 현재 내 차의 시야 방향에 맞게 삼각함수로 회전시켜(보정) 줍니다.
-    CORNER_RADAR_DELAY = 0.5  # 레이더 지연 시간 0.n초
-    yaw_rate = CS.yawRate     # 현재 내 차의 회전 각속도 (rad/s)
-    theta = yaw_rate * CORNER_RADAR_DELAY
-    
-    cos_t = math.cos(theta)
-    sin_t = math.sin(theta)
+    # ▼▼▼ [수정] 인위적인 삼각함수 회전 보정(이중 보정) 완전 삭제! ▼▼▼
+    # 차량의 순정 레이더는 이미 Yaw 보정이 완료된 좌표를 쏴줍니다.
+    # 여기서 각도를 또 틀어버리면 '안쪽 차'가 내 차선으로 빨려 들어오는 치명적 착시가 발생합니다.
+    raw_left_lat = CS.leftLatDist
+    left_long    = CS.leftLongDist
 
-    # 좌표계 회전 변환 (이 보정이 없으면 직진하는 상대 차가 내 쪽으로 덮쳐오는 착시가 발생함)
-    raw_left_lat = CS.leftLatDist * cos_t - CS.leftLongDist * sin_t
-    left_long    = CS.leftLongDist * cos_t + CS.leftLatDist * sin_t
-
-    raw_right_lat = CS.rightLatDist * cos_t - CS.rightLongDist * sin_t
-    right_long    = CS.rightLongDist * cos_t + CS.rightLatDist * sin_t
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    raw_right_lat = CS.rightLatDist
+    right_long    = CS.rightLongDist
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # -------------------------------------------------------------------------
     # 💡 [추가] 앞차 정보 기반 동적 최대 감시 거리 설정 (저속/정체구간 노이즈 제거)
@@ -885,6 +877,7 @@ class RadarD:
       dynamic_max_long = min(30.0, lead_dict['dRel'])
     else:
       dynamic_max_long = 30.0
+
 
     # 옆차가 설정된 한계선(dynamic_max_long)보다 멀리 있으면 아예 감시망에서 제외!
     if left_long > dynamic_max_long:
