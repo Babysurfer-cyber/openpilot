@@ -1206,8 +1206,9 @@ class CarrotServ:
     msg = messaging.new_message('carrotMan')
     msg.valid = True
     msg.carrotMan.activeCarrot = self.active_carrot
-    # ▼▼▼ [핵심 2] 화면 제한속도(표지판)는 보류 없이 즉각(raw_limit) 반응하도록 수정! ▼▼▼
-    msg.carrotMan.nRoadLimitSpeed = int(raw_limit)
+    # ▼▼▼ [핵심 수정] 5번 오토모드에서는 크루즈 속도 변경 시점(current_limit)에만 화면 표지판(AUTO 문구 포함) 동기화! ▼▼▼
+    display_limit = current_limit if my_driving_mode == 5 else raw_limit
+    msg.carrotMan.nRoadLimitSpeed = int(display_limit)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     msg.carrotMan.remote = remote_ip
     # ▼▼▼ [핵심 4] 화면(UI) 변수에 중복 덮어쓰기가 제거되었습니다! ▼▼▼
@@ -1252,8 +1253,8 @@ class CarrotServ:
       instruction = inst.navInstructionCarrot
       instruction.distanceRemaining = self.nGoPosDist
       instruction.timeRemaining = self.nGoPosTime
-      # ▼▼▼ [핵심 3] 내비게이션 안내용 속도 표지판도 즉각 반응 ▼▼▼
-      instruction.speedLimit = raw_limit / 3.6 if raw_limit > 0 else 0
+      # ▼▼▼ [핵심 3] 내비게이션 안내용 속도 표지판도 완벽 동기화 ▼▼▼
+      instruction.speedLimit = display_limit / 3.6 if display_limit > 0 else 0
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       instruction.maneuverDistance = float(self.nTBTDist)
       instruction.maneuverSecondaryText = self.szNearDirName
