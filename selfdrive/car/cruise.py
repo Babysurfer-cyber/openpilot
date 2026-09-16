@@ -733,7 +733,10 @@ class VCruiseCarrot:
             if self.pending_cam_limit > 0:
               effective_limit = self.pending_cam_limit
             self.was_auto_cam = False
-          # 2. 카메라가 없는 일반 구간(4BE) 진입 및 속도 표지판 변경 시 무조건 아무것도 안 함! (완벽 무시)
+          else:
+            # ▼▼▼ [핵심 추가] 카메라는 없지만 순수 4A3 제한속도가 변경된 경우(고속도로 진입 등) 즉시 적용! ▼▼▼
+            if auto_raw_limit > 0 and auto_raw_limit != self.prev_limit_speed_for_auto:
+              effective_limit = auto_raw_limit
 
         # -------------------------------------------------------------------
         # 여기서부터 오프셋 계산 (기존 규칙 1,2,3 100% 유지)
