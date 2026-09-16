@@ -860,13 +860,21 @@ class RadarD:
 
 
   def corner_radar(self, CS, md, lead_dict):
-    # ▼▼▼ [수정] 인위적인 삼각함수 회전 보정(이중 보정) 완전 삭제! ▼▼▼
-    # 차량의 순정 레이더는 이미 Yaw 보정이 완료된 좌표를 쏴줍니다.
-    # 여기서 각도를 또 틀어버리면 '안쪽 차'가 내 차선으로 빨려 들어오는 치명적 착시가 발생합니다.
-    raw_left_lat = CS.leftLatDist
+    # ▼▼▼ [궁극의 보정] 차체 미끄러짐 각도(Slip Angle) 동적 보정 ▼▼▼
+    # 커브길에서 차체 코(Nose)가 안쪽으로 파고드는 현상을 수학적으로 상쇄합니다.
+    # yawRate(회전각속도)와 거리(X)를 비례하여, 안쪽으로 쏠린 시야를 밖으로 '밀어냅니다(+)'
+    
+    SLIP_FACTOR = 0.15  # 💡 차체 쏠림 보정 계수 (차량에 따라 0.10 ~ 0.20 사이 튜닝 가능)
+    
+    # 좌회전(yawRate 양수)이면 양수 오프셋, 우회전(yawRate 음수)이면 음수 오프셋 발생
+    yaw_offset_left = CS.leftLongDist * CS.yawRate * SLIP_FACTOR
+    yaw_offset_right = CS.rightLongDist * CS.yawRate * SLIP_FACTOR
+
+    # 기존의 레이더 좌표에 요(Yaw) 오프셋을 '더해서(+)' 시야를 밖으로 활짝 펴줍니다!
+    raw_left_lat = CS.leftLatDist + yaw_offset_left
     left_long    = CS.leftLongDist
 
-    raw_right_lat = CS.rightLatDist
+    raw_right_lat = CS.rightLatDist + yaw_offset_right
     right_long    = CS.rightLongDist
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
