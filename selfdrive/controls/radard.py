@@ -419,6 +419,9 @@ class RadarD:
     self.v_ego_hist = deque([0.0], maxlen=int(round(delay / DT_MDL))+1)
     self.last_v_ego_frame = -1
 
+    # ▼▼▼ [수정] 1초(20프레임) 분량의 쏠림 상태(yawRate)를 넉넉히 기억할 타임머신 큐 ▼▼▼
+    self.yaw_rate_hist = deque([0.0]*20, maxlen=20)
+
     self.radar_state: capnp._DynamicStructBuilder | None = None
     self.radar_state_valid = False
 
@@ -458,6 +461,10 @@ class RadarD:
     if sm.recv_frame['carState'] != self.last_v_ego_frame:
       self.v_ego = sm['carState'].vEgo
       self.v_ego_hist.append(self.v_ego)
+      
+      # ▼▼▼ [추가] 매 프레임마다 현재의 쏠림 상태를 큐에 밀어 넣습니다 ▼▼▼
+      self.yaw_rate_hist.append(sm['carState'].yawRate)  
+      
       self.last_v_ego_frame = sm.recv_frame['carState']
 
     if vision_only_mode:
@@ -866,13 +873,21 @@ class RadarD:
 
 
   def corner_radar(self, CS, md, lead_dict):
-    # ▼▼▼ [진짜 물리 복원] 차체 슬립 오차 보정을 위한 더하기(+) 원복 ▼▼▼
-    # 내 차가 커브 안쪽을 파고들 때 좁아지는 시야 오차를 상쇄하기 위해서는
-    # 회원님이 최초에 설계하셨던 더하기(+) 공식이 물리적으로 100% 정답이었습니다!
-    COMP_FACTOR = 0.15  
+    COMP_FACTOR = 0.7  
     
-    yaw_offset_left = CS.leftLongDist * CS.yawRate * COMP_FACTOR
-    yaw_offset_right = CS.rightLongDist * CS.yawRate * COMP_FACTOR
+    # ▼▼▼ [확장형 타임머신] 원하는 시간만큼 과거의 쏠림 상태(yawRate) 호출 ▼▼▼
+    # 1초는 20프레임입니다. 나중에 1초로 늘리고 싶다면 DELAY_FRAMES = 20 으로 바꾸시면 됩니다.
+    DELAY_FRAMES = 10  # 💡 현재는 0.5초(10프레임) 전 데이터 사용
+    
+    if len(self.yaw_rate_hist) >= DELAY_FRAMES:
+      # -1은 가장 최근, -DELAY_FRAMES는 정확히 원하는 프레임(시간) 전의 데이터를 의미합니다.
+      past_yaw_rate = self.yaw_rate_hist[-DELAY_FRAMES] 
+    else:
+      past_yaw_rate = CS.yawRate
+      
+    # 현재 각도가 아닌 우리가 불러온 과거 각도로 보정 계수 계산!
+    yaw_offset_left = CS.leftLongDist * past_yaw_rate * COMP_FACTOR
+    yaw_offset_right = CS.rightLongDist * past_yaw_rate * COMP_FACTOR
 
     # 수학적으로 완벽한 더하기(+) 적용
     raw_left_lat = CS.leftLatDist + yaw_offset_left
