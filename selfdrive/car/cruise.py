@@ -717,7 +717,11 @@ class VCruiseCarrot:
 
         # ▼▼▼ [오토모드(5번) 전용 로직] 4BE 신호 완전 무시, 오직 4A3 카메라만 신뢰 ▼▼▼
         auto_is_cam = is_car_cam
-        auto_raw_limit = CS.speedLimit if CS.speedLimit > 0 else 0
+        # ▼▼▼ [핵심] 4BE(비전 표지판) 완벽 무시를 위해 순수 내비(4A3) 신호인 navSpeedLimit 사용 ▼▼▼
+        if hasattr(CS, 'navSpeedLimit'):
+          auto_raw_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
+        else:
+          auto_raw_limit = CS.speedLimit if CS.speedLimit > 0 else 0
 
         # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
         effective_limit = self.prev_limit_speed_for_auto
