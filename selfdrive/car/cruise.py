@@ -725,11 +725,7 @@ class VCruiseCarrot:
         if auto_is_cam:
           self.was_auto_cam = True  # 카메라 구간 진입 기억
           if auto_raw_limit > 0:
-            self.pending_cam_limit = auto_raw_limit  # 현재 카메라 속도를 암기해둠!
-          
-          # [예외] 시스템 최초 작동 시(저장된 속도가 0일 때) 만난 카메라는 통과까지 기다리지 않고 즉시 적용하여 시스템을 깨움!
-          if self.prev_limit_speed_for_auto <= 0 and self.pending_cam_limit > 0:
-            effective_limit = self.pending_cam_limit
+            self.pending_cam_limit = auto_raw_limit  # 현재 카메라 속도를 암기만 해둠!
 
         else:
           if self.was_auto_cam:
