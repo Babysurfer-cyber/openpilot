@@ -863,7 +863,7 @@ class RadarD:
     # ▼▼▼ [핵심 보정 추가] 코너 레이더 0.3초 지연 보정 (Kinematic Rotation) ▼▼▼
     # 레이더의 지연 시간(0.3초) 동안 내 차가 커브를 돌며 틀어진 각도(Yaw)를 계산하여,
     # 과거의 레이더 좌표를 현재 내 차의 시야 방향에 맞게 삼각함수로 회전시켜(보정) 줍니다.
-    CORNER_RADAR_DELAY = 1.5  # 레이더 지연 시간 0.n초
+    CORNER_RADAR_DELAY = 0.5  # 레이더 지연 시간 0.n초
     yaw_rate = CS.yawRate     # 현재 내 차의 회전 각속도 (rad/s)
     theta = yaw_rate * CORNER_RADAR_DELAY
     
@@ -972,11 +972,19 @@ class RadarD:
     left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
+    # 💡 [핵심 수학 보정] 현재 거리(long)에 해당하는 도로의 휨 정도(path_y)를 모델에서 추출
+    left_path_y = float(np.interp(left_long, md.position.x, md.position.y)) if md is not None and len(md.position.x) > 0 else 0.0
+    right_path_y = float(np.interp(right_long, md.position.x, md.position.y)) if md is not None and len(md.position.x) > 0 else 0.0
+
+    # 1. 방어막(lane_edge) 판별을 위한 순수 위치
+    # (이미 get_lane_edge 함수가 휜 차선을 기준으로 방어막을 만들기 때문에, 여기서는 raw 값 유지)
     compensated_left_lat = float(abs(raw_left_lat))
     compensated_right_lat = float(abs(raw_right_lat))
     
-    comp_left_lat = compensated_left_lat
-    comp_right_lat = compensated_right_lat
+    # 2. 횡속도(v_lat) 계산을 위한 보정 위치 (★착시 완벽 제거★)
+    # 레이더 직선 가로 거리에서 도로가 휜 만큼(path_y)을 빼주어, 차선 기준의 진짜 가로 거리를 구함
+    comp_left_lat = float(abs(raw_left_lat - left_path_y))
+    comp_right_lat = float(abs(raw_right_lat - right_path_y))
     # ▲▲▲ [여기까지 누락된 코드 복구!] ▲▲▲
 
     # [수정] 리턴 값 3개로 받기
