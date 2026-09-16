@@ -765,7 +765,11 @@ class VCruiseCarrot:
               
             # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
-              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit))
+              # 감속폭이 클 때(크루즈 속도와 새 제한속도 차이가 30 이상)는 급제동 방지를 위해 오프셋 20 보장
+              if (v_cruise_kph - effective_limit) >= 30.0:
+                self.user_speed_offset = 20.0
+              else:
+                self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit))
 
           self.prev_limit_speed_for_auto = effective_limit
           self.auto_mode_applied = True
