@@ -742,14 +742,16 @@ class VCruiseCarrot:
         # -------------------------------------------------------------------
         # 여기서부터 오프셋 계산 (기존 규칙 1,2,3 100% 유지)
         if effective_limit > 0:
-          # 1. 수동 조작 오프셋 업데이트 (무제한 허용)
+          # 1. 수동 조작 오프셋 업데이트 (무제한 허용) - ★조건 개선!★
+          # 제한속도 변경과 무관하게 버튼을 눌렀다면 무조건 오프셋 갱신!
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
-              self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
+              # ★중요: 카메라 구간 안에서 조작하더라도, '현재 기억하고 있는 기준 속도(effective_limit)'를 바탕으로 오프셋을 계산합니다.
+              self.user_speed_offset = v_cruise_kph - effective_limit
               self.last_auto_speed = v_cruise_kph
 
-          # 2. 제한속도 변경 감지 및 오프셋 동기화
-          if effective_limit != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
+          # 2. 제한속도 변경 감지 시 오프셋 동기화 (버튼 조작이 아닐 때만)
+          if (effective_limit != self.prev_limit_speed_for_auto) and not (button_type in [ButtonType.accelCruise, ButtonType.decelCruise]):
             
             # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
             if self.prev_limit_speed_for_auto <= 0:
@@ -766,8 +768,8 @@ class VCruiseCarrot:
             elif effective_limit < self.prev_limit_speed_for_auto:
               self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit))
 
-            self.prev_limit_speed_for_auto = effective_limit
-            self.auto_mode_applied = True
+          self.prev_limit_speed_for_auto = effective_limit
+          self.auto_mode_applied = True
 
           # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
           v_cruise_kph = float(effective_limit + self.user_speed_offset)
