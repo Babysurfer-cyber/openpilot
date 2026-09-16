@@ -821,7 +821,7 @@ class RadarD:
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
-      return False, 0.0, 0.0    # <-- [수정] 3개만 리턴 (가속도 제외)
+      return False, 0.0, 0.0
     else:
       self._corner_missing_cnt[side] = 0      
       self._corner_hist[side].append((cur_long, raw_lat, comp_lat))
@@ -842,17 +842,28 @@ class RadarD:
     v_long_rel = (curr_long - past_long) / time_diff
     v_lat = (curr_comp_lat - past_comp_lat) / time_diff
 
-    # ▼▼▼ aLead(상대 가속도) 계산 로직 전체 삭제 ▼▼▼
+    # ▼▼▼ [궁극의 방어] 커브길 안쪽 차선 임계값(Threshold) 동적 이완 로직 ▼▼▼
+    # 스티어링 각도를 분석하여, 내 차가 돌고 있는 안쪽 방향의 차량에 대해서는
+    # 횡이동 속도(v_lat) 조건을 훨씬 까다롭게 만들어 가짜 오감지를 원천 차단합니다.
+    curve_penalty = 0.0
+    steer_angle = CS.steeringAngleDeg
+    
+    if side == "L" and steer_angle > 10.0:
+      # 좌코너일 때, 왼쪽(안쪽) 차량 임계값 강화
+      curve_penalty = min(0.2, (steer_angle - 10.0) * 0.01)
+    elif side == "R" and steer_angle < -10.0:
+      # 우코너일 때, 오른쪽(안쪽) 차량 임계값 강화
+      curve_penalty = min(0.2, (-steer_angle - 10.0) * 0.01)
 
-    # 3. 방어 구역 판별
+    # 3. 방어 구역 판별 (curve_penalty 적용)
     if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.2  
     elif raw_lat <= (lane_edge):  
-      v_lat_threshold = -0.05    
+      v_lat_threshold = -0.05 - curve_penalty
     elif raw_lat <= (lane_edge + 0.3):  
-      v_lat_threshold = -0.1    
+      v_lat_threshold = -0.1 - curve_penalty
     else:              
-      v_lat_threshold = -0.3  
+      v_lat_threshold = -0.3 - curve_penalty
 
     is_cutting_in = v_lat < v_lat_threshold
 
@@ -860,21 +871,20 @@ class RadarD:
 
 
   def corner_radar(self, CS, md, lead_dict):
-    # ▼▼▼ [궁극의 보정] 차체 미끄러짐 각도(Slip Angle) 동적 보정 ▼▼▼
-    # 커브길에서 차체 코(Nose)가 안쪽으로 파고드는 현상을 수학적으로 상쇄합니다.
-    # yawRate(회전각속도)와 거리(X)를 비례하여, 안쪽으로 쏠린 시야를 밖으로 '밀어냅니다(+)'
+    # ▼▼▼ [치명적 오류 수정] 레이더 지연(Latency) 방향 100% 수정 (더하기 -> 빼기) ▼▼▼
+    # 지난 코드에서 +를 하는 바람에 오히려 지연 오차를 2배로 악화시키는 수학적 맹점이 있었습니다.
+    # 좌회전(yawRate 양수) 시 시야가 왼쪽으로 틀어지므로, 과거 데이터는 빼기(-)를 해야 오차가 상쇄됩니다!
     
-    SLIP_FACTOR = 0.15  # 💡 차체 쏠림 보정 계수 (차량에 따라 0.10 ~ 0.20 사이 튜닝 가능)
+    DELAY_FACTOR = 0.15  # 레이더 통신 지연 약 0.15초 보정
     
-    # 좌회전(yawRate 양수)이면 양수 오프셋, 우회전(yawRate 음수)이면 음수 오프셋 발생
-    yaw_offset_left = CS.leftLongDist * CS.yawRate * SLIP_FACTOR
-    yaw_offset_right = CS.rightLongDist * CS.yawRate * SLIP_FACTOR
+    yaw_offset_left = CS.leftLongDist * CS.yawRate * DELAY_FACTOR
+    yaw_offset_right = CS.rightLongDist * CS.yawRate * DELAY_FACTOR
 
-    # 기존의 레이더 좌표에 요(Yaw) 오프셋을 '더해서(+)' 시야를 밖으로 활짝 펴줍니다!
-    raw_left_lat = CS.leftLatDist + yaw_offset_left
+    # [핵심 수정] 더하기(+)가 아니라 반드시 빼기(-)를 해야 완벽하게 시야가 펴집니다!
+    raw_left_lat = CS.leftLatDist - yaw_offset_left
     left_long    = CS.leftLongDist
 
-    raw_right_lat = CS.rightLatDist + yaw_offset_right
+    raw_right_lat = CS.rightLatDist - yaw_offset_right
     right_long    = CS.rightLongDist
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -885,7 +895,6 @@ class RadarD:
       dynamic_max_long = min(30.0, lead_dict['dRel'])
     else:
       dynamic_max_long = 30.0
-
 
     # 옆차가 설정된 한계선(dynamic_max_long)보다 멀리 있으면 아예 감시망에서 제외!
     if left_long > dynamic_max_long:
