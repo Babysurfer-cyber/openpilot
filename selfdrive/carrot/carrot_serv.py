@@ -958,7 +958,15 @@ class CarrotServ:
     if my_driving_mode == 5:
       # 오토모드 안내음 전용 변수
       auto_is_cam = is_car_cam
-      auto_raw_limit = CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else 0
+      if CS is not None:
+        # ▼▼▼ [핵심] 4BE(비전 표지판) 완벽 무시를 위해 순수 내비(4A3) 신호인 navSpeedLimit 사용 ▼▼▼
+        if hasattr(CS, 'navSpeedLimit'):
+          auto_raw_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
+        else:
+          auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+      else:
+        auto_raw_limit = 0
+        
       if not hasattr(self, 'was_auto_cam_serv'): self.was_auto_cam_serv = False
 
       if auto_is_cam:
@@ -975,7 +983,7 @@ class CarrotServ:
           current_limit = auto_raw_limit
           self.was_auto_cam_serv = False
         else:
-          # ▼▼▼ [핵심 추가] 카메라 없는 순수 4A3 고속도로 제한속도 변경 시 즉각 안내음 발생! ▼▼▼
+          # ▼▼▼ [핵심 추가] 카메라는 없지만 순수 4A3 제한속도가 변경된 경우(고속도로 진입 등) 즉시 적용! ▼▼▼
           if auto_raw_limit > 0 and auto_raw_limit != self.prev_speed_limit:
             current_limit = auto_raw_limit
           else:
