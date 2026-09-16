@@ -701,20 +701,10 @@ class VCruiseCarrot:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
         
-      # ▼▼▼ [핵심] 순정 내비 뿐만 아니라 스마트폰 앱 카메라도 통과 시점까지 완벽하게 보류! ▼▼▼
+      # 화면 UI 처리를 위한 변수
       is_car_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
       is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
       self.is_cam = is_car_cam or is_app_cam
-
-      # 💡 [데이터용] 화면 표지판은 발견 즉시 신호를 받아와야 하므로 raw_limit에 즉각 반영!
-      if is_car_cam:
-        raw_limit = CS.speedLimit
-      elif is_app_cam:
-        raw_limit = self.xSpdLimit
-      elif CS.speedLimit > 0:
-        raw_limit = CS.speedLimit
-      else:
-        raw_limit = self.nRoadLimitSpeed
 
       if getattr(self, 'current_driving_mode', 3) == 5:
         if not hasattr(self, 'prev_limit_speed_for_auto'):
@@ -722,6 +712,76 @@ class VCruiseCarrot:
           self.auto_mode_applied = False
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
+          self.was_auto_cam = False      # 카메라 통과 여부 플래그
+          self.pending_cam_limit = 0     # 카메라 통과 후 적용할 속도 메모리
+
+        # 오토모드 전용 변수 (순정 4A3 카메라 신호만 신뢰)
+        auto_is_cam = is_car_cam
+        auto_raw_limit = CS.speedLimit if CS.speedLimit > 0 else 0
+
+        # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지 (4BE 신호 완전 무시)
+        effective_limit = self.prev_limit_speed_for_auto
+
+        if auto_is_cam:
+          self.was_auto_cam = True  # 카메라 구간 진입 기억
+          if auto_raw_limit > 0:
+            self.pending_cam_limit = auto_raw_limit  # 현재 카메라 속도를 암기해둠!
+          
+          # [예외] 시스템 최초 작동 시(저장된 속도가 0일 때) 만난 카메라는 통과까지 기다리지 않고 즉시 적용하여 시스템을 깨움!
+          if self.prev_limit_speed_for_auto <= 0 and self.pending_cam_limit > 0:
+            effective_limit = self.pending_cam_limit
+
+        else:
+          if self.was_auto_cam:
+            # 1. 4A3 카메라를 방금 통과함! -> 보류(암기)해둔 카메라 속도를 드디어 적용
+            if self.pending_cam_limit > 0:
+              effective_limit = self.pending_cam_limit
+            self.was_auto_cam = False
+          # 2. 카메라가 없는 일반 구간(4BE) 진입 및 속도 표지판 변경 시 무조건 100% 무시! (effective_limit 유지됨)
+
+        # -------------------------------------------------------------------
+        # 여기서부터 오프셋 계산 (기존 규칙 1,2,3 100% 유지)
+        if effective_limit > 0:
+          # 1. 수동 조작 오프셋 업데이트 (무제한 허용)
+          if self.auto_mode_applied and self.last_auto_speed > 0:
+            if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
+              self.user_speed_offset = v_cruise_kph - self.prev_limit_speed_for_auto
+              self.last_auto_speed = v_cruise_kph
+
+          # 2. 제한속도 변경 감지 및 오프셋 동기화
+          if effective_limit != self.prev_limit_speed_for_auto or not self.auto_mode_applied:
+            
+            # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
+            if self.prev_limit_speed_for_auto <= 0:
+              if (v_cruise_kph - effective_limit) >= 20.0:
+                self.user_speed_offset = 20.0
+              else:
+                self.user_speed_offset = max(min(float(v_cruise_kph - effective_limit), 10.0), -10.0)
+                
+            # [규칙 2] 속도 상향 (가속 구간)
+            elif effective_limit > self.prev_limit_speed_for_auto:
+              self.user_speed_offset = max(min(float(v_cruise_kph - self.prev_limit_speed_for_auto), 10.0), float(v_cruise_kph - effective_limit))
+              
+            # [규칙 3] 속도 하향 (감속 구간)
+            elif effective_limit < self.prev_limit_speed_for_auto:
+              self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit))
+
+            self.prev_limit_speed_for_auto = effective_limit
+            self.auto_mode_applied = True
+
+          # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
+          v_cruise_kph = float(effective_limit + self.user_speed_offset)
+          self.last_auto_speed = v_cruise_kph
+
+        else:
+          self.prev_limit_speed_for_auto = 0
+          self.auto_mode_applied = False
+          self.user_speed_offset = 10.0
+          self.last_auto_speed = 0.0
+        
+    except Exception as e:
+      self._add_log(f"Auto Mode Error: {e}")
+    # ==============================================================
 
         # ▼▼▼ [추가] 오토모드 속도 제어 전용 변수 (UI 화면 변수와 완벽 분리) ▼▼▼
         auto_is_cam = is_car_cam
