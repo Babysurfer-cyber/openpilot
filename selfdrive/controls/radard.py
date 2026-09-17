@@ -419,9 +419,6 @@ class RadarD:
     self.v_ego_hist = deque([0.0], maxlen=int(round(delay / DT_MDL))+1)
     self.last_v_ego_frame = -1
 
-    # ▼▼▼ [수정] 1초(20프레임) 분량의 쏠림 상태(yawRate)를 넉넉히 기억할 타임머신 큐 ▼▼▼
-    self.yaw_rate_hist = deque([0.0]*20, maxlen=20)
-
     self.radar_state: capnp._DynamicStructBuilder | None = None
     self.radar_state_valid = False
 
@@ -461,9 +458,6 @@ class RadarD:
     if sm.recv_frame['carState'] != self.last_v_ego_frame:
       self.v_ego = sm['carState'].vEgo
       self.v_ego_hist.append(self.v_ego)
-      
-      # ▼▼▼ [추가] 매 프레임마다 현재의 쏠림 상태를 큐에 밀어 넣습니다 ▼▼▼
-      self.yaw_rate_hist.append(sm['carState'].yawRate)  
       
       self.last_v_ego_frame = sm.recv_frame['carState']
 
@@ -821,8 +815,8 @@ class RadarD:
       self.radar_state.leadOne = chosen
       self.radar_detected = detected
 
-  def _corner_update_state(self, CS, side: str, cur_long: float, raw_lat: float, comp_lat: float, lane_edge: float, max_lat_dist: float):
-    # 1. 값이 없거나 너무 멀면 대기 (위치 판별은 날것의 raw_lat 사용!)
+  def _corner_update_state(self, CS, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
+    # 1. 값이 없거나 너무 멀면 대기 (위치 판별은 날것의 raw_lat 사용)
     if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 30.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
@@ -830,7 +824,7 @@ class RadarD:
       return False, 0.0, 0.0
     else:
       self._corner_missing_cnt[side] = 0      
-      self._corner_hist[side].append((cur_long, raw_lat, comp_lat))
+      self._corner_hist[side].append((cur_long, raw_lat))
 
     h = self._corner_hist[side]
     n = len(h)
@@ -839,123 +833,66 @@ class RadarD:
 
     past_long = (h[0][0] + h[1][0]) / 2.0
     curr_long = (h[-1][0] + h[-2][0]) / 2.0
-    
-    past_comp_lat  = (h[0][2] + h[1][2]) / 2.0
-    curr_comp_lat  = (h[-1][2] + h[-2][2]) / 2.0
+    past_lat  = (h[0][1] + h[1][1]) / 2.0
+    curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
     
     time_diff = max((n - 2) * DT_MDL, DT_MDL) 
 
     v_long_rel = (curr_long - past_long) / time_diff
-    v_lat = (curr_comp_lat - past_comp_lat) / time_diff
+    v_lat_measured = (curr_lat - past_lat) / time_diff
 
-    # ▼▼▼ [궁극의 철벽 방어] 커브 진입/탈출 시 양방향 대칭 쉴드 적용 ▼▼▼
-    # 핸들을 꺾거나 풀 때 발생하는 '고무줄 튕김(Snap-back) 가짜 속도'를 무시하기 위해,
-    # 안쪽/바깥쪽 차별 없이 스티어링 각도에 비례하여 양쪽 모두 방어막(Threshold)을 대폭 이완합니다.
-    curve_penalty = 0.0
-    abs_steer = abs(CS.steeringAngleDeg)
-    
-    if abs_steer > 10.0:
-      curve_penalty = min(0.3, (abs_steer - 10.0) * 0.015)
+    # =========================================================================
+    # ▼▼▼ [궁극의 물리 보정] 상대속도와 곡률에 의한 '가짜 횡속도' 원천 제거 ▼▼▼
+    # 레이더 0.7초 지연에 의해 발생하는 가짜 횡속도 = 상대속도 * yawRate * 0.7
+    # =========================================================================
+    RADAR_DELAY = 0.7
+    false_v_lat = v_long_rel * CS.yawRate * RADAR_DELAY
 
-    # 3. 방어 구역 판별 (양쪽 모두 curve_penalty 혜택 적용)
+    # raw_lat은 절댓값(중앙 기준 거리)이므로, 좌우측에 따라 부호를 반대로 적용해 상쇄시킵니다.
+    # 회원님의 통찰대로 안쪽/바깥쪽 모두 방향에 맞게 완벽히 역보정됩니다!
+    if side == "L":
+        v_lat_corrected = v_lat_measured - false_v_lat
+    else: # side == "R"
+        v_lat_corrected = v_lat_measured + false_v_lat
+    # =========================================================================
+
+    # 3. 방어 구역 판별 (기존의 복잡한 curve_penalty 등 모두 제거, 순수 임계값만 사용)
     if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.2  
     elif raw_lat <= (lane_edge):  
-      v_lat_threshold = -0.05 - curve_penalty
+      v_lat_threshold = -0.05
     elif raw_lat <= (lane_edge + 0.3):  
-      v_lat_threshold = -0.1 - curve_penalty
+      v_lat_threshold = -0.1
     else:              
-      v_lat_threshold = -0.3 - curve_penalty
+      v_lat_threshold = -0.3
 
-    is_cutting_in = v_lat < v_lat_threshold
+    is_cutting_in = v_lat_corrected < v_lat_threshold
 
-    return is_cutting_in, v_long_rel, v_lat
+    return is_cutting_in, v_long_rel, v_lat_corrected
 
 
   def corner_radar(self, CS, md, lead_dict):
-    COMP_FACTOR = 0.7  
-    
-    # ▼▼▼ [확장형 타임머신] 원하는 시간만큼 과거의 쏠림 상태(yawRate) 호출 ▼▼▼
-    # 1초는 20프레임입니다. 나중에 1초로 늘리고 싶다면 DELAY_FRAMES = 20 으로 바꾸시면 됩니다.
-    DELAY_FRAMES = 10  # 💡 현재는 0.5초(10프레임) 전 데이터 사용
-    
-    if len(self.yaw_rate_hist) >= DELAY_FRAMES:
-      # -1은 가장 최근, -DELAY_FRAMES는 정확히 원하는 프레임(시간) 전의 데이터를 의미합니다.
-      past_yaw_rate = self.yaw_rate_hist[-DELAY_FRAMES] 
-    else:
-      past_yaw_rate = CS.yawRate
-      
-    # 현재 각도가 아닌 우리가 불러온 과거 각도로 보정 계수 계산!
-    yaw_offset_left = CS.leftLongDist * past_yaw_rate * COMP_FACTOR
-    yaw_offset_right = CS.rightLongDist * past_yaw_rate * COMP_FACTOR
+    # 복잡했던 COMP_FACTOR, yaw_rate_hist 타임머신, path_y 곡률 평탄화 모두 제거!
+    # 순수하게 원본 데이터만 가져옵니다.
+    left_long = CS.leftLongDist
+    raw_left_lat = CS.leftLatDist
+    right_long = CS.rightLongDist
+    raw_right_lat = CS.rightLatDist
 
-    # 수학적으로 완벽한 더하기(+) 적용
-    raw_left_lat = CS.leftLatDist + yaw_offset_left
-    left_long    = CS.leftLongDist
-
-    raw_right_lat = CS.rightLatDist + yaw_offset_right
-    right_long    = CS.rightLongDist
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-    # -------------------------------------------------------------------------
-    # 💡 [추가] 앞차 정보 기반 동적 최대 감시 거리 설정 (저속/정체구간 노이즈 제거)
-    # -------------------------------------------------------------------------
+    # 앞차 정보 기반 동적 최대 감시 거리 설정
     if lead_dict['status'] and lead_dict['dRel'] > 0:
       dynamic_max_long = min(30.0, lead_dict['dRel'])
     else:
       dynamic_max_long = 30.0
 
-    # 옆차가 설정된 한계선(dynamic_max_long)보다 멀리 있으면 아예 감시망에서 제외!
     if left_long > dynamic_max_long:
       left_long = 0.0  
     if right_long > dynamic_max_long:
       right_long = 0.0 
 
-    # 💡 [추가] 현재 차량의 스티어링 각도 (절댓값) - 곡률 판단용
-    abs_steering = abs(CS.steeringAngleDeg)
-
-    # -------------------------------------------------------------------------
-    # 💡 [추가] 목표 거리(target_long)에서의 도로 곡률을 계산하여 '미래 예상 조향각' 산출
-    # -------------------------------------------------------------------------
-    def get_predicted_steering(target_long, md, CS):
-      if md is None or len(md.position.x) < 3:
-        return abs(CS.steeringAngleDeg)
-        
-      # 최소 5m 앞부터 계산 (0m 부근은 2차 미분 시 노이즈 발생 우려)
-      x_c = max(5.0, float(target_long))
-      dx = 5.0
-      
-      # 상대방 차량 위치(x_c) 기준 앞뒤 5m 간격의 Y좌표 추출
-      y_c = float(np.interp(x_c, md.position.x, md.position.y))
-      y_p = float(np.interp(x_c + dx, md.position.x, md.position.y))
-      y_m = float(np.interp(x_c - dx, md.position.x, md.position.y))
-      
-      # 2차 미분(f'')을 이용한 곡률(Curvature) 계산 공식: |y_p - 2*y_c + y_m| / dx^2
-      curvature = abs(y_p - 2.0 * y_c + y_m) / (dx ** 2)
-      
-      # 곡률(1/m) ➡️ 예상 조향각(Degree)으로 스케일링 변환 
-      # (축거 2.8m * 조향비 13 * 180/pi ≒ 약 2000)
-      # ex) 곡률 반경 200m -> 조향각 약 10도 / 곡률 반경 50m -> 조향각 약 40도
-      predicted_steering = curvature * 2000.0
-      
-      # 현재 내 차의 실제 조향각과, 상대방 위치의 미래 조향각 중 "더 꺾인(위험한)" 값을 채택!
-      return max(predicted_steering, abs(CS.steeringAngleDeg))
-
-    # -------------------------------------------------------------------------
-    # 💡 [초정밀 퓨전] 미래 예상 조향각 기반 동적 차선 폭 제어
-    # -------------------------------------------------------------------------
+    # 기존의 복잡했던 미래 조향각(get_predicted_steering) 예측 등 모두 제거
     def get_lane_edge(target_long, is_left):
-      # 대상 차량이 10m 이내면 기본값 고정
       if target_long < 10.0:
-        return 2.25, 2.75, 2.6
-
-      # ▼▼▼ [핵심] 기존 현재 조향각(abs_steering)을 '상대방 위치의 곡률 기반 조향각'으로 교체! ▼▼▼
-      pred_steering = get_predicted_steering(target_long, md, CS)
-      
-      v_ego_kph = CS.vEgo * 3.6
-      
-      # 내 차가 직진 중이어도, 저 멀리 상대방이 커브에 진입 중이라면 미리 방어막(기본값)을 씌움!
-      if (v_ego_kph >= 60.0 and pred_steering >= 15.0) or (v_ego_kph < 60.0 and pred_steering >= 30.0):
         return 2.25, 2.75, 2.6
       
       if md is None or len(md.laneLineProbs) < 3:
@@ -987,39 +924,22 @@ class RadarD:
       
       return 2.25, 2.75, 2.6
 
-    # ▼▼▼ [여기서부터 누락된 코드 복구!] ▼▼▼
     left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
-    # 💡 [핵심 수학 보정] 현재 거리(long)에 해당하는 도로의 휨 정도(path_y)를 모델에서 추출
-    left_path_y = float(np.interp(left_long, md.position.x, md.position.y)) if md is not None and len(md.position.x) > 0 else 0.0
-    right_path_y = float(np.interp(right_long, md.position.x, md.position.y)) if md is not None and len(md.position.x) > 0 else 0.0
+    # raw_lat을 그대로 절댓값으로 사용 (위치 시프트 완전 제거)
+    abs_left_lat = float(abs(raw_left_lat))
+    abs_right_lat = float(abs(raw_right_lat))
 
-    # 1. 방어막(lane_edge) 판별을 위한 순수 위치
-    # (이미 get_lane_edge 함수가 휜 차선을 기준으로 방어막을 만들기 때문에, 여기서는 raw 값 유지)
-    compensated_left_lat = float(abs(raw_left_lat))
-    compensated_right_lat = float(abs(raw_right_lat))
+    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, abs_right_lat, right_lane_edge, right_max_dist)
     
-    # 2. 횡속도(v_lat) 계산을 위한 보정 위치 (★착시 완벽 제거★)
-    # 레이더 직선 가로 거리에서 도로가 휜 만큼(path_y)을 빼주어, 차선 기준의 진짜 가로 거리를 구함
-    comp_left_lat = float(abs(raw_left_lat - left_path_y))
-    comp_right_lat = float(abs(raw_right_lat - right_path_y))
-    # ▲▲▲ [여기까지 누락된 코드 복구!] ▲▲▲
-
-    # [수정] 리턴 값 3개로 받기
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, compensated_left_lat, comp_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, compensated_right_lat, comp_right_lat, right_lane_edge, right_max_dist)
-    
-    left_ok = left_cutin and (1.0 < compensated_left_lat <= left_lane_edge + (left_lane_width * 0.15)) and (left_long > 0.0)
-    right_ok = right_cutin and (1.0 < compensated_right_lat <= right_lane_edge + (right_lane_width * 0.15)) and (right_long > 0.0)
+    left_ok = left_cutin and (1.0 < abs_left_lat <= left_lane_edge + (left_lane_width * 0.15)) and (left_long > 0.0)
+    right_ok = right_cutin and (1.0 < abs_right_lat <= right_lane_edge + (right_lane_width * 0.15)) and (right_long > 0.0)
 
     if not left_ok and not right_ok:
       return lead_dict
 
-    abs_left_lat = abs(raw_left_lat)
-    abs_right_lat = abs(raw_right_lat)
-
-    # [수정] a_lead 변수 제외
     if left_ok and right_ok:
       if left_long <= right_long:
         lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
@@ -1032,7 +952,6 @@ class RadarD:
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # [수정] aLead 덮어쓰기 로직 삭제 (비전 데이터 유지 또는 0 처리)
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
         lead_dict['dRel'] = long_dist
@@ -1040,10 +959,8 @@ class RadarD:
         lead_dict['vRel'] = v_rel             
         lead_dict['vLead'] = actual_vLead 
         lead_dict['vLeadK'] = actual_vLead
-        # lead_dict['aLead'] = a_lead     <-- 삭제
-        # lead_dict['aLeadK'] = a_lead    <-- 삭제
         lead_dict['vLat'] = v_lat
-        lead_dict['aLeadTau'] = 0.3       # 반응계수는 유지!
+        lead_dict['aLeadTau'] = 0.3       
         lead_dict['modelProb'] = 0.8
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
@@ -1054,10 +971,8 @@ class RadarD:
       lead_dict['vRel'] = v_rel             
       lead_dict['vLead'] = actual_vLead
       lead_dict['vLeadK'] = actual_vLead
-      # lead_dict['aLead'] = a_lead       <-- 삭제
-      # lead_dict['aLeadK'] = a_lead      <-- 삭제
       lead_dict['vLat'] = v_lat
-      lead_dict['aLeadTau'] = 0.3         # 반응계수는 유지!
+      lead_dict['aLeadTau'] = 0.3         
       lead_dict['modelProb'] = 0.8
       lead_dict['radarTrackId'] = -1
       lead_dict['radar'] = True
