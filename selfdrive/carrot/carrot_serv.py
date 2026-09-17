@@ -938,13 +938,33 @@ class CarrotServ:
       self.prev_speed_limit = self.nRoadLimitSpeed
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
+    if not hasattr(self, 'prev_set_kph'):
+      self.prev_set_kph = 0
+    if not hasattr(self, 'limit_change_timer'):
+      self.limit_change_timer = 0
+    if not hasattr(self, 'pending_auto_limit'):
+      self.pending_auto_limit = 0
+    if not hasattr(self, 'manual_button_timer'):
+      self.manual_button_timer = 0
 
-    # ▼▼▼ [핵심 1] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
+    # 💡 [핵심] 현재 차량 계기판에 세팅된 '진짜 크루즈 설정 속도'를 실시간으로 읽어옵니다.
+    current_set_kph = int(CS.cruiseState.speed * 3.6 + 0.5) if CS is not None and getattr(CS, 'cruiseState', None) is not None and CS.cruiseState.speed > 0 else 0
+
+    # ▼▼▼ [수동 조작 감지] 사용자가 조작하여 속도를 변경한 경우 예외 처리 ▼▼▼
+    if CS is not None:
+      for b in CS.buttonEvents:
+        if b.pressed and str(b.type) in ['accelCruise', 'decelCruise', 'resumeCruise', 'setCruise']:
+          self.manual_button_timer = 60  # 핸들 버튼을 누르면 3초(60프레임) 동안 '수동 조작 벙어리 모드' 발동!
+
+    if self.manual_button_timer > 0:
+      self.manual_button_timer -= 1
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    # ▼▼▼ [기존 로직 유지] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
     is_cam = is_car_cam or is_app_cam
     
-    # 💡 [화면용] 제한속도 표시는 발견 즉시 바뀌어야 하므로 raw_limit에 즉각 반영!
     if is_car_cam:
       raw_limit = CS.speedLimit
     elif is_app_cam:
@@ -954,12 +974,9 @@ class CarrotServ:
     else:
       raw_limit = self.nRoadLimitSpeed
 
-    # 💡 [소리용] 띠링 안내음은 카메라 통과할 때까지 예전 속도를 쥐고 대기!
     if my_driving_mode == 5:
-      # 오토모드 안내음 전용 변수
       auto_is_cam = is_car_cam
       if CS is not None:
-        # ▼▼▼ [핵심] 4BE(비전 표지판) 완벽 무시를 위해 순수 내비(4A3) 신호인 navSpeedLimit 사용 ▼▼▼
         if hasattr(CS, 'navSpeedLimit'):
           auto_raw_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
         else:
@@ -979,21 +996,17 @@ class CarrotServ:
           current_limit = auto_raw_limit
       else:
         if self.was_auto_cam_serv:
-          # 카메라 통과 순간
           current_limit = auto_raw_limit
           self.was_auto_cam_serv = False
         else:
-          # ▼▼▼ [핵심 추가] 카메라는 없지만 순수 4A3 제한속도가 변경된 경우(고속도로 진입 등) 즉시 적용! ▼▼▼
           if auto_raw_limit > 0 and auto_raw_limit != self.prev_speed_limit:
             current_limit = auto_raw_limit
           else:
             current_limit = self.prev_speed_limit
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     else:
-      # 5번 모드가 아닐 때 (기존 방식 유지)
       if is_cam:
         if self.prev_speed_limit <= 0:
-          current_limit = 0  # <--- 제한속도 없던 길(0)이면 통과할 때까지 0으로 입 꾹 닫고 대기!
+          current_limit = 0  
         elif raw_limit > 0 and raw_limit < self.prev_speed_limit:
           current_limit = self.prev_speed_limit
         else:
@@ -1001,48 +1014,42 @@ class CarrotServ:
       else:
         current_limit = raw_limit
 
+    # ▼▼▼ [궁극의 철벽 방어] 실제 크루즈 속도가 변할 때만 즉시 반응하는 알림 로직 ▼▼▼
     play_prompt = False
     
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
       play_prompt = True
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
-    elif current_limit != self.prev_speed_limit:
-      if current_limit > 0 and my_driving_mode == 5:
-        # ▼▼▼ [수정] 오토모드에서 실제 속도가 변하지 않으면 완벽하게 알림 생략 ▼▼▼
-        # 현재 크루즈에 설정된 진짜 속도를 확인합니다.
-        current_set_kph = int(CS.cruiseState.speed * 3.6 + 0.5) if CS is not None and getattr(CS, 'cruiseState', None) is not None and CS.cruiseState.speed > 0 else 0
+    elif my_driving_mode == 5:
+      # 1. 제한속도 정보가 들어오면, 차량이 속도를 바꿀지 딱 2초(40프레임) 동안만 감시망을 켭니다.
+      if current_limit > 0 and current_limit != self.prev_speed_limit:
+        self.limit_change_timer = 40  
+        self.pending_auto_limit = current_limit
+
+      # 2. 감시망이 켜진 상태에서 '실제 크루즈 속도'가 변한다면? 
+      if self.limit_change_timer > 0:
+        self.limit_change_timer -= 1
         
-        skip_prompt = False
-        if current_set_kph > 0:
-          # cruise.py의 오토모드 오프셋 계산 공식을 그대로 가져와서 0.1초 뒤의 예상 속도 확인!
-          if self.prev_speed_limit <= 0:
-            diff = current_set_kph - current_limit
-            offset = 20.0 if diff >= 20.0 else max(min(float(diff), 10.0), -10.0)
-          elif current_limit > self.prev_speed_limit:
-            offset = max(min(float(current_set_kph - self.prev_speed_limit), 10.0), float(current_set_kph - current_limit))
-          else:
-            old_offset = float(current_set_kph - self.prev_speed_limit)
-            offset = min(old_offset + 10.0, 20.0, float(current_set_kph - current_limit))
-
-          expected_speed = current_limit + offset
-
-          # 계산된 예상 속도가 현재 내 크루즈 속도와 완전히 똑같다면 띠링 소리 생략!
-          if int(expected_speed) == current_set_kph:
-            skip_prompt = True
-
-        # 속도 변화가 있는 '진짜 상황'에만 소리와 화면 알림 띄우기!
-        if not skip_prompt:
+        # [핵심 예외처리] 만약 방금 전(3초 이내)에 사용자가 핸들 버튼을 직접 눌렀다면 자동 알림 무조건 취소!
+        if self.manual_button_timer > 0:
+          self.limit_change_timer = 0
+          
+        # 속도 변경이 감지되면 1프레임도 안 기다리고 찰나의 순간에 즉시 띠링!
+        elif current_set_kph > 0 and self.prev_set_kph > 0 and current_set_kph != self.prev_set_kph:
           play_prompt = True
-          self.szPosRoadName = f"오토 속도 변경: {int(current_limit)}km/h 🔔"
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-        
+          self.szPosRoadName = f"오토 속도 변경: {int(self.pending_auto_limit)}km/h 🔔"
+          self.limit_change_timer = 0  # 목적 달성, 즉시 감시망 종료
+          
+      # 3. 4BE 가짜 신호여서 차량이 크루즈 속도를 바꾸지 않는다면 알림음은 절대 나지 않습니다!
+
     if play_prompt:
       try:
         open("/dev/shm/carrot_prompt", "w").close()
       except Exception:
         pass
         
+    self.prev_set_kph = current_set_kph
     self.prev_speed_limit = current_limit
     self.prev_driving_mode = my_driving_mode
     # =========================================================
