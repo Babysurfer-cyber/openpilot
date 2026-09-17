@@ -845,7 +845,7 @@ class RadarD:
     # ▼▼▼ [궁극의 물리 보정] 상대속도와 곡률에 의한 '가짜 횡속도' 원천 제거 ▼▼▼
     # 레이더 0.7초 지연에 의해 발생하는 가짜 횡속도 = 상대속도 * yawRate * 0.7
     # =========================================================================
-    RADAR_DELAY = 0.7
+    RADAR_DELAY = 0.5
     false_v_lat = v_long_rel * CS.yawRate * RADAR_DELAY
 
     # raw_lat은 절댓값(중앙 기준 거리)이므로, 좌우측에 따라 부호를 반대로 적용해 상쇄시킵니다.
@@ -862,9 +862,9 @@ class RadarD:
     elif raw_lat <= (lane_edge):  
       v_lat_threshold = -0.05
     elif raw_lat <= (lane_edge + 0.3):  
-      v_lat_threshold = -0.1
+      v_lat_threshold = -0.2
     else:              
-      v_lat_threshold = -0.3
+      v_lat_threshold = -0.5
 
     is_cutting_in = v_lat_corrected < v_lat_threshold
 
