@@ -941,7 +941,7 @@ class CarrotServ:
     if not hasattr(self, 'was_auto_cam_serv'):
       self.was_auto_cam_serv = False
     if not hasattr(self, 'prev_nav_limit'):
-      self.prev_nav_limit = self.nRoadLimitSpeed
+      self.prev_nav_limit = 0  # 💡 시스템 시작 시 "신호 없음(0)"으로 명확히 기억 시작!
 
     # ▼▼▼ [기존 로직 유지] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
@@ -980,20 +980,23 @@ class CarrotServ:
       else:
         # 2-2. 카메라가 없을 때
         if self.was_auto_cam_serv:
-          # 방금 카메라를 통과함! -> 통과한 시점의 4A3 제한속도 확인
           self.was_auto_cam_serv = False
-          if nav_limit > 0 and nav_limit != self.prev_nav_limit:
-            play_prompt = True
-            self.szPosRoadName = f"오토 속도 변경: {int(nav_limit)}km/h 🔔"
+          # 카메라를 막 통과했을 때
+          if nav_limit != self.prev_nav_limit:
+            if nav_limit > 0:
+              play_prompt = True
+              self.szPosRoadName = f"오토 속도 변경: {int(nav_limit)}km/h 🔔"
             self.prev_nav_limit = nav_limit
         else:
-          # 일반 주행 중 4A3 제한속도가 변경됨 -> 1초도 안 기다리고 즉시 알림!
-          if nav_limit > 0 and nav_limit != self.prev_nav_limit:
-            play_prompt = True
-            self.szPosRoadName = f"오토 속도 변경: {int(nav_limit)}km/h 🔔"
+          # 일반 주행 중
+          if nav_limit != self.prev_nav_limit:
+            # ▼▼▼ [핵심] 신호가 생겼을 때만(>0) 알림, 신호가 없어졌을 때(0)는 기억만 갱신! ▼▼▼
+            if nav_limit > 0:
+              play_prompt = True
+              self.szPosRoadName = f"오토 속도 변경: {int(nav_limit)}km/h 🔔"
             self.prev_nav_limit = nav_limit
             
-        # 화면 표시용 변수 업데이트
+        # 화면 표시용 변수 업데이트 (신호가 0일 때는 날것의 기본값을 보여줌)
         current_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else raw_limit
         
     else:
