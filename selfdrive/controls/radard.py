@@ -859,10 +859,10 @@ class RadarD:
     # 3. 방어 구역 판별 (기존의 복잡한 curve_penalty 등 모두 제거, 순수 임계값만 사용)
     if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.2  
-    elif raw_lat <= (lane_edge):  
+    elif raw_lat <= (lane_edge + 0.1):  
       v_lat_threshold = -0.05
     elif raw_lat <= (lane_edge + 0.3):  
-      v_lat_threshold = -0.2
+      v_lat_threshold = -0.3
     else:              
       v_lat_threshold = -0.5
 
