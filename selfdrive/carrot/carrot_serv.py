@@ -941,7 +941,9 @@ class CarrotServ:
     if not hasattr(self, 'was_auto_cam_serv'):
       self.was_auto_cam_serv = False
     if not hasattr(self, 'prev_nav_limit'):
-      self.prev_nav_limit = 0  # 💡 시스템 시작 시 "신호 없음(0)"으로 명확히 기억 시작!
+      self.prev_nav_limit = 0  
+    if not hasattr(self, 'pending_cam_limit_serv'):
+      self.pending_cam_limit_serv = 0
 
     # ▼▼▼ [기존 로직 유지] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
@@ -964,40 +966,46 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # 1. 4A3(순수 내비) 신호만 추출
+      # ▼▼▼ [핵심 수정] cruise.py와 100% 동일한 카메라 판단 및 속도 계산 로직 ▼▼▼
       if CS is not None:
         if hasattr(CS, 'navSpeedLimit'):
-          nav_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
+          auto_is_cam = (CS.navSpeedLimit > 0 and CS.speedLimitDistance > 0)
+          auto_raw_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
         else:
-          nav_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+          auto_is_cam = is_car_cam
+          auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
       else:
-        nav_limit = 0
+        auto_is_cam = False
+        auto_raw_limit = 0
 
-      if is_car_cam:
-        # 2-1. 카메라 통과 중: 속도 변경 보류, 카메라 인지 플래그 ON
+      effective_limit = self.prev_nav_limit
+
+      if auto_is_cam:
+        # 카메라 통과 중: 속도 변경 보류, 암기
         self.was_auto_cam_serv = True
-        current_limit = self.prev_nav_limit # 디스플레이는 변경 전 예전 속도 유지
+        if auto_raw_limit > 0:
+          self.pending_cam_limit_serv = auto_raw_limit
       else:
-        # 2-2. 카메라가 없을 때
         if self.was_auto_cam_serv:
-          self.was_auto_cam_serv = False
           # 카메라를 막 통과했을 때
-          if nav_limit != self.prev_nav_limit:
-            if nav_limit > 0:
-              play_prompt = True
-              self.szPosRoadName = f"오토 속도 변경: {int(nav_limit)}km/h 🔔"
-            self.prev_nav_limit = nav_limit
+          self.was_auto_cam_serv = False
+          if self.pending_cam_limit_serv > 0:
+            effective_limit = self.pending_cam_limit_serv
         else:
           # 일반 주행 중
-          if nav_limit != self.prev_nav_limit:
-            # ▼▼▼ [핵심] 신호가 생겼을 때만(>0) 알림, 신호가 없어졌을 때(0)는 기억만 갱신! ▼▼▼
-            if nav_limit > 0:
-              play_prompt = True
-              self.szPosRoadName = f"오토 속도 변경: {int(nav_limit)}km/h 🔔"
-            self.prev_nav_limit = nav_limit
+          if auto_raw_limit > 0 and auto_raw_limit != self.prev_nav_limit:
+            effective_limit = auto_raw_limit
             
-        # 화면 표시용 변수 업데이트 (신호가 0일 때는 날것의 기본값을 보여줌)
-        current_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else raw_limit
+      # 최종 결정된 effective_limit이 바뀌었을 때 즉시 띠링!
+      if effective_limit != self.prev_nav_limit:
+        if effective_limit > 0:
+          play_prompt = True
+          self.szPosRoadName = f"오토 속도 변경: {int(effective_limit)}km/h 🔔"
+        self.prev_nav_limit = effective_limit
+
+      # 화면 표시용 변수 업데이트
+      current_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else raw_limit
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
     else:
       # 5번 모드가 아닐 때 (기존 방식 유지)
