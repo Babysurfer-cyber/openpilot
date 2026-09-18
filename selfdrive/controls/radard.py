@@ -820,7 +820,6 @@ class RadarD:
 
   def _corner_update_state(self, CS, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
   # ▼ 인자에 past_yaw_rate 추가
-  def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
     # 1. 값이 없거나 너무 멀면 대기
     if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 30.0: 
       self._corner_missing_cnt[side] += 1
