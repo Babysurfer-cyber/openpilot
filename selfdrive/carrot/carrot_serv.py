@@ -966,17 +966,25 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # ▼▼▼ [핵심 수정] cruise.py와 100% 동일한 카메라 판단 및 속도 계산 로직 ▼▼▼
+      # ▼▼▼ [핵심 수정] 4A3 우선, 4BE 과속카메라 무시 로직 ▼▼▼
       if CS is not None:
-        if hasattr(CS, 'navSpeedLimit'):
-          auto_is_cam = (CS.navSpeedLimit > 0 and CS.speedLimitDistance > 0)
-          auto_raw_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
+        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
+          # 1. 4A3 신호가 우선적으로 있을 때
+          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
+          auto_raw_limit = CS.navSpeedLimit
         else:
-          auto_is_cam = is_car_cam
-          auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+          # 2. 4A3 신호가 없을 때 (4BE 등)
+          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
+          if auto_is_cam:
+            # 💡 4BE 과속카메라 신호는 오토모드에서 무시! (미리 변속 방지용 대기 상태만 유지)
+            auto_raw_limit = 0
+          else:
+            # 💡 4BE 일반 구간(카메라 아님) 신호는 기존처럼 사용
+            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
       else:
         auto_is_cam = False
         auto_raw_limit = 0
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       effective_limit = self.prev_nav_limit
 
@@ -991,6 +999,7 @@ class CarrotServ:
           self.was_auto_cam_serv = False
           if self.pending_cam_limit_serv > 0:
             effective_limit = self.pending_cam_limit_serv
+            self.pending_cam_limit_serv = 0  # 💡 적용 후 안전하게 초기화
         else:
           # 일반 주행 중
           if auto_raw_limit > 0 and auto_raw_limit != self.prev_nav_limit:
