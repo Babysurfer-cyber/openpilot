@@ -438,8 +438,9 @@ class RadarD:
       "L": deque(maxlen=10),
       "R": deque(maxlen=10),
     }
-    # [추가] 신호가 끊겼을 때 바로 지우지 않고 기다려주는 카운터
     self._corner_missing_cnt = {"L": 0, "R": 0} 
+    # ▼▼▼ [추가] 0.5초(10프레임) 타임머신 메모리 부활 ▼▼▼
+    self.yaw_rate_hist = deque([0.0]*10, maxlen=10)
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
 
 
@@ -458,6 +459,8 @@ class RadarD:
     if sm.recv_frame['carState'] != self.last_v_ego_frame:
       self.v_ego = sm['carState'].vEgo
       self.v_ego_hist.append(self.v_ego)
+      # ▼▼▼ [추가] 매 프레임마다 차체 회전각(yawRate) 저장 ▼▼▼
+      self.yaw_rate_hist.append(sm['carState'].yawRate)
       
       self.last_v_ego_frame = sm.recv_frame['carState']
 
@@ -816,7 +819,9 @@ class RadarD:
       self.radar_detected = detected
 
   def _corner_update_state(self, CS, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
-    # 1. 값이 없거나 너무 멀면 대기 (위치 판별은 날것의 raw_lat 사용)
+  # ▼ 인자에 past_yaw_rate 추가
+  def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
+    # 1. 값이 없거나 너무 멀면 대기
     if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 30.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
@@ -842,27 +847,27 @@ class RadarD:
     v_lat_measured = (curr_lat - past_lat) / time_diff
 
     # =========================================================================
-    # ▼▼▼ [궁극의 물리 보정] 상대속도와 곡률에 의한 '가짜 횡속도' 원천 제거 ▼▼▼
-    # 레이더 0.7초 지연에 의해 발생하는 가짜 횡속도 = 상대속도 * yawRate * 0.7
+    # ▼▼▼ [시공간 통합 보정] 동적 곡률 공식 + 0.5초 전(과거) 센서 데이터 ▼▼▼
     # =========================================================================
-    RADAR_DELAY = 1.0
-    false_v_lat = v_long_rel * CS.yawRate * RADAR_DELAY
+    safe_v_ego = max(CS.vEgo, 1.0)  
+    dynamic_factor = curr_long / safe_v_ego  
+    
+    # 💡 CS.yawRate 대신, 시공간이 일치하는 past_yaw_rate 사용!
+    false_v_lat = v_long_rel * past_yaw_rate * dynamic_factor
 
-    # raw_lat은 절댓값(중앙 기준 거리)이므로, 좌우측에 따라 부호를 반대로 적용해 상쇄시킵니다.
-    # 회원님의 통찰대로 안쪽/바깥쪽 모두 방향에 맞게 완벽히 역보정됩니다!
     if side == "L":
         v_lat_corrected = v_lat_measured - false_v_lat
     else: # side == "R"
         v_lat_corrected = v_lat_measured + false_v_lat
     # =========================================================================
 
-    # 3. 방어 구역 판별 (기존의 복잡한 curve_penalty 등 모두 제거, 순수 임계값만 사용)
+    # 3. 방어 구역 판별
     if raw_lat <= (lane_edge - 0.3):
-      v_lat_threshold = 0.2  
+      v_lat_threshold = 0.1  
     elif raw_lat <= (lane_edge + 0.1):  
       v_lat_threshold = -0.05
     elif raw_lat <= (lane_edge + 0.3):  
-      v_lat_threshold = -0.3
+      v_lat_threshold = -0.2
     else:              
       v_lat_threshold = -0.5
 
@@ -927,12 +932,16 @@ class RadarD:
     left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
-    # raw_lat을 그대로 절댓값으로 사용 (위치 시프트 완전 제거)
+    # raw_lat을 그대로 절댓값으로 사용
     abs_left_lat = float(abs(raw_left_lat))
     abs_right_lat = float(abs(raw_right_lat))
 
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, "R", right_long, abs_right_lat, right_lane_edge, right_max_dist)
+    # ▼▼▼ [추가] 0.5초(10프레임) 전의 yawRate를 꺼내옵니다 ▼▼▼
+    past_yaw_rate = self.yaw_rate_hist[0] if len(self.yaw_rate_hist) == 10 else CS.yawRate
+
+    # ▼▼▼ [수정] 호출 시 past_yaw_rate를 넘겨줍니다 ▼▼▼
+    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, past_yaw_rate, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
+    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, past_yaw_rate, "R", right_long, abs_right_lat, right_lane_edge, right_max_dist)
     
     left_ok = left_cutin and (1.0 < abs_left_lat <= left_lane_edge + (left_lane_width * 0.15)) and (left_long > 0.0)
     right_ok = right_cutin and (1.0 < abs_right_lat <= right_lane_edge + (right_lane_width * 0.15)) and (right_long > 0.0)
