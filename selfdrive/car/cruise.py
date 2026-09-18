@@ -712,18 +712,24 @@ class VCruiseCarrot:
           self.auto_mode_applied = False
           self.user_speed_offset = 10.0  
           self.last_auto_speed = 0.0     
-          self.was_auto_cam = False      # 카메라 통과 여부 플래그
-          self.pending_cam_limit = 0     # 카메라 통과 후 적용할 속도 메모리
+          self.was_auto_cam = False      
+          self.pending_cam_limit = 0     
 
-        # ▼▼▼ [오토모드(5번) 전용 로직] 4BE 신호 완전 무시, 오직 4A3 카메라만 신뢰 ▼▼▼
-        # 핵심 수정: auto_is_cam 판단 시에도 철저하게 navSpeedLimit만 사용!
-        if hasattr(CS, 'navSpeedLimit'):
-          auto_is_cam = (CS.navSpeedLimit > 0 and CS.speedLimitDistance > 0)
-          auto_raw_limit = CS.navSpeedLimit if CS.navSpeedLimit > 0 else 0
+        # ▼▼▼ [핵심 수정] 4A3 우선, 4BE 과속카메라 무시 로직 ▼▼▼
+        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
+          # 1. 4A3 신호가 우선적으로 있을 때
+          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
+          auto_raw_limit = CS.navSpeedLimit
         else:
-          # navSpeedLimit이 아예 없다면 어쩔 수 없이 기존 방식 사용
-          auto_is_cam = is_car_cam
-          auto_raw_limit = CS.speedLimit if CS.speedLimit > 0 else 0
+          # 2. 4A3 신호가 없을 때 (4BE 등)
+          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
+          if auto_is_cam:
+            # 💡 4BE 과속카메라 신호는 오토모드에서 무시! (미리 변속 방지용 대기 상태만 유지)
+            auto_raw_limit = 0
+          else:
+            # 💡 4BE 일반 구간(카메라 아님) 신호는 기존처럼 사용
+            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
         effective_limit = self.prev_limit_speed_for_auto
@@ -735,12 +741,13 @@ class VCruiseCarrot:
 
         else:
           if self.was_auto_cam:
-            # 1. 4A3 카메라 방금 통과 완료! -> 암기해둔 속도를 드디어 적용
+            # 1. 카메라 방금 통과 완료! -> 암기해둔 속도를 드디어 적용
             if self.pending_cam_limit > 0:
               effective_limit = self.pending_cam_limit
+              self.pending_cam_limit = 0  # 💡 적용 후 안전하게 초기화
             self.was_auto_cam = False
           else:
-            # ▼▼▼ [핵심 추가] 카메라는 없지만 순수 4A3 제한속도가 변경된 경우(고속도로 진입 등) 즉시 적용! ▼▼▼
+            # ▼▼▼ 카메라는 없지만 제한속도가 변경된 경우 즉시 적용! ▼▼▼
             if auto_raw_limit > 0 and auto_raw_limit != self.prev_limit_speed_for_auto:
               effective_limit = auto_raw_limit
 
