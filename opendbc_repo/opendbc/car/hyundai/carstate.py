@@ -864,14 +864,13 @@ class CarState(CarStateBase):
     
     # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
     # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
-    # 4BE를 끊으려면 이 부분을 주석 처리합니다.
-    # if ret.speedLimit == 0 and cam_limit > 0:
-    #   ret.speedLimit = cam_limit
-    #   if cam_dist > 0:
-    #     speed_limit_cam = True
-    #     self.speedLimitDistance = self.totalDistance + cam_dist
-    #   else:
-    #     speed_limit_cam = False
+    if ret.speedLimit == 0 and cam_limit > 0:
+      ret.speedLimit = cam_limit
+      if cam_dist > 0:
+        speed_limit_cam = True
+        self.speedLimitDistance = self.totalDistance + cam_dist
+      else:
+        speed_limit_cam = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
