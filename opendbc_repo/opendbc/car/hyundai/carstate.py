@@ -854,14 +854,7 @@ class CarState(CarStateBase):
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
     cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
-    
-    # ▼▼▼ [핵심 추가] 4BE(카메라) 데이터가 섞이기 전에 순수 4A3 데이터를 미리 대피시킴! ▼▼▼
-    try:
-      ret.navSpeedLimit = ret.speedLimit
-    except:
-      pass
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-    
+        
     # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
     # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
     if ret.speedLimit == 0 and cam_limit > 0:
