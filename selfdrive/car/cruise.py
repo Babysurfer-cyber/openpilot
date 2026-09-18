@@ -758,24 +758,18 @@ class VCruiseCarrot:
           # 2. 제한속도 변경 감지 시 오프셋 동기화 (버튼 조작이 아닐 때만)
           if (effective_limit != self.prev_limit_speed_for_auto) and not (button_type in [ButtonType.accelCruise, ButtonType.decelCruise]):
             
-            # [규칙 1] 정보 없던 곳 -> 제한속도 구간 진입
-            if self.prev_limit_speed_for_auto <= 0:
-              if (v_cruise_kph - effective_limit) >= 20.0:
-                self.user_speed_offset = 20.0
+            # ▼▼▼ [최종 완성형] 속도 상승 시 무조건 +10 / 감속·진입 시 단차 보정 ▼▼▼
+            if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
+              self.user_speed_offset = 10.0  # 💡 상향(가속) 구간: 무조건 기본 오프셋 +10으로 깔끔하게 리셋!
+            else:
+              # 하향(감속) 및 최초 진입 구간: 급제동 방지 로직 적용
+              if (v_cruise_kph - effective_limit) >= 60.0:
+                self.user_speed_offset = 30.0  # 💡 속도차 60 이상 극단적 하향: 오프셋 30 보장
+              elif (v_cruise_kph - effective_limit) >= 40.0:
+                self.user_speed_offset = 20.0  # 💡 속도차 40 이상 큰 하향: 오프셋 20 보장
               else:
-                self.user_speed_offset = max(float(v_cruise_kph - effective_limit), 10.0)  # 💡 최저 10 보장
-                
-            # [규칙 2] 속도 상향 (가속 구간)
-            elif effective_limit > self.prev_limit_speed_for_auto:
-              self.user_speed_offset = max(min(float(v_cruise_kph - self.prev_limit_speed_for_auto), 10.0), float(v_cruise_kph - effective_limit), 10.0) # 💡 최저 10 보장
-              
-            # [규칙 3] 속도 하향 (감속 구간)
-            elif effective_limit < self.prev_limit_speed_for_auto:
-              # 감속폭이 클 때(크루즈 속도와 새 제한속도 차이가 30 이상)는 급제동 방지를 위해 오프셋 20 보장
-              if (v_cruise_kph - effective_limit) >= 30.0:
-                self.user_speed_offset = 20.0
-              else:
-                self.user_speed_offset = max(min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit)), 10.0) # 💡 최저 10 보장
+                self.user_speed_offset = 10.0  # 💡 40 미만의 정상적인 감속/진입: 무조건 기본 오프셋 +10 적용!
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
           self.prev_limit_speed_for_auto = effective_limit
           self.auto_mode_applied = True
