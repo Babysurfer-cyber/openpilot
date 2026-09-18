@@ -763,11 +763,11 @@ class VCruiseCarrot:
               if (v_cruise_kph - effective_limit) >= 20.0:
                 self.user_speed_offset = 20.0
               else:
-                self.user_speed_offset = max(min(float(v_cruise_kph - effective_limit), 10.0), -10.0)
+                self.user_speed_offset = max(float(v_cruise_kph - effective_limit), 10.0)  # 💡 최저 10 보장
                 
             # [규칙 2] 속도 상향 (가속 구간)
             elif effective_limit > self.prev_limit_speed_for_auto:
-              self.user_speed_offset = max(min(float(v_cruise_kph - self.prev_limit_speed_for_auto), 10.0), float(v_cruise_kph - effective_limit))
+              self.user_speed_offset = max(min(float(v_cruise_kph - self.prev_limit_speed_for_auto), 10.0), float(v_cruise_kph - effective_limit), 10.0) # 💡 최저 10 보장
               
             # [규칙 3] 속도 하향 (감속 구간)
             elif effective_limit < self.prev_limit_speed_for_auto:
@@ -775,7 +775,7 @@ class VCruiseCarrot:
               if (v_cruise_kph - effective_limit) >= 30.0:
                 self.user_speed_offset = 20.0
               else:
-                self.user_speed_offset = min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit))
+                self.user_speed_offset = max(min(self.user_speed_offset + 10.0, 20.0, float(v_cruise_kph - effective_limit)), 10.0) # 💡 최저 10 보장
 
           self.prev_limit_speed_for_auto = effective_limit
           self.auto_mode_applied = True
