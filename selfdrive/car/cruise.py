@@ -756,20 +756,17 @@ class VCruiseCarrot:
           # 1. 수동 조작 오프셋 업데이트 (운전자 조작은 무제한 허용!)
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
-              # 💡 [핵심 픽스] 사용자가 버튼을 누르면 10 미만이든 마이너스든 무조건 허용!
               self.user_speed_offset = float(v_cruise_kph - effective_limit)
               self.last_auto_speed = v_cruise_kph
+              self.params_memory.put_float("LastAutoSpeed", self.last_auto_speed) # 💡 메모리에 백업!
 
-          # 2. 제한속도 변경 감지 시 오프셋 동기화 (시스템 자동 개입 시에만 최저 10 방어!)
+          # 2. 제한속도 변경 감지 시 오프셋 동기화
           if (effective_limit != self.prev_limit_speed_for_auto) and not (button_type in [ButtonType.accelCruise, ButtonType.decelCruise]):
-            
             if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
-              self.user_speed_offset = 10.0  # 상승 시 +10 리셋
+              self.user_speed_offset = 10.0  
             else:
-              # 하향 감속: 속도차의 절반을 5단위로 적용 (시스템 개입 시에만 최저 10 보장!)
               base_speed = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
               diff_speed = base_speed - effective_limit
-              
               calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
               self.user_speed_offset = max(10.0, calculated_offset)
 
@@ -779,14 +776,15 @@ class VCruiseCarrot:
           # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
           v_cruise_kph = float(effective_limit + self.user_speed_offset)
           self.last_auto_speed = v_cruise_kph
+          self.params_memory.put_float("LastAutoSpeed", self.last_auto_speed) # 💡 메모리에 백업!
 
         else:
-          # 💡 [버그 2, 3 픽스] 카메라 대기 중(`was_auto_cam`)일 때는 상태(금고)를 초기화하지 않고 인내심 있게 기다림!
           if not self.was_auto_cam:
             self.prev_limit_speed_for_auto = 0
             self.auto_mode_applied = False
             self.user_speed_offset = 10.0
             self.last_auto_speed = v_cruise_kph  # 0.0이 아니라 현재 속도 백업!
+            self.params_memory.put_float("LastAutoSpeed", self.last_auto_speed) # 💡 메모리에 백업!
         
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
