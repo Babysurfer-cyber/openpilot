@@ -752,34 +752,26 @@ class VCruiseCarrot:
               effective_limit = auto_raw_limit
 
         # -------------------------------------------------------------------
-        # 여기서부터 오프셋 계산 (기존 규칙 1,2,3 100% 유지)
         if effective_limit > 0:
-          # 1. 수동 조작 오프셋 업데이트 (무제한 허용) - ★조건 개선!★
-          # 제한속도 변경과 무관하게 버튼을 눌렀다면 무조건 오프셋 갱신!
+          # 1. 수동 조작 오프셋 업데이트 (운전자 조작은 무제한 허용!)
           if self.auto_mode_applied and self.last_auto_speed > 0:
             if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
-              # ★중요: 카메라 구간 안에서 조작하더라도, '현재 기억하고 있는 기준 속도(effective_limit)'를 바탕으로 오프셋을 계산합니다.
-              self.user_speed_offset = v_cruise_kph - effective_limit
+              # 💡 [핵심 픽스] 사용자가 버튼을 누르면 10 미만이든 마이너스든 무조건 허용!
+              self.user_speed_offset = float(v_cruise_kph - effective_limit)
               self.last_auto_speed = v_cruise_kph
 
-          # 2. 제한속도 변경 감지 시 오프셋 동기화 (버튼 조작이 아닐 때만)
+          # 2. 제한속도 변경 감지 시 오프셋 동기화 (시스템 자동 개입 시에만 최저 10 방어!)
           if (effective_limit != self.prev_limit_speed_for_auto) and not (button_type in [ButtonType.accelCruise, ButtonType.decelCruise]):
             
-            # ▼▼▼ [최종 완성형] 속도 상승 시 무조건 +10 / 감속·진입 시 단차 보정 ▼▼▼
             if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
-              self.user_speed_offset = 10.0  # 💡 상향(가속) 구간: 무조건 기본 오프셋 +10으로 깔끔하게 리셋!
+              self.user_speed_offset = 10.0  # 상승 시 +10 리셋
             else:
-              # ▼▼▼ [핵심 픽스] 차량(HDA)이 미리 감속해서 v_cruise_kph가 훼손되는 현상 방지 ▼▼▼
-              # 오토모드에서 유지 중이던 '콤마의 순수 타겟 속도(last_auto_speed)'가 있다면 무조건 그걸 기준속도로 사용!
+              # 하향 감속: 속도차의 절반을 5단위로 적용 (시스템 개입 시에만 최저 10 보장!)
               base_speed = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
-              
-              # 하향(감속) 및 최초 진입 구간: 속도차의 절반을 5단위로 적용 (최저 10 보장)
               diff_speed = base_speed - effective_limit
               
-              # 💡 0.5를 더하고 내림(floor) 처리하여 완벽한 수학적 반올림 구현
               calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
               self.user_speed_offset = max(10.0, calculated_offset)
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
           self.prev_limit_speed_for_auto = effective_limit
           self.auto_mode_applied = True
@@ -789,10 +781,12 @@ class VCruiseCarrot:
           self.last_auto_speed = v_cruise_kph
 
         else:
-          self.prev_limit_speed_for_auto = 0
-          self.auto_mode_applied = False
-          self.user_speed_offset = 10.0
-          self.last_auto_speed = 0.0
+          # 💡 [버그 2, 3 픽스] 카메라 대기 중(`was_auto_cam`)일 때는 상태(금고)를 초기화하지 않고 인내심 있게 기다림!
+          if not self.was_auto_cam:
+            self.prev_limit_speed_for_auto = 0
+            self.auto_mode_applied = False
+            self.user_speed_offset = 10.0
+            self.last_auto_speed = v_cruise_kph  # 0.0이 아니라 현재 속도 백업!
         
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
