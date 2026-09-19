@@ -966,25 +966,39 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # ▼▼▼ [핵심 수정] 4A3 우선, 4BE 과속카메라 무시 로직 ▼▼▼
+      # ▼▼▼ [핵심 수정] 크루즈 90 이상 시 4A3 신호만 신뢰 (램프 표지판 오인식 차단) ▼▼▼
+      v_cruise_kph = (CS.cruiseState.speed * 3.6) if CS is not None else 0
+      
+      # 💡 UI 동기화: cruise.py에서 철통 방어 중인 순수 타겟 속도(금고값)를 읽어옴!
+      current_target = v_cruise_kph
+      try:
+        last_auto_val = self.params_memory.get_float("LastAutoSpeed")
+        if last_auto_val > 0:
+          current_target = last_auto_val
+      except:
+        pass
+
       if CS is not None:
         if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
-          # 1. 4A3 신호가 우선적으로 있을 때
+          # 1. 4A3 신호가 있을 때 (최우선)
           auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
           auto_raw_limit = CS.navSpeedLimit
         else:
-          # 2. 4A3 신호가 없을 때 (4BE 등)
-          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-          if auto_is_cam:
-            # 💡 4BE 과속카메라 신호는 오토모드에서 무시! (미리 변속 방지용 대기 상태만 유지)
-            auto_raw_limit = 0
+          # 2. 4A3 신호가 없을 때
+          # 💡 [방어 완벽] HDA가 속여도 메모리에서 가져온 진짜 속도로 90 이상 판단!
+          if current_target >= 90:
+            auto_is_cam = False
+            auto_raw_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else 0
           else:
-            # 💡 4BE 일반 구간(카메라 아님) 신호는 기존처럼 사용
-            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+            auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
+            if auto_is_cam:
+              auto_raw_limit = 0  # 4BE 과속카메라 무시
+            else:
+              auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
       else:
         auto_is_cam = False
         auto_raw_limit = 0
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       effective_limit = self.prev_nav_limit
 
