@@ -1105,7 +1105,8 @@ class CarrotServ:
 
         # ▼▼▼ [수정] 제한속도가 30인 도로에서는 타겟 속도에서 5 추가 감속 ▼▼▼
         target_bump_speed = self.autoNaviSpeedBumpSpeed
-        if self.nRoadLimitSpeed == 30:
+        # 💡 self.nRoadLimitSpeed 대신 current_limit 사용!
+        if current_limit == 30:
           target_bump_speed -= 5
 
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
