@@ -769,8 +769,13 @@ class VCruiseCarrot:
             if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
               self.user_speed_offset = 10.0  # 💡 상향(가속) 구간: 무조건 기본 오프셋 +10으로 깔끔하게 리셋!
             else:
+              # ▼▼▼ [핵심 픽스] 차량(HDA)이 미리 감속해서 v_cruise_kph가 훼손되는 현상 방지 ▼▼▼
+              # 오토모드에서 유지 중이던 '콤마의 순수 타겟 속도(last_auto_speed)'가 있다면 무조건 그걸 기준속도로 사용!
+              base_speed = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
+              
               # 하향(감속) 및 최초 진입 구간: 속도차의 절반을 5단위로 적용 (최저 10 보장)
-              diff_speed = v_cruise_kph - effective_limit
+              diff_speed = base_speed - effective_limit
+              
               # 💡 0.5를 더하고 내림(floor) 처리하여 완벽한 수학적 반올림 구현
               calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
               self.user_speed_offset = max(10.0, calculated_offset)
