@@ -1996,6 +1996,7 @@ public:
     int     nRoadLimitSpeed = 30;
     int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
     int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
+    int     myDrivingMode_last = 1;    // 💡 [핵심 추가] 이전 드라이빙 모드 기억용
     int     nGoPosDist = 0;
     int     xSpdLimit = 0;
     int     xSignType = -1;
@@ -2104,15 +2105,28 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [추가] 제한속도 변경 감지 & 3초(60프레임) 타이머 장전! ▼▼▼
-        if (nRoadLimitSpeed_last > 0 && nRoadLimitSpeed > 0 && nRoadLimitSpeed != nRoadLimitSpeed_last) {
-            if (myDrivingMode == 5) {
-                auto_blink_timer = 60; // 1초에 20번 그려지므로 60이면 약 3초!
+        // ▼▼▼ [수정] 오토모드(5번) 깜빡임 로직을 안내음 발생 조건과 100% 동기화 ▼▼▼
+        bool trigger_blink = false;
+
+        // 1. 오토모드(5번) 최초 진입 시
+        if (myDrivingMode == 5 && myDrivingMode_last != 5) {
+            trigger_blink = true;
+        }
+
+        // 2. 오토모드(5번) 중에 제한속도가 0보다 큰 값으로 변경될 때 (정보 없던 곳 -> 있는 곳 포함)
+        if (myDrivingMode == 5) {
+            if (nRoadLimitSpeed != nRoadLimitSpeed_last && nRoadLimitSpeed > 0) {
+                trigger_blink = true;
             }
         }
-        if (nRoadLimitSpeed > 0) {
-            nRoadLimitSpeed_last = nRoadLimitSpeed;
+
+        if (trigger_blink) {
+            auto_blink_timer = 60; // 3초간 깜빡임 타이머 장전!
         }
+
+        // 상태값 갱신 (다음 프레임 비교용)
+        myDrivingMode_last = myDrivingMode;
+        nRoadLimitSpeed_last = nRoadLimitSpeed;
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
