@@ -720,7 +720,6 @@ class VCruiseCarrot:
         current_target = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
 
         if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
-        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
           # 1. 4A3 신호가 우선적으로 있을 때
           auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
           auto_raw_limit = CS.navSpeedLimit
