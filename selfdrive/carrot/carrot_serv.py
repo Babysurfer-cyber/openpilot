@@ -1081,17 +1081,10 @@ class CarrotServ:
 
     ### 과속카메라, 사고방지턱
 
-    ### 과속카메라, 사고방지턱
-
     # ▼▼▼ [핵심 1] 차량 순정 내비게이션(4A3/4BE)을 1순위로 역전 ▼▼▼
-    if my_driving_mode == 5:
-      # 💡 오토모드(5번)에서는 필터링된 진짜 카메라(auto_is_cam)이고 유효한 제한속도가 있을 때만 카메라 알림음 허용!
-      is_car_navi_active = auto_is_cam and auto_raw_limit > 0
-      nav_limit_for_cam = auto_raw_limit
-    else:
-      # 일반 모드에서는 기존처럼 순정 CAN 신호 그대로 사용
-      is_car_navi_active = CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0
-      nav_limit_for_cam = getattr(CS, 'speedLimit', 0) if CS is not None else 0
+    # 💡 오토모드/일반모드 구분 없이 항상 순정 CAN 신호 그대로 사용 (안전하고 확실한 HDA 감속 보장)
+    is_car_navi_active = CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0
+    nav_limit_for_cam = getattr(CS, 'speedLimit', 0) if CS is not None else 0
 
     is_app_active = (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0
 
