@@ -780,12 +780,13 @@ class VCruiseCarrot:
 
           # 2. 제한속도 변경 감지 시 오프셋 동기화
           if (effective_limit != self.prev_limit_speed_for_auto) and not (button_type in [ButtonType.accelCruise, ButtonType.decelCruise]):
-            if self.prev_limit_speed_for_auto > 0 and effective_limit > self.prev_limit_speed_for_auto:
+            # ▼▼▼ [수정] 최초 실행(prev == 0)일 때도 기본 오프셋(10)을 적용하여 급발진 방지! ▼▼▼
+            if self.prev_limit_speed_for_auto == 0 or effective_limit > self.prev_limit_speed_for_auto:
               self.user_speed_offset = 10.0  
             else:
               base_speed = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
-              # ▼▼▼ [핵심 수정] 새 제한속도가 아닌, '기존 제한속도(prev_limit)'를 빼서 순수 오프셋 추출! ▼▼▼
               diff_speed = base_speed - self.prev_limit_speed_for_auto
+              # ▼▼▼ [유지] 회원님이 의도하신 오프셋 스케일링 공식 원형 보존! ▼▼▼
               calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
               self.user_speed_offset = max(10.0, calculated_offset)
 
