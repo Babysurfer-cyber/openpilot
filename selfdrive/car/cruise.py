@@ -784,7 +784,8 @@ class VCruiseCarrot:
               self.user_speed_offset = 10.0  
             else:
               base_speed = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
-              diff_speed = base_speed - effective_limit
+              # ▼▼▼ [핵심 수정] 새 제한속도가 아닌, '기존 제한속도(prev_limit)'를 빼서 순수 오프셋 추출! ▼▼▼
+              diff_speed = base_speed - self.prev_limit_speed_for_auto
               calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
               self.user_speed_offset = max(10.0, calculated_offset)
 
