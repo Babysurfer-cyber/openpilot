@@ -761,6 +761,7 @@ class VCruiseCarrot:
         else:
           # 제한속도 신호 로스트 시 보류 초기화
           if self.auto_camera_pending:
+            effective_limit = self.auto_pending_limit  # 💡 [핵심 수정] 날려버리지 말고 통과 속도로 드디어 적용!!
             self.auto_camera_pending = False
             self.auto_pending_limit = 0
 
