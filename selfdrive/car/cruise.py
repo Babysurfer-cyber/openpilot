@@ -772,13 +772,14 @@ class VCruiseCarrot:
             self.auto_prev_limit = auto_raw_limit
         else:
           if effective_limit > 0 and effective_limit != self.auto_prev_limit:
-            # ▼▼▼ [핵심 수정] 통과 직전의 실시간 크루즈 속도(v_cruise_kph)와 비교! ▼▼▼
+            # ▼▼▼ 통과 직전 실시간 속도 비교 + 최소 10 보장 ▼▼▼
             if effective_limit < v_cruise_kph:
               raw_offset = (v_cruise_kph - effective_limit) / 2.0
             else:
               raw_offset = 10.0
 
-            offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+            calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+            offset = max(10.0, calculated_offset)  # 💡 5가 나오든 0이 나오든 무조건 최소 +10 보장!
             new_v_cruise = float(effective_limit + offset)
 
             # 타겟 속도가 실제로 바뀌었을 때만 크루즈 적용
