@@ -695,123 +695,105 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [위치 이동 & 수정] 5번 모드: 카메라 통과 시점 완벽 동기화 로직
+    # ▼ [최종 완성본] 오토모드(5번) 로직 (스냅샷 + 4A3/4BE 룰 + 카메라 보류)
     # ==============================================================
     try:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
-        
-      # 화면 UI 처리를 위한 변수
-      is_car_cam = (CS.speedLimit > 0 and CS.speedLimitDistance > 0)
-      is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
-      self.is_cam = is_car_cam or is_app_cam
 
       if getattr(self, 'current_driving_mode', 3) == 5:
-        if not hasattr(self, 'prev_limit_speed_for_auto'):
-          self.prev_limit_speed_for_auto = 0
-          self.auto_mode_applied = False
-          self.user_speed_offset = 10.0  
-          self.last_auto_speed = 0.0     
-          self.was_auto_cam = False      
-          self.pending_cam_limit = 0     
+        # 1. 상태 변수 초기화
+        if not hasattr(self, 'auto_prev_limit'):
+          self.auto_prev_limit = 0
+          self.auto_camera_pending = False
+          self.auto_pending_limit = 0
+          self.auto_blinker_timer = 0
+          self.auto_snapshot_cruise = 0
 
-        # 💡 우측 깜빡이 7초(700프레임) 유지 타이머
+        # 2. 우측 깜빡이 타이머 (7초 = 700 프레임)
         if getattr(CS, 'rightBlinker', False):
-          self.right_blinker_timer = 700  # 켜져 있으면 타이머 꽉 채움
+          self.auto_blinker_timer = 700
         else:
-          self.right_blinker_timer = max(0, getattr(self, 'right_blinker_timer', 0) - 1)  # 꺼지면 카운트다운
+          self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
 
-        # 깜빡이가 지금 켜져 있거나, 꺼진 지 7초(700프레임) 이내면 True!
-        is_blinker_valid = getattr(CS, 'rightBlinker', False) or getattr(self, 'right_blinker_timer', 0) > 0
-
-        # ▼▼▼ [핵심 수정] 속도 데이터 추출 로직 완벽 분리 ▼▼▼
-        nav_limit = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
-        cam_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        # 3. 신호 추출 (4A3, 4BE, MapSource, Distance)
+        limit_4a3 = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
+        limit_4be = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
-        auto_is_cam = (cam_dist > 0)
+        # 4. 신호 우선순위 및 90km/h 룰 적용
+        auto_raw_limit = 0
+        is_4a3_active = False
 
-        if cam_limit > 0:
-          if auto_is_cam:
-            # 1. 거리(Distance)가 있는 진짜 과속카메라(4A3/4BE 무관): 무조건 신뢰!
-            auto_raw_limit = cam_limit
+        if limit_4a3 > 0:
+          auto_raw_limit = limit_4a3
+          is_4a3_active = True
+        else:
+          if v_cruise_kph >= 90 and not is_blinker_valid:
+            pass # 90 이상 & 깜빡이 없음: 4BE 무시!
+          elif limit_4be > 0:
+            auto_raw_limit = limit_4be # 4BE는 오직 속도만 사용
+
+        effective_limit = 0
+
+        # 5. 과속카메라 통과 시점 로직 (거리정보 방어막 + 스냅샷 저장)
+        if auto_raw_limit > 0:
+          is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
+          
+          if self.auto_prev_limit == 0:
+            effective_limit = auto_raw_limit
+            self.auto_camera_pending = False
+            self.auto_pending_limit = 0
+            self.auto_snapshot_cruise = v_cruise_kph  # 💡 최초 실행 스냅샷
+          elif is_camera_zone:
+            # 💡 카메라를 처음 발견한 순간! 직전 크루즈 속도를 사진 찍듯 기억함
+            if not self.auto_camera_pending:
+              self.auto_snapshot_cruise = v_cruise_kph 
+              
+            self.auto_camera_pending = True
+            self.auto_pending_limit = auto_raw_limit
           else:
-            # 2. 거리가 없는 단순 표지판(4BE)인 경우
-            if current_target >= 90 and not is_blinker_valid:
-              # 고속도로 램프 오인식이므로 무시! 내비 본선 속도 유지
-              auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0)
+            if self.auto_camera_pending:
+              # 카메라 통과 (mapSource 0 또는 cam_dist 0으로 변경): 드디어 적용!
+              effective_limit = self.auto_pending_limit if self.auto_pending_limit > 0 else auto_raw_limit
+              self.auto_camera_pending = False
+              self.auto_pending_limit = 0
             else:
-              # 깜빡이를 켰거나 타겟 속도가 낮으면 4BE 표지판 수용
-              auto_raw_limit = cam_limit
+              # 일반 속도 변경 (즉시 적용)
+              if auto_raw_limit != self.auto_prev_limit:
+                effective_limit = auto_raw_limit
+                self.auto_snapshot_cruise = v_cruise_kph  # 💡 일반 속도 변경 순간 스냅샷
         else:
-          # 카메라/표지판 속도가 없으면 내비 본선 속도 사용
-          auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0)
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          # 제한속도 신호 로스트 시 보류 초기화
+          if self.auto_camera_pending:
+            self.auto_camera_pending = False
+            self.auto_pending_limit = 0
 
-        # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
-        effective_limit = self.prev_limit_speed_for_auto
-
-        if auto_is_cam:
-          self.was_auto_cam = True  # 카메라 구간 진입 기억
-          if auto_raw_limit > 0:
-            if self.prev_limit_speed_for_auto == 0:
-              # 최초 실행 시 빈칸 방지를 위해 즉시 적용
-              effective_limit = auto_raw_limit
-              self.pending_cam_limit = 0  
+        # 6. 속도 변경 및 오프셋 계산 (수동 버튼 조작 제외)
+        if button_type in [ButtonType.accelCruise, ButtonType.decelCruise]:
+          if effective_limit > 0:
+            self.auto_prev_limit = effective_limit
+          elif auto_raw_limit > 0:
+            self.auto_prev_limit = auto_raw_limit
+        else:
+          if effective_limit > 0 and effective_limit != self.auto_prev_limit:
+            # ▼▼▼ 현재 속도가 아닌, '기억해둔 작동 직전 스냅샷 속도'와 비교! ▼▼▼
+            if effective_limit < self.auto_snapshot_cruise:
+              raw_offset = (self.auto_snapshot_cruise - effective_limit) / 2.0
             else:
-              # 💡 가속/감속 상관없이 카메라 구간이면 통과 시점까지 무조건 보류(암기)!
-              self.pending_cam_limit = auto_raw_limit  
+              raw_offset = 10.0
 
-        else:
-          if self.was_auto_cam:
-            # 1. 카메라 방금 통과 완료! -> 암기해둔 속도를 드디어 적용
-            if self.pending_cam_limit > 0:
-              effective_limit = self.pending_cam_limit
-              self.pending_cam_limit = 0  # 💡 적용 후 안전하게 초기화
-            self.was_auto_cam = False
-          else:
-            # ▼▼▼ 카메라는 없지만 제한속도가 변경된 경우 즉시 적용! ▼▼▼
-            if auto_raw_limit > 0 and auto_raw_limit != self.prev_limit_speed_for_auto:
-              effective_limit = auto_raw_limit
+            offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+            new_v_cruise = float(effective_limit + offset)
 
-        # -------------------------------------------------------------------
-        if effective_limit > 0:
-          # 1. 수동 조작 오프셋 업데이트 (운전자 조작은 무제한 허용!)
-          if self.auto_mode_applied and self.last_auto_speed > 0:
-            if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and v_cruise_kph != self.last_auto_speed:
-              self.user_speed_offset = float(v_cruise_kph - effective_limit)
-              self.last_auto_speed = v_cruise_kph
-              self.params_memory.put_float("LastAutoSpeed", self.last_auto_speed) # 💡 메모리에 백업!
+            # 타겟 속도가 실제로 바뀌었을 때만 크루즈 적용
+            if v_cruise_kph != new_v_cruise:
+              v_cruise_kph = new_v_cruise
+              
+            self.auto_prev_limit = effective_limit
 
-          # 2. 제한속도 변경 감지 시 오프셋 동기화
-          if (effective_limit != self.prev_limit_speed_for_auto) and not (button_type in [ButtonType.accelCruise, ButtonType.decelCruise]):
-            # ▼▼▼ [수정] 최초 실행(prev == 0)일 때도 기본 오프셋(10)을 적용하여 급발진 방지! ▼▼▼
-            if self.prev_limit_speed_for_auto == 0 or effective_limit > self.prev_limit_speed_for_auto:
-              self.user_speed_offset = 10.0  
-            else:
-              base_speed = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
-              diff_speed = base_speed - self.prev_limit_speed_for_auto
-              # ▼▼▼ [유지] 회원님이 의도하신 오프셋 스케일링 공식 원형 보존! ▼▼▼
-              calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
-              self.user_speed_offset = max(10.0, calculated_offset)
-
-          self.prev_limit_speed_for_auto = effective_limit
-          self.auto_mode_applied = True
-
-          # 3. 계산된 목표 속도를 즉시 크루즈 타겟으로 적용!
-          v_cruise_kph = float(effective_limit + self.user_speed_offset)
-          self.last_auto_speed = v_cruise_kph
-          self.params_memory.put_float("LastAutoSpeed", self.last_auto_speed) # 💡 메모리에 백업!
-
-        else:
-          if not self.was_auto_cam:
-            self.prev_limit_speed_for_auto = 0
-            self.auto_mode_applied = False
-            self.user_speed_offset = 10.0
-            self.last_auto_speed = v_cruise_kph  # 0.0이 아니라 현재 속도 백업!
-            self.params_memory.put_float("LastAutoSpeed", self.last_auto_speed) # 💡 메모리에 백업!
-        
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
