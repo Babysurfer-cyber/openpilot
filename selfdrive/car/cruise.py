@@ -695,20 +695,19 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [최종 완성본] 오토모드(5번) 로직 (스냅샷 + 4A3/4BE 룰 + 카메라 보류)
+    # ▼ [최종 완성본] 오토모드(5번) 로직 (통과 직전 속도 참조)
     # ==============================================================
     try:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
 
       if getattr(self, 'current_driving_mode', 3) == 5:
-        # 1. 상태 변수 초기화
+        # 1. 상태 변수 초기화 (스냅샷 삭제로 깔끔해짐!)
         if not hasattr(self, 'auto_prev_limit'):
           self.auto_prev_limit = 0
           self.auto_camera_pending = False
           self.auto_pending_limit = 0
           self.auto_blinker_timer = 0
-          self.auto_snapshot_cruise = 0
 
         # 2. 우측 깜빡이 타이머 (7초 = 700 프레임)
         if getattr(CS, 'rightBlinker', False):
@@ -738,7 +737,7 @@ class VCruiseCarrot:
 
         effective_limit = 0
 
-        # 5. 과속카메라 통과 시점 로직 (거리정보 방어막 + 스냅샷 저장)
+        # 5. 과속카메라 통과 시점 로직 (보류 기능 유지)
         if auto_raw_limit > 0:
           is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
           
@@ -746,12 +745,7 @@ class VCruiseCarrot:
             effective_limit = auto_raw_limit
             self.auto_camera_pending = False
             self.auto_pending_limit = 0
-            self.auto_snapshot_cruise = v_cruise_kph  # 💡 최초 실행 스냅샷
           elif is_camera_zone:
-            # 💡 카메라를 처음 발견한 순간! 직전 크루즈 속도를 사진 찍듯 기억함
-            if not self.auto_camera_pending:
-              self.auto_snapshot_cruise = v_cruise_kph 
-              
             self.auto_camera_pending = True
             self.auto_pending_limit = auto_raw_limit
           else:
@@ -764,7 +758,6 @@ class VCruiseCarrot:
               # 일반 속도 변경 (즉시 적용)
               if auto_raw_limit != self.auto_prev_limit:
                 effective_limit = auto_raw_limit
-                self.auto_snapshot_cruise = v_cruise_kph  # 💡 일반 속도 변경 순간 스냅샷
         else:
           # 제한속도 신호 로스트 시 보류 초기화
           if self.auto_camera_pending:
@@ -779,9 +772,9 @@ class VCruiseCarrot:
             self.auto_prev_limit = auto_raw_limit
         else:
           if effective_limit > 0 and effective_limit != self.auto_prev_limit:
-            # ▼▼▼ 현재 속도가 아닌, '기억해둔 작동 직전 스냅샷 속도'와 비교! ▼▼▼
-            if effective_limit < self.auto_snapshot_cruise:
-              raw_offset = (self.auto_snapshot_cruise - effective_limit) / 2.0
+            # ▼▼▼ [핵심 수정] 통과 직전의 실시간 크루즈 속도(v_cruise_kph)와 비교! ▼▼▼
+            if effective_limit < v_cruise_kph:
+              raw_offset = (v_cruise_kph - effective_limit) / 2.0
             else:
               raw_offset = 10.0
 
