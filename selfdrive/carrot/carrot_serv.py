@@ -1010,6 +1010,7 @@ class CarrotServ:
                 effective_limit = auto_raw_limit
         else:
           if self.auto_camera_pending_serv:
+            effective_limit = self.auto_pending_limit_serv  # 💡 [핵심 수정] UI 예측 로직에도 똑같이 통과 속도 적용!!
             self.auto_camera_pending_serv = False
             self.auto_pending_limit_serv = 0
 
