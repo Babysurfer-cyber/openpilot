@@ -733,16 +733,14 @@ class VCruiseCarrot:
           auto_raw_limit = CS.navSpeedLimit
         else:
           # 2. 4A3 신호가 없을 때 (4BE 등)
-          # 💡 타겟 90 이상이어도 '우측 깜빡이'가 켜져 있거나 꺼진 지 5초 이내면 4BE 수용!
+          # 💡 타겟 90 이상이어도 '우측 깜빡이'가 켜져 있거나 꺼진 지 7초 이내면 4BE 수용!
           if current_target >= 90 and not is_blinker_valid:
             auto_is_cam = False
             auto_raw_limit = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0
           else:
             auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-            if auto_is_cam:
-              auto_raw_limit = 0  # 4BE 과속카메라 무시
-            else:
-              auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+            # ▼▼▼ [핵심 수정] 4BE 거리 신호라도 강제로 0으로 죽이지 않고, 날것 그대로 받아들입니다! ▼▼▼
+            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
