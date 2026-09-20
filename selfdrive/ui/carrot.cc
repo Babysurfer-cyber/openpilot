@@ -1993,8 +1993,8 @@ public:
     int     myDrivingMode = 1;
 
     QString szPosRoadName = "";
+    QString szPosRoadName_last = ""; // 💡 [추가] 이전 안내 텍스트 기억용
     int     nRoadLimitSpeed = 30;
-    int     nRoadLimitSpeed_last = 0;  // ⬅️ [추가] 이전 속도 기억용
     int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
     int     myDrivingMode_last = 1;    // 💡 [핵심 추가] 이전 드라이빙 모드 기억용
     int     nGoPosDist = 0;
@@ -2105,7 +2105,7 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // ▼▼▼ [수정] 오토모드(5번) 깜빡임 로직을 안내음 발생 조건과 100% 동기화 ▼▼▼
+        // ▼▼▼ [수정] 오토모드(5번) 깜빡임 로직을 '안내음(🔔) 송출 시점'과 100% 완벽 동기화 ▼▼▼
         bool trigger_blink = false;
 
         // 1. 오토모드(5번) 최초 진입 시
@@ -2113,20 +2113,20 @@ public:
             trigger_blink = true;
         }
 
-        // 2. 오토모드(5번) 중에 제한속도가 0보다 큰 값으로 변경될 때 (정보 없던 곳 -> 있는 곳 포함)
+        // 2. 파이썬(cruise.py)에서 보류(Pending)가 끝나고, 실제 오프셋 계산 후 🔔 텍스트가 날아올 때!
         if (myDrivingMode == 5) {
-            if (nRoadLimitSpeed != nRoadLimitSpeed_last && nRoadLimitSpeed > 0) {
+            if (szPosRoadName != szPosRoadName_last && szPosRoadName.contains("🔔")) {
                 trigger_blink = true;
             }
         }
 
         if (trigger_blink) {
-            auto_blink_timer = 60; // 3초간 깜빡임 타이머 장전!
+            auto_blink_timer = 60; // 3초간 깜빡임 타이머 장전! (60프레임)
         }
 
         // 상태값 갱신 (다음 프레임 비교용)
         myDrivingMode_last = myDrivingMode;
-        nRoadLimitSpeed_last = nRoadLimitSpeed;
+        szPosRoadName_last = szPosRoadName;
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
