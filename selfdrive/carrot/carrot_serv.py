@@ -966,10 +966,8 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # ▼▼▼ [핵심 수정] 크루즈 90 이상 시 4A3 신호만 신뢰 (램프 표지판 오인식 차단) ▼▼▼
       v_cruise_kph = (CS.cruiseState.speed * 3.6) if CS is not None else 0
       
-      # 💡 UI 동기화: cruise.py에서 철통 방어 중인 순수 타겟 속도(금고값)를 읽어옴!
       current_target = v_cruise_kph
       try:
         last_auto_val = self.params_memory.get_float("LastAutoSpeed")
@@ -978,21 +976,28 @@ class CarrotServ:
       except:
         pass
 
+      # 💡 우측 깜빡이 5초 유지 타이머 (시간 기준)
+      if CS is not None and getattr(CS, 'rightBlinker', False):
+        self.last_right_blinker_time = time.monotonic()  # 켜져 있을 때의 현재 시간 기록
+
+      is_blinker_valid = False
+      if CS is not None:
+        # 깜빡이가 지금 켜져 있거나, 마지막으로 켠 시간이 현재 시간 기준 5초 이내면 True!
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'last_right_blinker_time', 0.0) < 5.0)
+
       if CS is not None:
         if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
-          # 1. 4A3 신호가 있을 때 (최우선)
           auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
           auto_raw_limit = CS.navSpeedLimit
         else:
-          # 2. 4A3 신호가 없을 때
-          # 💡 [핵심 수정] 타겟 90 이상이어도 '우측 깜빡이(rightBlinker)'가 켜져 있으면 4BE 표지판 즉시 수용!
-          if current_target >= 90 and not getattr(CS, 'rightBlinker', False):
+          # 💡 타겟 90 이상이어도 깜빡이가 켜져있거나 꺼진 지 5초 이내면 4BE 수용!
+          if current_target >= 90 and not is_blinker_valid:
             auto_is_cam = False
             auto_raw_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else 0
           else:
             auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
             if auto_is_cam:
-              auto_raw_limit = 0  # 4BE 과속카메라 무시
+              auto_raw_limit = 0
             else:
               auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
       else:
