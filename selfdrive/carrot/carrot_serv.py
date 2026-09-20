@@ -990,19 +990,18 @@ class CarrotServ:
           auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
           auto_raw_limit = CS.navSpeedLimit
         else:
-          # 💡 타겟 90 이상이어도 깜빡이가 켜져있거나 꺼진 지 5초 이내면 4BE 수용!
+          # 💡 타겟 90 이상이어도 깜빡이가 켜져있거나 꺼진 지 7초 이내면 4BE 수용!
           if current_target >= 90 and not is_blinker_valid:
             auto_is_cam = False
             auto_raw_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else 0
           else:
             auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-            if auto_is_cam:
-              auto_raw_limit = 0
-            else:
-              auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+            # ▼▼▼ [핵심 수정] 4BE 거리 신호라도 강제로 0으로 죽이지 않고, 날것 그대로 받아들입니다! ▼▼▼
+            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
       else:
         auto_is_cam = False
         auto_raw_limit = 0
+
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       effective_limit = self.prev_nav_limit
