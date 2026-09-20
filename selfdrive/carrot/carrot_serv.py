@@ -930,7 +930,7 @@ class CarrotServ:
     vehicle_curve_speed = 250 # ▼▼▼ [추가] 커브 속도 변수
 
     # =========================================================
-    # ▼ [수정] 5번 모드(AUTO) 속도 변경 안내음 및 텍스트 알림 로직
+    # ▼ [최종 완성본] 5번 모드(AUTO) 속도 변경 안내음 동기화
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
@@ -938,26 +938,13 @@ class CarrotServ:
       self.prev_speed_limit = self.nRoadLimitSpeed
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
-    if not hasattr(self, 'was_auto_cam_serv'):
-      self.was_auto_cam_serv = False
-    if not hasattr(self, 'prev_nav_limit'):
-      self.prev_nav_limit = 0  
-    if not hasattr(self, 'pending_cam_limit_serv'):
-      self.pending_cam_limit_serv = 0
 
-    # ▼▼▼ [기존 로직 유지] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
+    # 순정 카메라 및 앱 카메라 변수
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
     is_cam = is_car_cam or is_app_cam
     
-    if is_car_cam:
-      raw_limit = CS.speedLimit
-    elif is_app_cam:
-      raw_limit = self.xSpdLimit
-    elif CS is not None and getattr(CS, 'speedLimit', 0) > 0:
-      raw_limit = CS.speedLimit
-    else:
-      raw_limit = self.nRoadLimitSpeed
+    raw_limit = CS.speedLimit if is_car_cam else (self.xSpdLimit if is_app_cam else (CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else self.nRoadLimitSpeed))
 
     play_prompt = False
     
@@ -966,98 +953,94 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      v_cruise_kph = (CS.cruiseState.speed * 3.6) if CS is not None else 0
+      current_target = (CS.cruiseState.speed * 3.6) if CS is not None else 0
       
-      current_target = v_cruise_kph
-      try:
-        last_auto_val = self.params_memory.get_float("LastAutoSpeed")
-        if last_auto_val > 0:
-          current_target = last_auto_val
-      except:
-        pass
+      # 1. 상태 변수 초기화
+      if not hasattr(self, 'auto_prev_limit_serv'):
+        self.auto_prev_limit_serv = 0
+        self.auto_camera_pending_serv = False
+        self.auto_pending_limit_serv = 0
+        self.auto_snapshot_cruise_serv = 0
 
       if CS is not None:
-        # 💡 우측 깜빡이 7초 유지 타이머 (시간 기준)
+        # 2. 우측 깜빡이 타이머 (시간 기준)
         if getattr(CS, 'rightBlinker', False):
-          self.last_right_blinker_time = time.monotonic()  # 켜져 있을 때의 현재 시간 기록
+          self.auto_last_blinker_time_serv = time.monotonic()
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 깜빡이가 지금 켜져 있거나, 마지막으로 켠 시간이 현재 시간 기준 7초 이내면 True!
-        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'last_right_blinker_time', 0.0) < 7.0)
-
-        nav_limit = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
-        cam_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        # 3. 신호 추출
+        limit_4a3 = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
+        limit_4be = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
-        auto_is_cam = (cam_dist > 0)
-
-        if cam_limit > 0:
-          if auto_is_cam:
-            auto_raw_limit = cam_limit
-          else:
-            if current_target >= 90 and not is_blinker_valid:
-              auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_nav_limit if self.prev_nav_limit > 0 else 0)
-            else:
-              auto_raw_limit = cam_limit
-        else:
-          auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_nav_limit if self.prev_nav_limit > 0 else 0)
-      else:
-        auto_is_cam = False
+        # 4. 신호 우선순위 및 90km/h 룰
         auto_raw_limit = 0
+        is_4a3_active = False
 
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-      effective_limit = self.prev_nav_limit
-
-      if auto_is_cam:
-        # 카메라 통과 중: 속도 변경 보류, 암기
-        self.was_auto_cam_serv = True
-        if auto_raw_limit > 0:
-          if self.prev_nav_limit == 0:
-            # 최초 실행 시 빈칸 방지
-            effective_limit = auto_raw_limit
-            self.pending_cam_limit_serv = 0  
-          else:
-            # 💡 가속/감속 상관없이 카메라 구간이면 통과 시점까지 무조건 보류(암기)!
-            self.pending_cam_limit_serv = auto_raw_limit  
-      else:
-        if self.was_auto_cam_serv:
-          # 카메라를 막 통과했을 때
-          self.was_auto_cam_serv = False
-          if self.pending_cam_limit_serv > 0:
-            effective_limit = self.pending_cam_limit_serv
-            self.pending_cam_limit_serv = 0  # 💡 적용 후 안전하게 초기화
+        if limit_4a3 > 0:
+          auto_raw_limit = limit_4a3
+          is_4a3_active = True
         else:
-          # 일반 주행 중
-          if auto_raw_limit > 0 and auto_raw_limit != self.prev_nav_limit:
-            effective_limit = auto_raw_limit
-            
-      # 최종 결정된 effective_limit이 바뀌었을 때 즉시 띠링!
-      if effective_limit != self.prev_nav_limit:
-        if effective_limit > 0:
-          # ▼▼▼ [수정] 최초 실행(prev == 0)일 때도 기본 오프셋(10) 예측! ▼▼▼
-          if self.prev_nav_limit == 0 or effective_limit > self.prev_nav_limit:
-            expected_offset = 10.0
-          else:
-            diff_speed = current_target - self.prev_nav_limit
-            # ▼▼▼ [유지] 회원님이 의도하신 오프셋 스케일링 공식 원형 보존! ▼▼▼
-            calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
-            expected_offset = max(10.0, calculated_offset)
-            
-          expected_new_target = float(effective_limit + expected_offset)
+          if current_target >= 90 and not is_blinker_valid:
+            pass # 무시
+          elif limit_4be > 0:
+            auto_raw_limit = limit_4be
+
+        effective_limit = 0
+
+        # 5. 과속카메라 통과 시점 로직 (스냅샷 저장)
+        if auto_raw_limit > 0:
+          is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
           
-          # 💡 크루즈 속도(current_target)가 이전과 똑같이 유지된다면 안내음(호들갑) 생략!
+          if self.auto_prev_limit_serv == 0:
+            effective_limit = auto_raw_limit
+            self.auto_camera_pending_serv = False
+            self.auto_pending_limit_serv = 0
+            self.auto_snapshot_cruise_serv = current_target
+          elif is_camera_zone:
+            if not self.auto_camera_pending_serv:
+              self.auto_snapshot_cruise_serv = current_target
+            self.auto_camera_pending_serv = True
+            self.auto_pending_limit_serv = auto_raw_limit
+          else:
+            if self.auto_camera_pending_serv:
+              effective_limit = self.auto_pending_limit_serv if self.auto_pending_limit_serv > 0 else auto_raw_limit
+              self.auto_camera_pending_serv = False
+              self.auto_pending_limit_serv = 0
+            else:
+              if auto_raw_limit != self.auto_prev_limit_serv:
+                effective_limit = auto_raw_limit
+                self.auto_snapshot_cruise_serv = current_target
+        else:
+          if self.auto_camera_pending_serv:
+            self.auto_camera_pending_serv = False
+            self.auto_pending_limit_serv = 0
+
+        # 6. 안내음 송출 로직 (예측 계산)
+        if effective_limit > 0 and effective_limit != self.auto_prev_limit_serv:
+          # ▼▼▼ 스냅샷 속도 기준으로 예측 ▼▼▼
+          if effective_limit < self.auto_snapshot_cruise_serv:
+            raw_offset = (self.auto_snapshot_cruise_serv - effective_limit) / 2.0
+          else:
+            raw_offset = 10.0
+            
+          offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+          expected_new_target = float(effective_limit + offset)
+          
           if int(round(expected_new_target)) != int(round(current_target)):
             play_prompt = True
             self.szPosRoadName = f"오토 속도 변경: {int(effective_limit)}km/h 🔔"
             
-        self.prev_nav_limit = effective_limit
+          self.auto_prev_limit_serv = effective_limit
+          current_limit = auto_raw_limit # UI 표시용
+        else:
+          current_limit = auto_raw_limit if auto_raw_limit > 0 else self.auto_prev_limit_serv
+      else:
+        current_limit = raw_limit
 
-      # 화면 표시용 변수 업데이트
-      current_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else raw_limit
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-        
     else:
-      # 5번 모드가 아닐 때 (기존 방식 유지)
+      # 5번 모드가 아닐 때 (일반 모드)
       self.was_auto_cam_serv = False
       if is_cam:
         if self.prev_speed_limit <= 0:
@@ -1084,10 +1067,7 @@ class CarrotServ:
     ### 과속카메라, 사고방지턱
 
     # ▼▼▼ [핵심 1] 차량 순정 내비게이션(4A3/4BE)을 1순위로 역전 ▼▼▼
-    # 💡 오토모드/일반모드 구분 없이 항상 순정 CAN 신호 그대로 사용 (안전하고 확실한 HDA 감속 보장)
     is_car_navi_active = CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0
-    nav_limit_for_cam = getattr(CS, 'speedLimit', 0) if CS is not None else 0
-
     is_app_active = (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0
 
     sdi_speed = 250
@@ -1097,11 +1077,11 @@ class CarrotServ:
       # 1순위: 차량 순정 내비 (가장 정확함)
       sdi_speed = min(sdi_speed,
                       self.calculate_current_speed(CS.speedLimitDistance,
-                                                   nav_limit_for_cam * self.autoNaviSpeedSafetyFactor,
+                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
                                                    self.autoNaviSpeedCtrlEnd,
                                                    self.autoNaviSpeedDecelRate))
       hda_active = True
-      final_xSpdLimit = nav_limit_for_cam
+      final_xSpdLimit = CS.speedLimit
       final_xSpdDist = CS.speedLimitDistance
       final_xSpdType = 1  
       self.active_carrot = max(self.active_carrot, 2)
