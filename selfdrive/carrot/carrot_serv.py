@@ -976,14 +976,14 @@ class CarrotServ:
       except:
         pass
 
-      # 💡 우측 깜빡이 5초 유지 타이머 (시간 기준)
+      # 💡 우측 깜빡이 7초 유지 타이머 (시간 기준)
       if CS is not None and getattr(CS, 'rightBlinker', False):
         self.last_right_blinker_time = time.monotonic()  # 켜져 있을 때의 현재 시간 기록
 
       is_blinker_valid = False
       if CS is not None:
-        # 깜빡이가 지금 켜져 있거나, 마지막으로 켠 시간이 현재 시간 기준 5초 이내면 True!
-        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'last_right_blinker_time', 0.0) < 5.0)
+        # 깜빡이가 지금 켜져 있거나, 마지막으로 켠 시간이 현재 시간 기준 7초 이내면 True!
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'last_right_blinker_time', 0.0) < 7.0)
 
       if CS is not None:
         if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
@@ -1011,7 +1011,12 @@ class CarrotServ:
         # 카메라 통과 중: 속도 변경 보류, 암기
         self.was_auto_cam_serv = True
         if auto_raw_limit > 0:
-          self.pending_cam_limit_serv = auto_raw_limit
+          # ▼▼▼ [핵심 추가] 속도가 높아지거나 최초 실행이면 즉시 적용! ▼▼▼
+          if self.prev_nav_limit == 0 or auto_raw_limit > self.prev_nav_limit:
+            effective_limit = auto_raw_limit
+            self.pending_cam_limit_serv = 0  # 즉시 적용했으므로 보류 취소
+          elif auto_raw_limit < self.prev_nav_limit:
+            self.pending_cam_limit_serv = auto_raw_limit  # 💡 속도가 낮아지는 감속 구간만 통과 시점까지 암기!
       else:
         if self.was_auto_cam_serv:
           # 카메라를 막 통과했을 때
