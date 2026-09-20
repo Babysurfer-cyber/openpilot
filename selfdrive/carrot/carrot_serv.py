@@ -966,7 +966,7 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # ▼▼▼ [핵심 수정] 크루즈 90 이상 시 4A3 신호만 신뢰 (램프 표지판 오인식 차단) ▼▼▼
+      # ▼▼▼ [핵심 수정] 크루즈 100 이상 시 4A3 신호만 신뢰 (램프 표지판 오인식 차단) ▼▼▼
       v_cruise_kph = (CS.cruiseState.speed * 3.6) if CS is not None else 0
       
       # 💡 UI 동기화: cruise.py에서 철통 방어 중인 순수 타겟 속도(금고값)를 읽어옴!
@@ -985,8 +985,8 @@ class CarrotServ:
           auto_raw_limit = CS.navSpeedLimit
         else:
           # 2. 4A3 신호가 없을 때
-          # 💡 [방어 완벽] HDA가 속여도 메모리에서 가져온 진짜 속도로 90 이상 판단!
-          if current_target >= 90:
+          # 💡 [방어 완벽] HDA가 속여도 메모리에서 가져온 진짜 속도로 100 이상 판단!
+          if current_target >= 100:
             auto_is_cam = False
             auto_raw_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else 0
           else:
