@@ -715,18 +715,19 @@ class VCruiseCarrot:
           self.was_auto_cam = False      
           self.pending_cam_limit = 0     
 
-        # ▼▼▼ [핵심 수정] 금고 속도 기준 100 이상 시 4A3 신호만 신뢰 ▼▼▼
+        # ▼▼▼ [핵심 수정] 금고 속도 기준 90 이상 시 4A3 신호만 신뢰 ▼▼▼
         # 현재 오토모드의 타겟 크루즈 속도를 확인 (금고값 우선)
         current_target = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
 
+        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
         if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
           # 1. 4A3 신호가 우선적으로 있을 때
           auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
           auto_raw_limit = CS.navSpeedLimit
         else:
           # 2. 4A3 신호가 없을 때 (4BE 등)
-          # 💡 크루즈 타겟이 100 이상이면 4BE(카메라/표지판) 신호 무시하고 이전 제한속도 유지!
-          if current_target >= 100:
+          # 💡 [핵심 수정] 타겟 90 이상이어도 '우측 깜빡이(rightBlinker)'가 켜져 있으면 4BE 표지판 즉시 수용!
+          if current_target >= 90 and not getattr(CS, 'rightBlinker', False):
             auto_is_cam = False
             auto_raw_limit = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0
           else:
