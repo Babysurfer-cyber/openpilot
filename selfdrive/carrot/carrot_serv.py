@@ -976,28 +976,30 @@ class CarrotServ:
       except:
         pass
 
-      # 💡 우측 깜빡이 7초 유지 타이머 (시간 기준)
-      if CS is not None and getattr(CS, 'rightBlinker', False):
-        self.last_right_blinker_time = time.monotonic()  # 켜져 있을 때의 현재 시간 기록
-
-      is_blinker_valid = False
       if CS is not None:
+        # 💡 우측 깜빡이 7초 유지 타이머 (시간 기준)
+        if getattr(CS, 'rightBlinker', False):
+          self.last_right_blinker_time = time.monotonic()  # 켜져 있을 때의 현재 시간 기록
+
         # 깜빡이가 지금 켜져 있거나, 마지막으로 켠 시간이 현재 시간 기준 7초 이내면 True!
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'last_right_blinker_time', 0.0) < 7.0)
 
-      if CS is not None:
-        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
-          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-          auto_raw_limit = CS.navSpeedLimit
-        else:
-          # 💡 타겟 90 이상이어도 깜빡이가 켜져있거나 꺼진 지 7초 이내면 4BE 수용!
-          if current_target >= 90 and not is_blinker_valid:
-            auto_is_cam = False
-            auto_raw_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else 0
+        nav_limit = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
+        cam_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        cam_dist = getattr(CS, 'speedLimitDistance', 0)
+
+        auto_is_cam = (cam_dist > 0)
+
+        if cam_limit > 0:
+          if auto_is_cam:
+            auto_raw_limit = cam_limit
           else:
-            auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-            # ▼▼▼ [핵심 수정] 4BE 거리 신호라도 강제로 0으로 죽이지 않고, 날것 그대로 받아들입니다! ▼▼▼
-            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+            if current_target >= 90 and not is_blinker_valid:
+              auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_nav_limit if self.prev_nav_limit > 0 else 0)
+            else:
+              auto_raw_limit = cam_limit
+        else:
+          auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_nav_limit if self.prev_nav_limit > 0 else 0)
       else:
         auto_is_cam = False
         auto_raw_limit = 0
