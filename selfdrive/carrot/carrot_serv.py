@@ -1011,12 +1011,13 @@ class CarrotServ:
         # 카메라 통과 중: 속도 변경 보류, 암기
         self.was_auto_cam_serv = True
         if auto_raw_limit > 0:
-          # ▼▼▼ [핵심 추가] 속도가 높아지거나 최초 실행이면 즉시 적용! ▼▼▼
-          if self.prev_nav_limit == 0 or auto_raw_limit > self.prev_nav_limit:
+          if self.prev_nav_limit == 0:
+            # 최초 실행 시 빈칸 방지
             effective_limit = auto_raw_limit
-            self.pending_cam_limit_serv = 0  # 즉시 적용했으므로 보류 취소
-          elif auto_raw_limit < self.prev_nav_limit:
-            self.pending_cam_limit_serv = auto_raw_limit  # 💡 속도가 낮아지는 감속 구간만 통과 시점까지 암기!
+            self.pending_cam_limit_serv = 0  
+          else:
+            # 💡 가속/감속 상관없이 카메라 구간이면 통과 시점까지 무조건 보류(암기)!
+            self.pending_cam_limit_serv = auto_raw_limit  
       else:
         if self.was_auto_cam_serv:
           # 카메라를 막 통과했을 때
