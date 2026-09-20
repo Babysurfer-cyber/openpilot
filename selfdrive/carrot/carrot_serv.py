@@ -989,7 +989,7 @@ class CarrotServ:
 
         effective_limit = 0
 
-        # 5. 과속카메라 통과 시점 로직 (스냅샷 저장)
+        # 5. 과속카메라 통과 시점 로직 (보류 기능 유지)
         if auto_raw_limit > 0:
           is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
           
@@ -997,10 +997,7 @@ class CarrotServ:
             effective_limit = auto_raw_limit
             self.auto_camera_pending_serv = False
             self.auto_pending_limit_serv = 0
-            self.auto_snapshot_cruise_serv = current_target
           elif is_camera_zone:
-            if not self.auto_camera_pending_serv:
-              self.auto_snapshot_cruise_serv = current_target
             self.auto_camera_pending_serv = True
             self.auto_pending_limit_serv = auto_raw_limit
           else:
@@ -1011,7 +1008,6 @@ class CarrotServ:
             else:
               if auto_raw_limit != self.auto_prev_limit_serv:
                 effective_limit = auto_raw_limit
-                self.auto_snapshot_cruise_serv = current_target
         else:
           if self.auto_camera_pending_serv:
             self.auto_camera_pending_serv = False
@@ -1019,9 +1015,9 @@ class CarrotServ:
 
         # 6. 안내음 송출 로직 (예측 계산)
         if effective_limit > 0 and effective_limit != self.auto_prev_limit_serv:
-          # ▼▼▼ 스냅샷 속도 기준으로 예측 ▼▼▼
-          if effective_limit < self.auto_snapshot_cruise_serv:
-            raw_offset = (self.auto_snapshot_cruise_serv - effective_limit) / 2.0
+          # ▼▼▼ [핵심 수정] 통과 직전의 실시간 크루즈 속도(current_target) 기준으로 예측 ▼▼▼
+          if effective_limit < current_target:
+            raw_offset = (current_target - effective_limit) / 2.0
           else:
             raw_offset = 10.0
             
