@@ -930,7 +930,7 @@ class CarrotServ:
     vehicle_curve_speed = 250 # ▼▼▼ [추가] 커브 속도 변수
 
     # =========================================================
-    # ▼ [최종 완성본] 5번 모드(AUTO) 속도 변경 안내음 동기화
+    # ▼ [최종 완성본] 화면(UI) 속도 표시 & 오토모드(5번) 안내음 분리
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
@@ -939,13 +939,27 @@ class CarrotServ:
     if not hasattr(self, 'prev_driving_mode'):
       self.prev_driving_mode = my_driving_mode
 
-    # 순정 카메라 및 앱 카메라 변수
+    # 1. 📺 화면(UI) 표시용 공통 제한속도 계산 (모드 상관없이 무조건 예전 방식 유지!)
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
     is_cam = is_car_cam or is_app_cam
     
     raw_limit = CS.speedLimit if is_car_cam else (self.xSpdLimit if is_app_cam else (CS.speedLimit if CS is not None and getattr(CS, 'speedLimit', 0) > 0 else self.nRoadLimitSpeed))
 
+    if is_cam:
+      if self.prev_speed_limit <= 0:
+        current_limit = 0  
+      elif raw_limit > 0 and raw_limit < self.prev_speed_limit:
+        current_limit = self.prev_speed_limit
+      else:
+        current_limit = raw_limit
+    else:
+      current_limit = raw_limit
+      
+    if current_limit != self.prev_speed_limit:
+      self.prev_speed_limit = current_limit
+
+    # 2. 🔔 오토모드(5번) 전용 안내음 송출 로직 (UI 표시에 절대 간섭하지 않음!)
     play_prompt = False
     
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
@@ -955,26 +969,21 @@ class CarrotServ:
     if my_driving_mode == 5:
       current_target = (CS.cruiseState.speed * 3.6) if CS is not None else 0
       
-      # 1. 상태 변수 초기화
       if not hasattr(self, 'auto_prev_limit_serv'):
         self.auto_prev_limit_serv = 0
         self.auto_camera_pending_serv = False
         self.auto_pending_limit_serv = 0
-        self.auto_snapshot_cruise_serv = 0
 
       if CS is not None:
-        # 2. 우측 깜빡이 타이머 (시간 기준)
         if getattr(CS, 'rightBlinker', False):
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 신호 추출
         limit_4a3 = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
         limit_4be = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
         map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
-        # 4. 신호 우선순위 및 90km/h 룰
         auto_raw_limit = 0
         is_4a3_active = False
 
@@ -983,13 +992,13 @@ class CarrotServ:
           is_4a3_active = True
         else:
           if current_target >= 90 and not is_blinker_valid:
-            pass # 무시
+            pass
           elif limit_4be > 0:
             auto_raw_limit = limit_4be
 
         effective_limit = 0
 
-        # 5. 과속카메라 통과 시점 로직 (보류 기능 유지)
+        # 과속카메라 통과 시점 로직 (보류 기능)
         if auto_raw_limit > 0:
           is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
           
@@ -1010,20 +1019,19 @@ class CarrotServ:
                 effective_limit = auto_raw_limit
         else:
           if self.auto_camera_pending_serv:
-            effective_limit = self.auto_pending_limit_serv  # 💡 [핵심 수정] UI 예측 로직에도 똑같이 통과 속도 적용!!
+            effective_limit = self.auto_pending_limit_serv
             self.auto_camera_pending_serv = False
             self.auto_pending_limit_serv = 0
 
-        # 6. 안내음 송출 로직 (예측 계산)
+        # 예측 계산 및 알림음 송출
         if effective_limit > 0 and effective_limit != self.auto_prev_limit_serv:
-          # ▼▼▼ 통과 직전 실시간 속도 기준 예측 + 최소 10 보장 ▼▼▼
           if effective_limit < current_target:
             raw_offset = (current_target - effective_limit) / 2.0
           else:
             raw_offset = 10.0
             
           calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-          offset = max(10.0, calculated_offset)  # 💡 최소 +10 보장!
+          offset = max(10.0, calculated_offset)
           expected_new_target = float(effective_limit + offset)
           
           if int(round(expected_new_target)) != int(round(current_target)):
@@ -1031,27 +1039,6 @@ class CarrotServ:
             self.szPosRoadName = f"오토 속도 변경: {int(effective_limit)}km/h 🔔"
             
           self.auto_prev_limit_serv = effective_limit
-          current_limit = auto_raw_limit # UI 표시용
-        else:
-          current_limit = auto_raw_limit if auto_raw_limit > 0 else self.auto_prev_limit_serv
-      else:
-        current_limit = raw_limit
-
-    else:
-      # 5번 모드가 아닐 때 (일반 모드)
-      self.was_auto_cam_serv = False
-      if is_cam:
-        if self.prev_speed_limit <= 0:
-          current_limit = 0  
-        elif raw_limit > 0 and raw_limit < self.prev_speed_limit:
-          current_limit = self.prev_speed_limit
-        else:
-          current_limit = raw_limit
-      else:
-        current_limit = raw_limit
-        
-      if current_limit != self.prev_speed_limit:
-        self.prev_speed_limit = current_limit
 
     if play_prompt:
       try:
@@ -1233,10 +1220,8 @@ class CarrotServ:
     msg = messaging.new_message('carrotMan')
     msg.valid = True
     msg.carrotMan.activeCarrot = self.active_carrot
-    # ▼▼▼ [핵심 수정] 5번 오토모드에서는 크루즈 속도 변경 시점(current_limit)에만 화면 표지판(AUTO 문구 포함) 동기화! ▼▼▼
-    display_limit = current_limit if my_driving_mode == 5 else raw_limit
-    msg.carrotMan.nRoadLimitSpeed = int(display_limit)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    # ▼▼▼ 오토모드/일반모드 상관없이 원래의 실시간 속도(current_limit) 전송! ▼▼▼
+    msg.carrotMan.nRoadLimitSpeed = int(current_limit)
     msg.carrotMan.remote = remote_ip
     # ▼▼▼ [핵심 4] 화면(UI) 변수에 중복 덮어쓰기가 제거되었습니다! ▼▼▼
     msg.carrotMan.xSpdType = int(final_xSpdType)
@@ -1280,8 +1265,8 @@ class CarrotServ:
       instruction = inst.navInstructionCarrot
       instruction.distanceRemaining = self.nGoPosDist
       instruction.timeRemaining = self.nGoPosTime
-      # ▼▼▼ [핵심 3] 내비게이션 안내용 속도 표지판도 완벽 동기화 ▼▼▼
-      instruction.speedLimit = display_limit / 3.6 if display_limit > 0 else 0
+      # ▼▼▼ 내비게이션 안내용 표지판도 원래의 실시간 속도로 완벽 복구 ▼▼▼
+      instruction.speedLimit = current_limit / 3.6 if current_limit > 0 else 0
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       instruction.maneuverDistance = float(self.nTBTDist)
       instruction.maneuverSecondaryText = self.szNearDirName
