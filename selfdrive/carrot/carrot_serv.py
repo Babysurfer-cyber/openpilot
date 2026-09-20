@@ -1032,12 +1032,12 @@ class CarrotServ:
       # 최종 결정된 effective_limit이 바뀌었을 때 즉시 띠링!
       if effective_limit != self.prev_nav_limit:
         if effective_limit > 0:
-          # 💡 cruise.py와 동일하게 새로운 크루즈 목표 속도를 미리 예측해 봅니다.
-          if self.prev_nav_limit > 0 and effective_limit > self.prev_nav_limit:
+          # ▼▼▼ [수정] 최초 실행(prev == 0)일 때도 기본 오프셋(10) 예측! ▼▼▼
+          if self.prev_nav_limit == 0 or effective_limit > self.prev_nav_limit:
             expected_offset = 10.0
           else:
-            # ▼▼▼ [핵심 수정] 새 제한속도가 아닌, '기존 제한속도(prev_limit)'를 빼서 순수 오프셋 추출! ▼▼▼
             diff_speed = current_target - self.prev_nav_limit
+            # ▼▼▼ [유지] 회원님이 의도하신 오프셋 스케일링 공식 원형 보존! ▼▼▼
             calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
             expected_offset = max(10.0, calculated_offset)
             
