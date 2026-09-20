@@ -715,21 +715,27 @@ class VCruiseCarrot:
           self.was_auto_cam = False      
           self.pending_cam_limit = 0     
 
-        # ▼▼▼ [핵심 수정] 4A3 우선, 4BE 과속카메라 무시 로직 ▼▼▼
+        # ▼▼▼ [핵심 수정] 금고 속도 기준 90 이상 시 4A3 신호만 신뢰 ▼▼▼
+        # 현재 오토모드의 타겟 크루즈 속도를 확인 (금고값 우선)
+        current_target = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
+
         if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
           # 1. 4A3 신호가 우선적으로 있을 때
           auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
           auto_raw_limit = CS.navSpeedLimit
         else:
           # 2. 4A3 신호가 없을 때 (4BE 등)
-          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-          if auto_is_cam:
-            # 💡 4BE 과속카메라 신호는 오토모드에서 무시! (미리 변속 방지용 대기 상태만 유지)
-            auto_raw_limit = 0
+          # 💡 크루즈 타겟이 90 이상이면 4BE(카메라/표지판) 신호 무시하고 이전 제한속도 유지!
+          if current_target >= 90:
+            auto_is_cam = False
+            auto_raw_limit = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0
           else:
-            # 💡 4BE 일반 구간(카메라 아님) 신호는 기존처럼 사용
-            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
+            if auto_is_cam:
+              auto_raw_limit = 0  # 4BE 과속카메라 무시
+            else:
+              auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
         effective_limit = self.prev_limit_speed_for_auto
