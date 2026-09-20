@@ -1032,8 +1032,21 @@ class CarrotServ:
       # 최종 결정된 effective_limit이 바뀌었을 때 즉시 띠링!
       if effective_limit != self.prev_nav_limit:
         if effective_limit > 0:
-          play_prompt = True
-          self.szPosRoadName = f"오토 속도 변경: {int(effective_limit)}km/h 🔔"
+          # 💡 [핵심 추가] cruise.py와 동일하게 새로운 크루즈 목표 속도를 미리 예측해 봅니다.
+          if self.prev_nav_limit > 0 and effective_limit > self.prev_nav_limit:
+            expected_offset = 10.0
+          else:
+            diff_speed = current_target - effective_limit
+            calculated_offset = float(math.floor((diff_speed / 10.0) + 0.5) * 5.0)
+            expected_offset = max(10.0, calculated_offset)
+            
+          expected_new_target = float(effective_limit + expected_offset)
+          
+          # 💡 크루즈 속도(current_target)가 이전과 똑같이 유지된다면 안내음(호들갑) 생략!
+          if expected_new_target != current_target:
+            play_prompt = True
+            self.szPosRoadName = f"오토 속도 변경: {int(effective_limit)}km/h 🔔"
+            
         self.prev_nav_limit = effective_limit
 
       # 화면 표시용 변수 업데이트
