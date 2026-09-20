@@ -718,9 +718,9 @@ class VCruiseCarrot:
         # ▼▼▼ [핵심 수정] 금고 속도 기준 90 이상 시 4A3 신호만 신뢰 (깜빡이 5초 연장 추가!) ▼▼▼
         current_target = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
 
-        # 💡 우측 깜빡이 5초(500프레임) 유지 타이머
+        # 💡 우측 깜빡이 7초(700프레임) 유지 타이머
         if getattr(CS, 'rightBlinker', False):
-          self.right_blinker_timer = 500  # 켜져 있으면 타이머 꽉 채움
+          self.right_blinker_timer = 700  # 켜져 있으면 타이머 꽉 채움
         else:
           self.right_blinker_timer = max(0, getattr(self, 'right_blinker_timer', 0) - 1)  # 꺼지면 카운트다운
 
@@ -751,11 +751,16 @@ class VCruiseCarrot:
         if auto_is_cam:
           self.was_auto_cam = True  # 카메라 구간 진입 기억
           if auto_raw_limit > 0:
-            self.pending_cam_limit = auto_raw_limit  # 통과 시점 적용을 위해 암기만 해둠!
+            # ▼▼▼ [핵심 추가] 속도가 높아지거나 최초 실행이면 즉시 적용! ▼▼▼
+            if self.prev_limit_speed_for_auto == 0 or auto_raw_limit > self.prev_limit_speed_for_auto:
+              effective_limit = auto_raw_limit
+              self.pending_cam_limit = 0  # 즉시 적용했으므로 보류 취소
+            elif auto_raw_limit < self.prev_limit_speed_for_auto:
+              self.pending_cam_limit = auto_raw_limit  # 💡 속도가 낮아지는 감속 구간만 통과 시점까지 암기!
 
         else:
           if self.was_auto_cam:
-            # 1. 카메라 방금 통과 완료! -> 암기해둔 속도를 드디어 적용
+            # 1. 카메라 방금 통과 완료! -> 암기해둔 감속 속도를 드디어 적용
             if self.pending_cam_limit > 0:
               effective_limit = self.pending_cam_limit
               self.pending_cam_limit = 0  # 💡 적용 후 안전하게 초기화
