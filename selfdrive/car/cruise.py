@@ -715,32 +715,38 @@ class VCruiseCarrot:
           self.was_auto_cam = False      
           self.pending_cam_limit = 0     
 
-        # ▼▼▼ [핵심 수정] 금고 속도 기준 90 이상 시 4A3 신호만 신뢰 (깜빡이 5초 연장 추가!) ▼▼▼
-        current_target = self.last_auto_speed if (self.auto_mode_applied and self.last_auto_speed > 0) else v_cruise_kph
-
         # 💡 우측 깜빡이 7초(700프레임) 유지 타이머
         if getattr(CS, 'rightBlinker', False):
           self.right_blinker_timer = 700  # 켜져 있으면 타이머 꽉 채움
         else:
           self.right_blinker_timer = max(0, getattr(self, 'right_blinker_timer', 0) - 1)  # 꺼지면 카운트다운
 
-        # 깜빡이가 지금 켜져 있거나, 꺼진 지 5초(500프레임) 이내면 True!
+        # 깜빡이가 지금 켜져 있거나, 꺼진 지 7초(700프레임) 이내면 True!
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or getattr(self, 'right_blinker_timer', 0) > 0
 
-        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
-          # 1. 4A3 신호가 우선적으로 있을 때
-          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-          auto_raw_limit = CS.navSpeedLimit
-        else:
-          # 2. 4A3 신호가 없을 때 (4BE 등)
-          # 💡 타겟 90 이상이어도 '우측 깜빡이'가 켜져 있거나 꺼진 지 7초 이내면 4BE 수용!
-          if current_target >= 90 and not is_blinker_valid:
-            auto_is_cam = False
-            auto_raw_limit = self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0
+        # ▼▼▼ [핵심 수정] 속도 데이터 추출 로직 완벽 분리 ▼▼▼
+        nav_limit = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
+        cam_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+        cam_dist = getattr(CS, 'speedLimitDistance', 0)
+
+        auto_is_cam = (cam_dist > 0)
+
+        if cam_limit > 0:
+          if auto_is_cam:
+            # 1. 거리(Distance)가 있는 진짜 과속카메라(4A3/4BE 무관): 무조건 신뢰!
+            auto_raw_limit = cam_limit
           else:
-            auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-            # ▼▼▼ [핵심 수정] 4BE 거리 신호라도 강제로 0으로 죽이지 않고, 날것 그대로 받아들입니다! ▼▼▼
-            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
+            # 2. 거리가 없는 단순 표지판(4BE)인 경우
+            if current_target >= 90 and not is_blinker_valid:
+              # 고속도로 램프 오인식이므로 무시! 내비 본선 속도 유지
+              auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0)
+            else:
+              # 깜빡이를 켰거나 타겟 속도가 낮으면 4BE 표지판 수용
+              auto_raw_limit = cam_limit
+        else:
+          # 카메라/표지판 속도가 없으면 내비 본선 속도 사용
+          auto_raw_limit = nav_limit if nav_limit > 0 else (self.prev_limit_speed_for_auto if self.prev_limit_speed_for_auto > 0 else 0)
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         # 💡 기본 원칙: 특별한 이벤트가 없으면 기존 속도를 무조건 유지
