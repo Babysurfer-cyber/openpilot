@@ -1015,13 +1015,14 @@ class CarrotServ:
 
         # 6. 안내음 송출 로직 (예측 계산)
         if effective_limit > 0 and effective_limit != self.auto_prev_limit_serv:
-          # ▼▼▼ [핵심 수정] 통과 직전의 실시간 크루즈 속도(current_target) 기준으로 예측 ▼▼▼
+          # ▼▼▼ 통과 직전 실시간 속도 기준 예측 + 최소 10 보장 ▼▼▼
           if effective_limit < current_target:
             raw_offset = (current_target - effective_limit) / 2.0
           else:
             raw_offset = 10.0
             
-          offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+          calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+          offset = max(10.0, calculated_offset)  # 💡 최소 +10 보장!
           expected_new_target = float(effective_limit + offset)
           
           if int(round(expected_new_target)) != int(round(current_target)):
