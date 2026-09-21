@@ -727,7 +727,7 @@ class VCruiseCarrot:
         if cam_dist <= 0:
           is_4be_camera = False
 
-        # 4. 속도 90km/h 이상 & 우측 깜빡이 로직 (더 안전한 속도 우선)
+        # 4. 속도 90km/h 이상 & 4A3/4BE 평등 적용!
         auto_raw_limit = 0
         is_camera_zone = False
 
@@ -736,14 +736,8 @@ class VCruiseCarrot:
             auto_raw_limit = limit_4a3
             is_camera_zone = (map_source == 2)
         else:
-          if limit_4a3 > 0 and limit_4be > 0:
-            if limit_4be < limit_4a3:
-              auto_raw_limit = limit_4be
-              is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
-            else:
-              auto_raw_limit = limit_4a3
-              is_camera_zone = (map_source == 2)
-          elif limit_4be > 0:
+          # ▼ 더 작은 값 비교 삭제 (4A3, 4BE 평등 처리 / 이벤트 최우선)
+          if limit_4be > 0:
             auto_raw_limit = limit_4be
             is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
           elif limit_4a3 > 0:
@@ -752,7 +746,10 @@ class VCruiseCarrot:
 
         effective_limit = 0
 
-        # 5. 과속카메라 통과 시점 로직 (보류 기능 유지)
+        # 5. 과속카메라 통과 시점 로직 (통과 직후 3초 바운스 방지 및 강제 오프셋 트리거)
+        if getattr(self, 'auto_ignore_timer', 0) > 0:
+          self.auto_ignore_timer -= 1
+          
         if auto_raw_limit > 0:
           if self.auto_prev_limit == 0:
             effective_limit = auto_raw_limit
@@ -766,14 +763,22 @@ class VCruiseCarrot:
               effective_limit = self.auto_pending_limit if self.auto_pending_limit > 0 else auto_raw_limit
               self.auto_camera_pending = False
               self.auto_pending_limit = 0
+              self.auto_prev_limit = 0     # 💡 카메라 통과 순간 이전 속도 삭제 (강제 오프셋 트리거)
+              self.auto_ignore_timer = 300 # 💡 3초간 예전 속도로 튕겨 오르는 현상 방지
             else:
               if auto_raw_limit != self.auto_prev_limit:
-                effective_limit = auto_raw_limit
+                # 3초 대기열이 켜져 있고, 새 제한속도가 기존보다 높으면 무시 (바운스 방지)
+                if getattr(self, 'auto_ignore_timer', 0) > 0 and auto_raw_limit > self.auto_prev_limit:
+                  pass
+                else:
+                  effective_limit = auto_raw_limit
         else:
           if self.auto_camera_pending:
             effective_limit = self.auto_pending_limit
             self.auto_camera_pending = False
             self.auto_pending_limit = 0
+            self.auto_prev_limit = 0       # 💡 신호가 0으로 증발해도 강제 오프셋 트리거
+            self.auto_ignore_timer = 300
 
         # 6. 속도 변경 및 오프셋 계산 (수동 버튼 조작 제외)
         if button_type in [ButtonType.accelCruise, ButtonType.decelCruise]:
