@@ -979,11 +979,13 @@ class CarrotServ:
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 신호 추출 (통합 순정 신호)
-        auto_raw_limit = getattr(CS, 'speedLimit', 0)
+        # 3. 신호 추출 (삭제되었던 4A3 / 4BE 분리 로직 완벽 복구!)
+        limit_4a3 = getattr(CS, 'navSpeedLimit', 0)
+        limit_4be = getattr(CS, 'speedLimit', 0)
+        map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
-        # ▼▼▼ [핵심 픽스] 안내음 서버도 RAM 디스크에서 4BE 명찰 읽어오기 ▼▼▼
+        # RAM 디스크에서 4BE 명찰 안전하게 읽어오기
         is_4be_camera = False
         is_4be_section = False
         try:
@@ -994,13 +996,19 @@ class CarrotServ:
               is_4be_section = bool(int(flags[1]))
         except Exception:
           pass
-        
-        is_4a3_camera = (cam_dist > 0) and not is_4be_camera
 
-        # 4. 90km/h 룰 적용
-        if current_target >= 90 and not is_blinker_valid:
-          if not is_4a3_camera:
-            auto_raw_limit = 0 
+        # 4. 신호 우선순위 및 90km/h 룰
+        auto_raw_limit = 0
+        is_4a3_active = False
+
+        if limit_4a3 > 0:
+          auto_raw_limit = limit_4a3
+          is_4a3_active = True
+        else:
+          if current_target >= 90 and not is_blinker_valid:
+            pass # 90 이상 & 깜빡이 없음: 4BE 무시!
+          elif limit_4be > 0:
+            auto_raw_limit = limit_4be # 4BE는 오직 속도만 사용
 
         effective_limit = 0
 
@@ -1008,7 +1016,7 @@ class CarrotServ:
         if auto_raw_limit > 0:
           is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
           
-          is_camera_zone = is_4a3_camera or is_4be_camera or is_4be_section or is_app_cam
+          is_camera_zone = (is_4a3_active and map_source == 2) or (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
           
           if self.auto_prev_limit_serv == 0:
             effective_limit = auto_raw_limit
