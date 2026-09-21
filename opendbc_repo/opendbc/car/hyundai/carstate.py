@@ -570,13 +570,14 @@ class CarState(CarStateBase):
     cam_dist = 0.0
     cam_limit = 0.0
     
-    # ▼▼▼ [추가] 4BE 카메라 속도별 거리 제한 필터링 ▼▼▼
+    # ▼▼▼ [추가 1] 4BE 신호가 카메라인지 구간단속인지 밖으로 알려줄 내부 플래그 ▼▼▼
+    is_4be_camera = False
+    is_4be_section = False
+    
     valid_cameras = []
     for c in cameras:
       c_dist = c["target"] - self.totalDistance
       c_limit = c["speed"]
-      
-      # 80 미만은 300m 이하일 때, 80 이상은 600m 이하일 때만 유효한 카메라로 인정!
       if c_limit < 80 and c_dist <= 300:
         valid_cameras.append(c)
       elif c_limit >= 80 and c_dist <= 600:
@@ -585,11 +586,11 @@ class CarState(CarStateBase):
     if valid_cameras:
       cam_dist = valid_cameras[0]["target"] - self.totalDistance
       cam_limit = valid_cameras[0]["speed"]
+      is_4be_camera = True  # 💡 4BE 일반 카메라 당첨!
     elif zones:
-      # 유효한 카메라가 없거나 너무 멀리 있으면 일반 제한속도(zone)를 따름
       cam_dist = 0.0
       cam_limit = zones[-1]["speed"]
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      is_4be_section = True  # 💡 4BE 구간단속 당첨!
       
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
@@ -597,7 +598,8 @@ class CarState(CarStateBase):
     except Exception:
       pass
 
-    return cam_limit, cam_dist
+    # 💡 기존 로직을 건드리지 않고 뒤에 플래그 2개만 살포시 얹어서 리턴!
+    return cam_limit, cam_dist, is_4be_camera, is_4be_section
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
@@ -853,10 +855,9 @@ class CarState(CarStateBase):
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
-    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
+    # ▼▼▼ [수정 2] 플래그 2개를 함께 받아옴 ▼▼▼
+    cam_limit, cam_dist, is_4be_camera, is_4be_section = self._update_vehicle_navi_events(cp)
         
-    # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
-    # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
     if ret.speedLimit == 0 and cam_limit > 0:
       ret.speedLimit = cam_limit
       if cam_dist > 0:
@@ -864,6 +865,10 @@ class CarState(CarStateBase):
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
         speed_limit_cam = False
+
+    # ▼▼▼ [수정 3] cruise.py가 읽을 수 있도록 ret 객체에 명찰 달아주기 ▼▼▼
+    ret.vehicleNaviActive = is_4be_camera
+    ret.vehicleNaviSectionActive = is_4be_section
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
