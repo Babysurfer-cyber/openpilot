@@ -756,18 +756,22 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
-    limit_4a3 = 0  # 💡 4A3 속도 저장용 변수 추가
-    map_source = 0 # 💡 4A3 맵 소스(일반=0, 카메라=2) 저장용 변수 추가
+    # ▼▼▼ [추가] 오토모드 제어용 4A3 속도와 맵소스 분리 보관 변수 ▼▼▼
+    limit_4a3 = 0  
+    map_source = 0 
     
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
       if not self.is_metric:
         speedLimit *= CV.MPH_TO_KPH
-        
-      limit_4a3 = speedLimit if speedLimit < 255 else 0  # 💡 4a3 전용 변수에 저장
-      ret.speedLimit = limit_4a3
       
-      map_source = int(self.hda_info_4a3["MapSource"])   # 💡 맵 소스 저장
+      # 1. 콤마 UI를 위한 순정 융합용 변수 (원래 로직 100% 유지)
+      ret.speedLimit = speedLimit if speedLimit < 255 else 0
+      
+      # 2. 오토모드 제어를 위한 4A3 단독 복사본 저장
+      limit_4a3 = ret.speedLimit
+      
+      map_source = int(self.hda_info_4a3["MapSource"])
       if map_source == 2:
         speed_limit_cam = True
 
