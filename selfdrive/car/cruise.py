@@ -716,37 +716,44 @@ class VCruiseCarrot:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
 
-        # 3. 신호 추출 (RAM 디스크에서 4A3/4BE 완벽 분리 추출!)
-        limit_4a3 = 0
-        limit_4be = 0
-        cam_dist = 0.0
-        map_source = 0
-        
-        try:
-          with open("/dev/shm/navi_speed_info", "r") as f:
-            data = f.read().strip().split(",")
-            if len(data) == 4:
-              limit_4a3 = int(data[0])
-              limit_4be = int(data[1])
-              cam_dist = float(data[2])
-              map_source = int(data[3])
-        except Exception:
-          pass
+        # 3. 신호 추출 (RAM 디스크 I/O 부하를 줄이기 위해 10프레임마다 한 번씩만 읽기!)
+        if not hasattr(self, 'ram_disk_timer'):
+          self.ram_disk_timer = 0
+        self.ram_disk_timer += 1
 
-        # 4BE 명찰(카메라/구간단속 여부) 가져오기
-        is_4be_camera = False
-        is_4be_section = False
-        try:
-          with open("/dev/shm/navi_4be_flags", "r") as f:
-            flags = f.read().strip().split(",")
-            if len(flags) == 2:
-              is_4be_camera = bool(int(flags[0]))
-              is_4be_section = bool(int(flags[1]))
-        except Exception:
-          pass
+        if self.ram_disk_timer % 10 == 0:
+          try:
+            with open("/dev/shm/navi_speed_info", "r") as f:
+              data = f.read().strip().split(",")
+              if len(data) == 4:
+                self._cached_limit_4a3 = int(data[0])
+                self._cached_limit_4be = int(data[1])
+                self._cached_cam_dist = float(data[2])
+                self._cached_map_source = int(data[3])
+          except Exception:
+            pass
+
+          # 4BE 명찰 가져오기
+          try:
+            with open("/dev/shm/navi_4be_flags", "r") as f:
+              flags = f.read().strip().split(",")
+              if len(flags) == 2:
+                self._cached_is_4be_camera = bool(int(flags[0]))
+                self._cached_is_4be_section = bool(int(flags[1]))
+          except Exception:
+            pass
+
+        # 10프레임 동안은 안전하게 캐싱된(기억해둔) 변수를 사용
+        limit_4a3 = getattr(self, '_cached_limit_4a3', 0)
+        limit_4be = getattr(self, '_cached_limit_4be', 0)
+        cam_dist = getattr(self, '_cached_cam_dist', 0.0)
+        map_source = getattr(self, '_cached_map_source', 0)
+        is_4be_camera = getattr(self, '_cached_is_4be_camera', False)
+        is_4be_section = getattr(self, '_cached_is_4be_section', False)
 
         if cam_dist <= 0:
           is_4be_camera = False
+
 
         # 4. 속도 90km/h 이상 & 우측 깜빡이 로직 적용!
         auto_raw_limit = 0
