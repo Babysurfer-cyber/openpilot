@@ -592,14 +592,20 @@ class CarState(CarStateBase):
       cam_limit = zones[-1]["speed"]
       is_4be_section = True  # 💡 4BE 구간단속 당첨!
       
-    try:
-      with open("/dev/shm/speed_bump_dist", "w") as f:
-        f.write(str(bump_dist))
-      # ▼▼▼ [핵심 픽스] capnp 스키마 충돌 방지를 위해 RAM 디스크로 플래그 몰래 전달 ▼▼▼
-      with open("/dev/shm/navi_4be_flags", "w") as f:
-        f.write(f"{int(is_4be_camera)},{int(is_4be_section)}")
-    except Exception:
-      pass
+    # 기존 코드를 찾아 아래처럼 덮어쓰기
+    if not hasattr(self, 'ram_disk_timer'):
+      self.ram_disk_timer = 0
+    self.ram_disk_timer += 1
+
+    # 10프레임(0.1초)에 한 번만 쓰기 실행! (I/O 부하 90% 감소)
+    if self.ram_disk_timer % 10 == 0:
+      try:
+        with open("/dev/shm/speed_bump_dist", "w") as f:
+          f.write(str(bump_dist))
+        with open("/dev/shm/navi_4be_flags", "w") as f:
+          f.write(f"{int(is_4be_camera)},{int(is_4be_section)}")
+      except Exception:
+        pass
 
     # 💡 깔끔하게 원래대로 값 2개만 리턴! (4개로 늘렸던 분들은 원복하세요)
     return cam_limit, cam_dist
