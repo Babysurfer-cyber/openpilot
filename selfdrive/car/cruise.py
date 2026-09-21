@@ -722,6 +722,9 @@ class VCruiseCarrot:
         map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
+        # ▼▼▼ [핵심 1] 4BE 신호 중 카메라(kind 0,1,2) 또는 구간단속(kind 7) 여부 확인 ▼▼▼
+        is_4be_camera = getattr(CS, 'vehicleNaviActive', False) or getattr(CS, 'vehicleNaviSectionActive', False)
+
         # 4. 신호 우선순위 및 90km/h 룰 적용
         auto_raw_limit = 0
         is_4a3_active = False
@@ -739,7 +742,10 @@ class VCruiseCarrot:
 
         # 5. 과속카메라 통과 시점 로직 (보류 기능 유지)
         if auto_raw_limit > 0:
-          is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
+          is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
+          
+          # ▼▼▼ [핵심 2] 카메라/구간단속일 때만 보류하고, 일반 표지판은 즉시 적용! ▼▼▼
+          is_camera_zone = (is_4a3_active and map_source == 2) or (is_4be_camera and cam_dist > 0) or is_app_cam
           
           if self.auto_prev_limit == 0:
             effective_limit = auto_raw_limit
