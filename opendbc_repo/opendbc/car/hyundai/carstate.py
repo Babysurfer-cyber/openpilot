@@ -578,19 +578,24 @@ class CarState(CarStateBase):
     for c in cameras:
       c_dist = c["target"] - self.totalDistance
       c_limit = c["speed"]
-      if c_limit < 80 and c_dist <= 300:
-        valid_cameras.append(c)
-      elif c_limit >= 80 and c_dist <= 600:
+      c_kind = c.get("kind", 0)  # 카메라 종류(kind) 추출
+
+      # (선택) 고정식(1)이나 이동식(2) 과속카메라 신호를 무시하고 싶다면 아래 주석(#)을 푸세요.
+      # if c_kind in (1, 2):
+      #   continue
+      
+      # ▼▼▼ [필수] 거리 제한을 300m에서 1000m로 대폭 완화! (4BE 수신율 극대화) ▼▼▼
+      if c_dist <= 1000:
         valid_cameras.append(c)
         
     if valid_cameras:
       cam_dist = valid_cameras[0]["target"] - self.totalDistance
       cam_limit = valid_cameras[0]["speed"]
-      is_4be_camera = True  # 💡 4BE 일반 카메라 당첨!
+      is_4be_camera = True
     elif zones:
       cam_dist = 0.0
       cam_limit = zones[-1]["speed"]
-      is_4be_section = True  # 💡 4BE 구간단속 당첨!
+      is_4be_section = True
       
     # 기존 코드를 찾아 아래처럼 덮어쓰기
     if not hasattr(self, 'ram_disk_timer'):
@@ -876,15 +881,17 @@ class CarState(CarStateBase):
     # ▼▼▼ 4개의 값을 모두 받아옵니다 ▼▼▼
     cam_limit, cam_dist, is_4be_camera, is_4be_section = self._update_vehicle_navi_events(cp)
         
-    if ret.speedLimit == 0 and cam_limit > 0:
-      ret.speedLimit = cam_limit
-      if cam_dist > 0:
-        speed_limit_cam = True
-        self.speedLimitDistance = self.totalDistance + cam_dist
-      else:
-        speed_limit_cam = False
+    # ▼▼▼ [필수] HUD에 4BE(카메라/표지판) 속도를 덮어쓰도록 우선순위 변경 ▼▼▼
+    if cam_limit > 0:
+      if ret.speedLimit == 0 or cam_limit < ret.speedLimit:
+        ret.speedLimit = cam_limit
+        if cam_dist > 0:
+          speed_limit_cam = True
+          self.speedLimitDistance = self.totalDistance + cam_dist
+        else:
+          speed_limit_cam = False
 
-    # ▼▼▼ [핵심 픽스] capnp 구조체 변수에 직접 다이렉트 할당 (램디스크 I/O 완전 삭제!) ▼▼▼
+    # capnp 구조체 변수에 다이렉트 할당
     ret.navSpeedLimit = limit_4a3
     ret.camLimit = cam_limit
     ret.camDist = cam_dist
