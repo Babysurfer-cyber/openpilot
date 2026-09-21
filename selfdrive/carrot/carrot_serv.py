@@ -990,7 +990,7 @@ class CarrotServ:
         if cam_dist <= 0:
           is_4be_camera = False
 
-        # 4. 속도 90km/h 이상 & 우측 깜빡이 로직 적용!
+        # 4. 속도 90km/h 이상 & 4A3/4BE 평등 적용!
         auto_raw_limit = 0
         is_camera_zone = False
 
@@ -999,14 +999,7 @@ class CarrotServ:
             auto_raw_limit = limit_4a3
             is_camera_zone = (map_source == 2)
         else:
-          if limit_4a3 > 0 and limit_4be > 0:
-            if limit_4be < limit_4a3:
-              auto_raw_limit = limit_4be
-              is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
-            else:
-              auto_raw_limit = limit_4a3
-              is_camera_zone = (map_source == 2)
-          elif limit_4be > 0:
+          if limit_4be > 0:
             auto_raw_limit = limit_4be
             is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
           elif limit_4a3 > 0:
@@ -1015,7 +1008,10 @@ class CarrotServ:
 
         effective_limit = 0
 
-        # 5. 과속카메라 통과 시점 로직 (보류 기능)
+        # 5. 과속카메라 통과 시점 로직 (통과 직후 3초 바운스 방지 및 강제 알림음 트리거)
+        if getattr(self, 'auto_ignore_timer_serv', 0) > 0:
+          self.auto_ignore_timer_serv -= 1
+          
         if auto_raw_limit > 0:
           if self.auto_prev_limit_serv == 0:
             effective_limit = auto_raw_limit
@@ -1029,14 +1025,21 @@ class CarrotServ:
               effective_limit = self.auto_pending_limit_serv if self.auto_pending_limit_serv > 0 else auto_raw_limit
               self.auto_camera_pending_serv = False
               self.auto_pending_limit_serv = 0
+              self.auto_prev_limit_serv = 0          # 💡 통과 순간 강제 알림음 트리거
+              self.auto_ignore_timer_serv = 300      # 💡 3초간 예전 속도로 튕겨 오르는 현상 방지
             else:
               if auto_raw_limit != self.auto_prev_limit_serv:
-                effective_limit = auto_raw_limit
+                if getattr(self, 'auto_ignore_timer_serv', 0) > 0 and auto_raw_limit > self.auto_prev_limit_serv:
+                  pass
+                else:
+                  effective_limit = auto_raw_limit
         else:
           if self.auto_camera_pending_serv:
             effective_limit = self.auto_pending_limit_serv
             self.auto_camera_pending_serv = False
             self.auto_pending_limit_serv = 0
+            self.auto_prev_limit_serv = 0
+            self.auto_ignore_timer_serv = 300
 
         # 예측 계산 및 알림음 송출
         if effective_limit > 0 and effective_limit != self.auto_prev_limit_serv:
