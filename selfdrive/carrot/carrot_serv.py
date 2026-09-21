@@ -979,7 +979,7 @@ class CarrotServ:
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 신호 추출 (RAM 디스크 I/O 부하를 줄이기 위해 10프레임마다 한 번씩만 읽기!)
+        # 3. 신호 추출 (RAM 디스크 I/O 병목 방지를 위해 10루프 캐싱 적용!)
         if not hasattr(self, 'ram_disk_timer'):
           self.ram_disk_timer = 0
         self.ram_disk_timer += 1
@@ -996,7 +996,6 @@ class CarrotServ:
           except Exception:
             pass
 
-          # 4BE 명찰 가져오기
           try:
             with open("/dev/shm/navi_4be_flags", "r") as f:
               flags = f.read().strip().split(",")
@@ -1006,7 +1005,6 @@ class CarrotServ:
           except Exception:
             pass
 
-        # 10프레임 동안은 안전하게 캐싱된(기억해둔) 변수를 사용
         limit_4a3 = getattr(self, '_cached_limit_4a3', 0)
         limit_4be = getattr(self, '_cached_limit_4be', 0)
         cam_dist = getattr(self, '_cached_cam_dist', 0.0)
@@ -1020,26 +1018,25 @@ class CarrotServ:
         # 4. 속도 90km/h 이상 & 우측 깜빡이 로직 적용!
         auto_raw_limit = 0
         is_camera_zone = False
-        is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
 
         if current_target >= 90 and not is_blinker_valid:
           if limit_4a3 > 0:
             auto_raw_limit = limit_4a3
-            is_camera_zone = (map_source == 2) or is_app_cam
+            is_camera_zone = (map_source == 2)
         else:
           if limit_4a3 > 0 and limit_4be > 0:
             if limit_4be < limit_4a3:
               auto_raw_limit = limit_4be
-              is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
+              is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
             else:
               auto_raw_limit = limit_4a3
-              is_camera_zone = (map_source == 2) or is_app_cam
+              is_camera_zone = (map_source == 2)
           elif limit_4be > 0:
             auto_raw_limit = limit_4be
-            is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
+            is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
           elif limit_4a3 > 0:
             auto_raw_limit = limit_4a3
-            is_camera_zone = (map_source == 2) or is_app_cam
+            is_camera_zone = (map_source == 2)
 
         effective_limit = 0
 
