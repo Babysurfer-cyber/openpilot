@@ -887,14 +887,15 @@ class CarState(CarStateBase):
       else:
         speed_limit_cam = False
 
-    # ▼▼▼ [핵심 픽스] 4A3 속도, 4BE 속도, 맵소스를 명확히 분리하여 램디스크로 전달 ▼▼▼
-    try:
-      with open("/dev/shm/navi_speed_info", "w") as f:
-        f.write(f"{int(limit_4a3)},{int(cam_limit)},{float(cam_dist)},{map_source}")
-    except Exception:
-      pass
+    # 기존 코드를 찾아 아래처럼 덮어쓰기
+    # ▼▼▼ [핵심 픽스] 4A3 속도, 4BE 속도, 맵소스를 10프레임에 한 번만 전달 ▼▼▼
+    if getattr(self, 'ram_disk_timer', 0) % 10 == 0:
+      try:
+        with open("/dev/shm/navi_speed_info", "w") as f:
+          f.write(f"{int(limit_4a3)},{int(cam_limit)},{float(cam_dist)},{map_source}")
+      except Exception:
+        pass
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
     self.update_speed_limit(ret, speed_limit_cam)
 
     paddle_button = self.paddle_button_prev
