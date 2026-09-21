@@ -887,9 +887,6 @@ class CarState(CarStateBase):
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
-    # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
-    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan)]
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
       msgs += [
