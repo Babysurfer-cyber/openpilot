@@ -595,11 +595,14 @@ class CarState(CarStateBase):
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
         f.write(str(bump_dist))
+      # ▼▼▼ [핵심 픽스] capnp 스키마 충돌 방지를 위해 RAM 디스크로 플래그 몰래 전달 ▼▼▼
+      with open("/dev/shm/navi_4be_flags", "w") as f:
+        f.write(f"{int(is_4be_camera)},{int(is_4be_section)}")
     except Exception:
       pass
 
-    # 💡 기존 로직을 건드리지 않고 뒤에 플래그 2개만 살포시 얹어서 리턴!
-    return cam_limit, cam_dist, is_4be_camera, is_4be_section
+    # 💡 깔끔하게 원래대로 값 2개만 리턴! (4개로 늘렸던 분들은 원복하세요)
+    return cam_limit, cam_dist
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
@@ -856,7 +859,8 @@ class CarState(CarStateBase):
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
     # ▼▼▼ [수정 2] 플래그 2개를 함께 받아옴 ▼▼▼
-    cam_limit, cam_dist, is_4be_camera, is_4be_section = self._update_vehicle_navi_events(cp)
+    # ▼▼▼ 2개만 받도록 원복 ▼▼▼
+    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
         
     if ret.speedLimit == 0 and cam_limit > 0:
       ret.speedLimit = cam_limit
@@ -865,6 +869,9 @@ class CarState(CarStateBase):
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
         speed_limit_cam = False
+
+      # 🚨 여기에 있던 ret.vehicleNaviActive 할당 코드는 싹 다 지워주세요!! 🚨
+
 
       # ▼▼▼ [핵심 픽스] 스페이스바 2칸 들여쓰기!! (4BE가 채택되었을 때만 명찰 달기) ▼▼▼
       ret.vehicleNaviActive = is_4be_camera
