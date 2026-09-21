@@ -716,13 +716,24 @@ class VCruiseCarrot:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
 
-        # 3. 신호 추출 (삭제되었던 4A3 / 4BE 분리 로직 완벽 복구!)
-        limit_4a3 = getattr(CS, 'navSpeedLimit', 0)
-        limit_4be = getattr(CS, 'speedLimit', 0)
-        map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
-        cam_dist = getattr(CS, 'speedLimitDistance', 0)
+        # 3. 신호 추출 (RAM 디스크에서 4A3/4BE 완벽 분리 추출!)
+        limit_4a3 = 0
+        limit_4be = 0
+        cam_dist = 0.0
+        map_source = 0
+        
+        try:
+          with open("/dev/shm/navi_speed_info", "r") as f:
+            data = f.read().strip().split(",")
+            if len(data) == 4:
+              limit_4a3 = int(data[0])
+              limit_4be = int(data[1])
+              cam_dist = float(data[2])
+              map_source = int(data[3])
+        except Exception:
+          pass
 
-        # RAM 디스크에서 4BE 명찰 안전하게 읽어오기
+        # 4BE 명찰(카메라/구간단속 여부) 가져오기
         is_4be_camera = False
         is_4be_section = False
         try:
@@ -734,28 +745,32 @@ class VCruiseCarrot:
         except Exception:
           pass
 
-        # 4. 신호 우선순위 및 90km/h 룰 적용
-        auto_raw_limit = 0
-        is_4a3_active = False
+        if cam_dist <= 0:
+          is_4be_camera = False
 
-        if limit_4a3 > 0:
-          auto_raw_limit = limit_4a3
-          is_4a3_active = True
+        # 4. 속도 90km/h 이상 & 우측 깜빡이 로직 적용!
+        auto_raw_limit = 0
+        is_camera_zone = False
+        is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
+
+        # 속도 90 이상이고 우측 깜빡이가 안 켜져 있으면 -> 4A3만 사용!
+        if v_cruise_kph >= 90 and not is_blinker_valid:
+          if limit_4a3 > 0:
+            auto_raw_limit = limit_4a3
+            is_camera_zone = (map_source == 2) or is_app_cam
         else:
-          if v_cruise_kph >= 90 and not is_blinker_valid:
-            pass # 90 이상 & 깜빡이 없음: 4BE 무시!
+          # 속도가 90 미만이거나 우측 깜빡이가 켜져 있으면 -> 4A3 우선, 없으면 4BE 사용!
+          if limit_4a3 > 0:
+            auto_raw_limit = limit_4a3
+            is_camera_zone = (map_source == 2) or is_app_cam
           elif limit_4be > 0:
-            auto_raw_limit = limit_4be # 4BE는 오직 속도만 사용
+            auto_raw_limit = limit_4be
+            is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
 
         effective_limit = 0
 
         # 5. 과속카메라 통과 시점 로직 (보류 기능 유지)
         if auto_raw_limit > 0:
-          is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
-          
-          # 카메라/구간단속일 때만 보류하고, 일반 표지판은 즉시 적용!
-          is_camera_zone = (is_4a3_active and map_source == 2) or (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
-          
           if self.auto_prev_limit == 0:
             effective_limit = auto_raw_limit
             self.auto_camera_pending = False
