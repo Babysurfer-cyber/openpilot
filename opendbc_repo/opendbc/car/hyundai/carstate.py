@@ -540,7 +540,7 @@ class CarState(CarStateBase):
 
   def _update_vehicle_navi_events(self, cp):
     if not getattr(self, 'vehicleNaviCanControl', False):
-      return 0.0, 0.0
+      return 0.0, 0.0, False, False
 
     if self.navi_segment_4b9 is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
