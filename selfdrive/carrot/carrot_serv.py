@@ -984,6 +984,9 @@ class CarrotServ:
         map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
+        # ▼▼▼ [추가 1] 4BE 신호 중 카메라(kind 0,1,2) 또는 구간단속(kind 7) 여부 확인 ▼▼▼
+        is_4be_camera = getattr(CS, 'vehicleNaviActive', False) or getattr(CS, 'vehicleNaviSectionActive', False)
+
         auto_raw_limit = 0
         is_4a3_active = False
 
@@ -1000,20 +1003,16 @@ class CarrotServ:
 
         # 과속카메라 통과 시점 로직 (보류 기능)
         if auto_raw_limit > 0:
-          is_camera_zone = (is_4a3_active and map_source == 2) or (cam_dist > 0)
+          # ▼▼▼ [추가 2] 제3의 눈(스마트폰 앱) 카메라 정보 확인 ▼▼▼
+          is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
+          
+          # ▼▼▼ [핵심 수정] 4A3(내비) + 4BE(카메라/구간단속) + App(스마트폰) 완벽 융합 ▼▼▼
+          is_camera_zone = (is_4a3_active and map_source == 2) or (is_4be_camera and cam_dist > 0) or is_app_cam
           
           if self.auto_prev_limit_serv == 0:
             effective_limit = auto_raw_limit
             self.auto_camera_pending_serv = False
             self.auto_pending_limit_serv = 0
-          elif is_camera_zone:
-            self.auto_camera_pending_serv = True
-            self.auto_pending_limit_serv = auto_raw_limit
-          else:
-            if self.auto_camera_pending_serv:
-              effective_limit = self.auto_pending_limit_serv if self.auto_pending_limit_serv > 0 else auto_raw_limit
-              self.auto_camera_pending_serv = False
-              self.auto_pending_limit_serv = 0
             else:
               if auto_raw_limit != self.auto_prev_limit_serv:
                 effective_limit = auto_raw_limit
