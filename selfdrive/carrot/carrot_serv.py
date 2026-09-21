@@ -979,40 +979,43 @@ class CarrotServ:
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        limit_4a3 = CS.navSpeedLimit if hasattr(CS, 'navSpeedLimit') else 0
-        limit_4be = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
-        map_source = getattr(CS, 'mapSource', getattr(CS, 'navSpeedLimitMapSource', 0))
+        # 3. 신호 추출 (통합 순정 신호)
+        auto_raw_limit = getattr(CS, 'speedLimit', 0)
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
-        # ▼▼▼ [추가 1] 4BE 신호 중 카메라(kind 0,1,2) 또는 구간단속(kind 7) 여부 확인 ▼▼▼
-        is_4be_camera = getattr(CS, 'vehicleNaviActive', False) or getattr(CS, 'vehicleNaviSectionActive', False)
+        # carstate.py에서 달아준 4BE 명찰 확인
+        is_4be_camera = getattr(CS, 'vehicleNaviActive', False)
+        is_4be_section = getattr(CS, 'vehicleNaviSectionActive', False)
+        
+        # 4A3(내비) 확인: 거리가 있는데 4BE 명찰이 없으면 100% 4A3 내비게이션!
+        is_4a3_camera = (cam_dist > 0) and not is_4be_camera
 
-        auto_raw_limit = 0
-        is_4a3_active = False
-
-        if limit_4a3 > 0:
-          auto_raw_limit = limit_4a3
-          is_4a3_active = True
-        else:
-          if current_target >= 90 and not is_blinker_valid:
-            pass
-          elif limit_4be > 0:
-            auto_raw_limit = limit_4be
+        # 4. 90km/h 룰 적용
+        if current_target >= 90 and not is_blinker_valid:
+          if not is_4a3_camera:
+            auto_raw_limit = 0 
 
         effective_limit = 0
 
-        # 과속카메라 통과 시점 로직 (보류 기능)
+        # 5. 과속카메라 통과 시점 로직 (보류 기능)
         if auto_raw_limit > 0:
-          # ▼▼▼ [추가 2] 제3의 눈(스마트폰 앱) 카메라 정보 확인 ▼▼▼
           is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
           
-          # ▼▼▼ [핵심 수정] 4A3(내비) + 4BE(카메라/구간단속) + App(스마트폰) 완벽 융합 ▼▼▼
-          is_camera_zone = (is_4a3_active and map_source == 2) or (is_4be_camera and cam_dist > 0) or is_app_cam
+          # 4A3, 4BE(카메라/구간단속), 앱 카메라 완벽 통합 보류 조건
+          is_camera_zone = is_4a3_camera or is_4be_camera or is_4be_section or is_app_cam
           
           if self.auto_prev_limit_serv == 0:
             effective_limit = auto_raw_limit
             self.auto_camera_pending_serv = False
             self.auto_pending_limit_serv = 0
+          elif is_camera_zone:
+            self.auto_camera_pending_serv = True
+            self.auto_pending_limit_serv = auto_raw_limit
+          else:
+            if self.auto_camera_pending_serv:
+              effective_limit = self.auto_pending_limit_serv if self.auto_pending_limit_serv > 0 else auto_raw_limit
+              self.auto_camera_pending_serv = False
+              self.auto_pending_limit_serv = 0
             else:
               if auto_raw_limit != self.auto_prev_limit_serv:
                 effective_limit = auto_raw_limit
