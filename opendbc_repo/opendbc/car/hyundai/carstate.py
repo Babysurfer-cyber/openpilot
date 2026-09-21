@@ -540,7 +540,7 @@ class CarState(CarStateBase):
 
   def _update_vehicle_navi_events(self, cp):
     if not getattr(self, 'vehicleNaviCanControl', False):
-      return 0.0, 0.0, False, False  # 💡 4개로 개수를 정확하게 맞춰줍니다!
+      return 0.0, 0.0
 
     if self.navi_segment_4b9 is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
@@ -869,14 +869,6 @@ class CarState(CarStateBase):
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
         speed_limit_cam = False
-
-      # 🚨 여기에 있던 ret.vehicleNaviActive 할당 코드는 싹 다 지워주세요!! 🚨
-
-
-      # ▼▼▼ [핵심 픽스] 스페이스바 2칸 들여쓰기!! (4BE가 채택되었을 때만 명찰 달기) ▼▼▼
-      ret.vehicleNaviActive = is_4be_camera
-      ret.vehicleNaviSectionActive = is_4be_section
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
 
