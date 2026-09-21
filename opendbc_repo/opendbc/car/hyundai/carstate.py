@@ -539,8 +539,8 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
 
   def _update_vehicle_navi_events(self, cp):
-    if not getattr(self, 'vehicleNaviCanControl', False):
-      return 0.0, 0.0, False, False
+    #if not getattr(self, 'vehicleNaviCanControl', False):
+      #return 0.0, 0.0, False, False
 
     if self.navi_segment_4b9 is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
@@ -584,8 +584,8 @@ class CarState(CarStateBase):
       # if c_kind in (1, 2):
       #   continue
       
-      # ▼▼▼ [필수] 거리 제한을 300m에서 1000m로 대폭 완화! (4BE 수신율 극대화) ▼▼▼
-      if c_dist <= 1000:
+      # ▼▼▼ 4be 신호 거리 제한
+      if c_dist <= 300:
         valid_cameras.append(c)
         
     if valid_cameras:
