@@ -262,6 +262,14 @@ struct CarState {
   
   speedBumpDistance @81 :Float32;  # <-- 추가
   schoolZoneActive @82 :Bool;      # <-- 추가
+  
+  # ▼▼▼ [추가] 오토모드(5번) 제어를 위한 4A3/4BE 분리 변수 ▼▼▼
+  navSpeedLimit @83 :Float32;
+  camLimit @84 :Float32;
+  camDist @85 :Float32;
+  mapSource @86 :Int16;
+  is4beCamera @87 :Bool;
+  is4beSection @88 :Bool;
 
   struct Tpms {
     fl @0 :Float32;
