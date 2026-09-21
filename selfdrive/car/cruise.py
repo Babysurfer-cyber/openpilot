@@ -753,19 +753,26 @@ class VCruiseCarrot:
         is_camera_zone = False
         is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
 
-        # 속도 90 이상이고 우측 깜빡이가 안 켜져 있으면 -> 4A3만 사용!
+        # 속도 90 이상이고 우측 깜빡이가 안 켜져 있으면 -> 4BE 완전 무시, 4A3만 사용!
         if v_cruise_kph >= 90 and not is_blinker_valid:
           if limit_4a3 > 0:
             auto_raw_limit = limit_4a3
             is_camera_zone = (map_source == 2) or is_app_cam
         else:
-          # 속도가 90 미만이거나 우측 깜빡이가 켜져 있으면 -> 4A3 우선, 없으면 4BE 사용!
-          if limit_4a3 > 0:
-            auto_raw_limit = limit_4a3
-            is_camera_zone = (map_source == 2) or is_app_cam
+          # 속도가 90 미만이거나 우측 깜빡이가 켜져 있으면 -> 둘 중 더 작은(안전한) 속도를 우선!
+          if limit_4a3 > 0 and limit_4be > 0:
+            if limit_4be < limit_4a3:
+              auto_raw_limit = limit_4be
+              is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
+            else:
+              auto_raw_limit = limit_4a3
+              is_camera_zone = (map_source == 2) or is_app_cam
           elif limit_4be > 0:
             auto_raw_limit = limit_4be
             is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section or is_app_cam
+          elif limit_4a3 > 0:
+            auto_raw_limit = limit_4a3
+            is_camera_zone = (map_source == 2) or is_app_cam
 
         effective_limit = 0
 
