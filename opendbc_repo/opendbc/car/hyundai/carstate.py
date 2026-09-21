@@ -866,10 +866,10 @@ class CarState(CarStateBase):
       else:
         speed_limit_cam = False
 
-    # ▼▼▼ [수정 3] cruise.py가 읽을 수 있도록 ret 객체에 명찰 달아주기 ▼▼▼
-    ret.vehicleNaviActive = is_4be_camera
-    ret.vehicleNaviSectionActive = is_4be_section
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # ▼▼▼ [핵심 픽스] 스페이스바 2칸 들여쓰기!! (4BE가 채택되었을 때만 명찰 달기) ▼▼▼
+      ret.vehicleNaviActive = is_4be_camera
+      ret.vehicleNaviSectionActive = is_4be_section
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
 
