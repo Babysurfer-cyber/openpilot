@@ -979,38 +979,13 @@ class CarrotServ:
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 신호 추출 (RAM 디스크 I/O 병목 방지를 위해 10루프 캐싱 적용!)
-        if not hasattr(self, 'ram_disk_timer'):
-          self.ram_disk_timer = 0
-        self.ram_disk_timer += 1
-
-        if self.ram_disk_timer % 10 == 0:
-          try:
-            with open("/dev/shm/navi_speed_info", "r") as f:
-              data = f.read().strip().split(",")
-              if len(data) == 4:
-                self._cached_limit_4a3 = int(data[0])
-                self._cached_limit_4be = int(data[1])
-                self._cached_cam_dist = float(data[2])
-                self._cached_map_source = int(data[3])
-          except Exception:
-            pass
-
-          try:
-            with open("/dev/shm/navi_4be_flags", "r") as f:
-              flags = f.read().strip().split(",")
-              if len(flags) == 2:
-                self._cached_is_4be_camera = bool(int(flags[0]))
-                self._cached_is_4be_section = bool(int(flags[1]))
-          except Exception:
-            pass
-
-        limit_4a3 = getattr(self, '_cached_limit_4a3', 0)
-        limit_4be = getattr(self, '_cached_limit_4be', 0)
-        cam_dist = getattr(self, '_cached_cam_dist', 0.0)
-        map_source = getattr(self, '_cached_map_source', 0)
-        is_4be_camera = getattr(self, '_cached_is_4be_camera', False)
-        is_4be_section = getattr(self, '_cached_is_4be_section', False)
+        # 3. 신호 추출 (capnp 통신망 사용, I/O 딜레이 0%)
+        limit_4a3 = getattr(CS, 'navSpeedLimit', 0)
+        limit_4be = getattr(CS, 'camLimit', 0)
+        cam_dist = getattr(CS, 'camDist', 0.0)
+        map_source = getattr(CS, 'mapSource', 0)
+        is_4be_camera = getattr(CS, 'is4beCamera', False)
+        is_4be_section = getattr(CS, 'is4beSection', False)
 
         if cam_dist <= 0:
           is_4be_camera = False
