@@ -597,8 +597,8 @@ class CarState(CarStateBase):
       self.ram_disk_timer = 0
     self.ram_disk_timer += 1
 
-    # 10프레임(0.1초)에 한 번만 쓰기 실행! (I/O 부하 90% 감소)
-    if self.ram_disk_timer % 10 == 0:
+    # ▼▼▼ [핵심 픽스] CPU 부하 방지를 위해 10프레임에 한 번만 쓰기 ▼▼▼
+    if getattr(self, 'frame_for_params', 0) % 10 == 0:
       try:
         with open("/dev/shm/speed_bump_dist", "w") as f:
           f.write(str(bump_dist))
@@ -606,6 +606,7 @@ class CarState(CarStateBase):
           f.write(f"{int(is_4be_camera)},{int(is_4be_section)}")
       except Exception:
         pass
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # 💡 깔끔하게 원래대로 값 2개만 리턴! (4개로 늘렸던 분들은 원복하세요)
     return cam_limit, cam_dist
@@ -888,14 +889,14 @@ class CarState(CarStateBase):
         speed_limit_cam = False
 
     # 기존 코드를 찾아 아래처럼 덮어쓰기
-    # ▼▼▼ [핵심 픽스] 4A3 속도, 4BE 속도, 맵소스를 10프레임에 한 번만 전달 ▼▼▼
-    if getattr(self, 'ram_disk_timer', 0) % 10 == 0:
+    # ▼▼▼ [핵심 픽스] CPU 부하 방지를 위해 10프레임에 한 번만 쓰기 ▼▼▼
+    if self.frame_for_params % 10 == 0:
       try:
         with open("/dev/shm/navi_speed_info", "w") as f:
           f.write(f"{int(limit_4a3)},{int(cam_limit)},{float(cam_dist)},{map_source}")
       except Exception:
         pass
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     self.update_speed_limit(ret, speed_limit_cam)
 
     paddle_button = self.paddle_button_prev
