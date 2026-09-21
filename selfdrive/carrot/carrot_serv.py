@@ -983,11 +983,18 @@ class CarrotServ:
         auto_raw_limit = getattr(CS, 'speedLimit', 0)
         cam_dist = getattr(CS, 'speedLimitDistance', 0)
 
-        # carstate.py에서 달아준 4BE 명찰 확인
-        is_4be_camera = getattr(CS, 'vehicleNaviActive', False)
-        is_4be_section = getattr(CS, 'vehicleNaviSectionActive', False)
+        # ▼▼▼ [핵심 픽스] 안내음 서버도 RAM 디스크에서 4BE 명찰 읽어오기 ▼▼▼
+        is_4be_camera = False
+        is_4be_section = False
+        try:
+          with open("/dev/shm/navi_4be_flags", "r") as f:
+            flags = f.read().strip().split(",")
+            if len(flags) == 2:
+              is_4be_camera = bool(int(flags[0]))
+              is_4be_section = bool(int(flags[1]))
+        except Exception:
+          pass
         
-        # 4A3(내비) 확인: 거리가 있는데 4BE 명찰이 없으면 100% 4A3 내비게이션!
         is_4a3_camera = (cam_dist > 0) and not is_4be_camera
 
         # 4. 90km/h 룰 적용
@@ -1001,7 +1008,6 @@ class CarrotServ:
         if auto_raw_limit > 0:
           is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
           
-          # 4A3, 4BE(카메라/구간단속), 앱 카메라 완벽 통합 보류 조건
           is_camera_zone = is_4a3_camera or is_4be_camera or is_4be_section or is_app_cam
           
           if self.auto_prev_limit_serv == 0:
