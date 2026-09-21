@@ -883,13 +883,13 @@ class CarState(CarStateBase):
         
     # ▼▼▼ [필수] HUD에 4BE(카메라/표지판) 속도를 덮어쓰도록 우선순위 변경 ▼▼▼
     if cam_limit > 0:
-      if ret.speedLimit == 0 or cam_limit < ret.speedLimit:
-        ret.speedLimit = cam_limit
-        if cam_dist > 0:
-          speed_limit_cam = True
-          self.speedLimitDistance = self.totalDistance + cam_dist
-        else:
-          speed_limit_cam = False
+      # 카메라 신호가 1이라도 있으면, 내비 속도가 높든 낮든 무조건 덮어씀! (평등 로직)
+      ret.speedLimit = cam_limit
+      if cam_dist > 0:
+        speed_limit_cam = True
+        self.speedLimitDistance = self.totalDistance + cam_dist
+      else:
+        speed_limit_cam = False
 
     # capnp 구조체 변수에 다이렉트 할당
     ret.navSpeedLimit = limit_4a3
