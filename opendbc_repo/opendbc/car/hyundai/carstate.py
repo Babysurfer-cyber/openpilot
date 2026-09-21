@@ -597,19 +597,15 @@ class CarState(CarStateBase):
       self.ram_disk_timer = 0
     self.ram_disk_timer += 1
 
-    # ▼▼▼ [핵심 픽스] CPU 부하 방지를 위해 10프레임에 한 번만 쓰기 ▼▼▼
-    if getattr(self, 'frame_for_params', 0) % 10 == 0:
-      try:
-        with open("/dev/shm/speed_bump_dist", "w") as f:
-          f.write(str(bump_dist))
-        with open("/dev/shm/navi_4be_flags", "w") as f:
-          f.write(f"{int(is_4be_camera)},{int(is_4be_section)}")
-      except Exception:
-        pass
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    # 기존의 /dev/shm/navi_4be_flags 쓰는 부분 삭제하고 아래로 덮어쓰기!
+    try:
+      with open("/dev/shm/speed_bump_dist", "w") as f:
+        f.write(str(bump_dist))
+    except Exception:
+      pass
 
-    # 💡 깔끔하게 원래대로 값 2개만 리턴! (4개로 늘렸던 분들은 원복하세요)
-    return cam_limit, cam_dist
+    # 💡 capnp를 쓰므로 램디스크 대신 4개의 값을 정정당당하게 리턴합니다!
+    return cam_limit, cam_dist, is_4be_camera, is_4be_section
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
@@ -876,9 +872,9 @@ class CarState(CarStateBase):
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
-    # ▼▼▼ [수정 2] 플래그 2개를 함께 받아옴 ▼▼▼
-    # ▼▼▼ 2개만 받도록 원복 ▼▼▼
-    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
+    # 기존 로직을 찾아서 아래로 완벽하게 덮어쓰기!
+    # ▼▼▼ 4개의 값을 모두 받아옵니다 ▼▼▼
+    cam_limit, cam_dist, is_4be_camera, is_4be_section = self._update_vehicle_navi_events(cp)
         
     if ret.speedLimit == 0 and cam_limit > 0:
       ret.speedLimit = cam_limit
@@ -888,15 +884,15 @@ class CarState(CarStateBase):
       else:
         speed_limit_cam = False
 
-    # 기존 코드를 찾아 아래처럼 덮어쓰기
-    # ▼▼▼ [핵심 픽스] CPU 부하 방지를 위해 10프레임에 한 번만 쓰기 ▼▼▼
-    if self.frame_for_params % 10 == 0:
-      try:
-        with open("/dev/shm/navi_speed_info", "w") as f:
-          f.write(f"{int(limit_4a3)},{int(cam_limit)},{float(cam_dist)},{map_source}")
-      except Exception:
-        pass
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    # ▼▼▼ [핵심 픽스] capnp 구조체 변수에 직접 다이렉트 할당 (램디스크 I/O 완전 삭제!) ▼▼▼
+    ret.navSpeedLimit = limit_4a3
+    ret.camLimit = cam_limit
+    ret.camDist = cam_dist
+    ret.mapSource = map_source
+    ret.is4beCamera = is_4be_camera
+    ret.is4beSection = is_4be_section
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     self.update_speed_limit(ret, speed_limit_cam)
 
     paddle_button = self.paddle_button_prev
