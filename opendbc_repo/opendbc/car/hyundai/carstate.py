@@ -756,12 +756,19 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
+    limit_4a3 = 0  # 💡 4A3 속도 저장용 변수 추가
+    map_source = 0 # 💡 4A3 맵 소스(일반=0, 카메라=2) 저장용 변수 추가
+    
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
       if not self.is_metric:
         speedLimit *= CV.MPH_TO_KPH
-      ret.speedLimit = speedLimit if speedLimit < 255 else 0
-      if int(self.hda_info_4a3["MapSource"]) == 2:
+        
+      limit_4a3 = speedLimit if speedLimit < 255 else 0  # 💡 4a3 전용 변수에 저장
+      ret.speedLimit = limit_4a3
+      
+      map_source = int(self.hda_info_4a3["MapSource"])   # 💡 맵 소스 저장
+      if map_source == 2:
         speed_limit_cam = True
 
       if self.time_zone == "UTC":
@@ -869,6 +876,14 @@ class CarState(CarStateBase):
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
         speed_limit_cam = False
+
+    # ▼▼▼ [핵심 픽스] 4A3 속도, 4BE 속도, 맵소스를 명확히 분리하여 램디스크로 전달 ▼▼▼
+    try:
+      with open("/dev/shm/navi_speed_info", "w") as f:
+        f.write(f"{int(limit_4a3)},{int(cam_limit)},{float(cam_dist)},{map_source}")
+    except Exception:
+      pass
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
 
