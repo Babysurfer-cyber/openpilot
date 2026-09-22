@@ -969,17 +969,13 @@ class CarrotServ:
       # 차량 순정 개입에 흔들리지 않는 '콤마(오픈파일럿) 설정 크루즈 속도'를 가져옴
       current_target = CS.vCruiseCluster if CS is not None else 0
       
-      # 1. 상태 변수 초기화
-      if not hasattr(self, 'auto_prev_limit_serv'): self.auto_prev_limit_serv = 0
-      if not hasattr(self, 'auto_is_pending_serv'): self.auto_is_pending_serv = False
-
       if CS is not None:
-        # 2. 우측 깜빡이 7초 타이머 (시간 기반)
+        # 우측 깜빡이 7초 타이머 (시간 기반)
         if getattr(CS, 'rightBlinker', False):
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 통신망 속도 추출 (cam_dist 삭제)
+        # 통신망 속도 추출 (cam_dist 삭제 완료)
         speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
@@ -987,7 +983,7 @@ class CarrotServ:
         target_raw_limit = 0
         is_camera = False
 
-        # 4. 90km/h 분리 및 깜빡이 예외 처리 (cruise.py와 100% 동일)
+        # 90km/h 분리 및 깜빡이 예외 처리 (cruise.py와 100% 동일)
         if current_target >= 90 and not is_blinker_valid:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
@@ -995,41 +991,59 @@ class CarrotServ:
         else:
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
-            # 💡 [회원님 천재적 수정] 오직 map_source(4A3)로만 안내음 펜딩!
             is_camera = (map_source == 2)
 
-        # 5. 펜딩 및 안내음 실시간 트리거
-        if target_raw_limit > 0:
-          if is_camera:
-            # 카메라 구역 진입: 안내 보류 (Pending)
-            self.auto_is_pending_serv = True
-          else:
-            # 카메라 구역 통과 시점!
-            if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
-              
-              # 실시간 오프셋 계산 (cruise.py와 동일하게 절반 깎기 적용)
-              if target_raw_limit < current_target:
-                raw_offset = (current_target - target_raw_limit) / 2.0
-              else:
-                raw_offset = 10.0
-                
-              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-              offset = max(10.0, calculated_offset)
-              expected_target = target_raw_limit + offset
-
-              # 계산된 목표 속도가 현재 속도와 다를 때만 "띠링~" 안내음 송출
-              if int(round(expected_target)) != int(round(current_target)):
-                play_prompt = True
-                self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
-
-              self.auto_prev_limit_serv = target_raw_limit
-              self.auto_is_pending_serv = False
-        else:
-          self.auto_prev_limit_serv = 0
+        # 💡 [핵심 픽스 1] 최초 실행 시 0으로 시작해서 오알림이 울리는 버그 원천 차단!
+        if not hasattr(self, 'auto_prev_limit_serv'): 
+          self.auto_prev_limit_serv = target_raw_limit
+        if not hasattr(self, 'auto_is_pending_serv'): 
           self.auto_is_pending_serv = False
-          
-      # 화면 표시용 변수 (오토모드에선 4A3/4BE 구분 없이 타겟 리밋을 화면에 띄워줌)
-      current_limit = self.auto_prev_limit_serv if self.auto_prev_limit_serv > 0 else raw_limit
+
+        # 💡 [핵심 픽스 2] 수동 버튼 조작 감지 (cruise.py의 방어 로직과 완벽 동기화)
+        is_manual_override = False
+        for b in CS.buttonEvents:
+          if b.type.raw in [3, 4]:  # 3: accelCruise(+), 4: decelCruise(-)
+            is_manual_override = True
+            break
+
+        if is_manual_override:
+          # 수동 개입 시 -> 안내음 트리거 차단 및 현재 제한속도 조용히 암기!
+          if target_raw_limit > 0:
+            self.auto_prev_limit_serv = target_raw_limit
+          self.auto_is_pending_serv = False
+        else:
+          # 펜딩 및 안내음 실시간 트리거
+          if target_raw_limit > 0:
+            if is_camera:
+              # 카메라 구역 진입: 안내 보류 (Pending)
+              self.auto_is_pending_serv = True
+            else:
+              # 카메라 구역 통과했거나, 제한속도 바뀌었을 때!
+              if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
+                
+                # 실시간 오프셋 계산 (cruise.py와 동일하게 절반 깎기 적용)
+                if target_raw_limit < current_target:
+                  raw_offset = (current_target - target_raw_limit) / 2.0
+                else:
+                  raw_offset = 10.0
+                  
+                calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+                offset = max(10.0, calculated_offset)
+                expected_target = target_raw_limit + offset
+
+                # 계산된 목표 속도가 현재 속도와 다를 때만 "띠링~" 안내음 송출
+                if int(round(expected_target)) != int(round(current_target)):
+                  play_prompt = True
+                  self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
+
+                self.auto_prev_limit_serv = target_raw_limit
+                self.auto_is_pending_serv = False
+          else:
+            self.auto_prev_limit_serv = 0
+            self.auto_is_pending_serv = False
+            
+      # 화면 표시용 변수
+      current_limit = self.auto_prev_limit_serv if getattr(self, 'auto_prev_limit_serv', 0) > 0 else raw_limit
         
     else:
       # 5번 모드가 아닐 때 (기존 방식 유지)
