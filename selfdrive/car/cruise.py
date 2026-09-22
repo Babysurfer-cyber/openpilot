@@ -739,8 +739,11 @@ class VCruiseCarrot:
         # ==============================================================
 
         # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산 (공통 로직)
-        if button_type in [ButtonType.accelCruise, ButtonType.decelCruise]:
-          # 운전자가 버튼 개입 -> 시스템 개입 차단 및 현재 상태 암기
+        # 💡 [추가] 크루즈가 꺼져 있다가 막 켜지는 순간인지 확인하는 변수
+        is_engaging = (not CC.enabled) and (button_type in [ButtonType.accelCruise, ButtonType.decelCruise])
+
+        if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
+          # 크루즈가 이미 켜진 상태에서 버튼 개입 -> 시스템 개입 차단 및 암기
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
           self.auto_is_pending = False
@@ -750,32 +753,23 @@ class VCruiseCarrot:
               # 카메라 구역 진입: 속도 변경 보류 (Pending)
               self.auto_is_pending = True
             else:
-              # 카메라가 아니거나, 카메라를 방금 통과(is_camera == False) 했을 때 트리거!
-              if self.auto_is_pending or target_raw_limit != self.auto_prev_limit:
+              # 카메라가 아니거나, 카메라를 방금 통과했거나, **방금 크루즈를 켰을 때(is_engaging)** 트리거!
+              if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
                 
-                # 💡 [핵심] 통과하는 바로 그 시점의 현재 속도를 기준으로 오프셋 계산
+                # 💡 [핵심] 통과하는 (또는 켜는) 바로 그 시점의 현재 속도를 기준으로 오프셋 계산
                 if target_raw_limit < v_cruise_kph:
-                  # 현재 속도와 제한 속도 차이의 1/2
                   raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
                 else:
-                  # 속도가 올라갈 땐 기본 +10
                   raw_offset = 10.0
 
-                # 5단위 반올림 및 최소 10 보장
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
                 offset = max(10.0, calculated_offset)
 
-                # 크루즈 속도 즉시 반영
                 v_cruise_kph = target_raw_limit + offset
                 self.auto_prev_limit = target_raw_limit
                 self.auto_is_pending = False
-
-                # 💡 carrot_serv.py가 소리를 내도록 메모리에 깃발(Trigger) 꽂기!
-                try:
-                  self.params_memory.put_nonblocking("CarrotAutoTrigger", str(int(target_raw_limit)))
-                except:
-                  pass
           else:
+            # 제한속도 구간 끝 (0)
             self.auto_prev_limit = 0
             self.auto_is_pending = False
             
