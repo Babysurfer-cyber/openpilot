@@ -577,9 +577,9 @@ class CarState(CarStateBase):
       c_limit = c["speed"]
       
       # 80 미만은 300m 이하일 때, 80 이상은 600m 이하일 때만 유효한 카메라로 인정!
-      if c_limit < 80 and c_dist <= 300:
+      if c_limit < 80 and c_dist <= 50:
         valid_cameras.append(c)
-      elif c_limit >= 80 and c_dist <= 600:
+      elif c_limit >= 80 and c_dist <= 100:
         valid_cameras.append(c)
         
     if valid_cameras:
