@@ -979,11 +979,10 @@ class CarrotServ:
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 통신망 속도 추출
-        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 짬뽕 데이터
-        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 순수 4A3 데이터
+        # 3. 통신망 속도 추출 (cam_dist 삭제)
+        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
+        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
-        cam_dist = getattr(CS, 'speedLimitDistance', 0.0)
 
         target_raw_limit = 0
         is_camera = False
@@ -996,7 +995,8 @@ class CarrotServ:
         else:
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
-            is_camera = (cam_dist > 0)
+            # 💡 [회원님 천재적 수정] 오직 map_source(4A3)로만 안내음 펜딩!
+            is_camera = (map_source == 2)
 
         # 5. 펜딩 및 안내음 실시간 트리거
         if target_raw_limit > 0:
