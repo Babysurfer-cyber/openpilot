@@ -979,32 +979,23 @@ class CarrotServ:
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 3. 신호 추출 (capnp 통신망 사용, I/O 딜레이 0%)
-        limit_4a3 = getattr(CS, 'navSpeedLimit', 0)
-        limit_4be = getattr(CS, 'camLimit', 0)
-        cam_dist = getattr(CS, 'camDist', 0.0)
+        # 3. 순정 융합 신호 추출 (HUD 표시 데이터 그대로 활용)
+        speed_limit = getattr(CS, 'navSpeedLimit', 0)
         map_source = getattr(CS, 'mapSource', 0)
-        is_4be_camera = getattr(CS, 'is4beCamera', False)
-        is_4be_section = getattr(CS, 'is4beSection', False)
 
-        if cam_dist <= 0:
-          is_4be_camera = False
-
-        # 4. 속도 90km/h 이상 & 4A3/4BE 평등 적용!
         auto_raw_limit = 0
         is_camera_zone = False
 
+        # 4. [회원님 기획] 안내음 로직: 90km/h 및 우측 깜빡이 필터링
         if current_target >= 90 and not is_blinker_valid:
-          if limit_4a3 > 0:
-            auto_raw_limit = limit_4a3
-            is_camera_zone = (map_source == 2)
+          # 고속도로 본선: 맵소스가 2(카메라)가 아니고, 속도가 80 이상일 때만 내비 허용!
+          if map_source != 2 and speed_limit >= 80:
+            auto_raw_limit = speed_limit
         else:
-          if limit_4be > 0:
-            auto_raw_limit = limit_4be
-            is_camera_zone = (is_4be_camera and cam_dist > 0) or is_4be_section
-          elif limit_4a3 > 0:
-            auto_raw_limit = limit_4a3
-            is_camera_zone = (map_source == 2)
+          # 일반 국도 및 고속도로 출구: 순정 융합 속도(내비+카메라) 무조건 수용!
+          if speed_limit > 0:
+            auto_raw_limit = speed_limit
+            is_camera_zone = (map_source == 2)  # 카메라 구역 마킹 (펜딩 작동용)
 
         effective_limit = 0
 
