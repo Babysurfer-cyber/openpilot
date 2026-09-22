@@ -738,25 +738,23 @@ class VCruiseCarrot:
             is_camera = (map_source == 2)  
         # ==============================================================
 
-        # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산 (공통 로직)
-        # 💡 [추가] 크루즈가 꺼져 있다가 막 켜지는 순간인지 확인하는 변수
+        # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산
         is_engaging = (not CC.enabled) and (button_type in [ButtonType.accelCruise, ButtonType.decelCruise])
 
         if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
-          # 크루즈가 이미 켜진 상태에서 버튼 개입 -> 시스템 개입 차단 및 암기
+          # 수동 개입 시 -> 암기만 하고 시스템 개입 차단 (깃발 꽂지 않음!)
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
           self.auto_is_pending = False
         else:
           if target_raw_limit > 0:
             if is_camera:
-              # 카메라 구역 진입: 속도 변경 보류 (Pending)
               self.auto_is_pending = True
             else:
-              # 카메라가 아니거나, 카메라를 방금 통과했거나, **방금 크루즈를 켰을 때(is_engaging)** 트리거!
+              # 카메라 방금 통과했거나 막 크루즈 켰을 때
               if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
                 
-                # 💡 [핵심] 통과하는 (또는 켜는) 바로 그 시점의 현재 속도를 기준으로 오프셋 계산
+                # 실시간 오프셋 계산
                 if target_raw_limit < v_cruise_kph:
                   raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
                 else:
@@ -765,11 +763,17 @@ class VCruiseCarrot:
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
                 offset = max(10.0, calculated_offset)
 
+                # 최종 크루즈 속도 반영
                 v_cruise_kph = target_raw_limit + offset
                 self.auto_prev_limit = target_raw_limit
                 self.auto_is_pending = False
+
+                # 💡 [핵심] carrot_serv.py가 소리를 내도록 메모리에 깃발(Trigger) 꽂기!
+                try:
+                  self.params_memory.put_nonblocking("CarrotAutoTrigger", str(int(target_raw_limit)))
+                except:
+                  pass
           else:
-            # 제한속도 구간 끝 (0)
             self.auto_prev_limit = 0
             self.auto_is_pending = False
             
