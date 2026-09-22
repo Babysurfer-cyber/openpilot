@@ -756,6 +756,12 @@ class CarState(CarStateBase):
       if not self.is_metric:
         speedLimit *= CV.MPH_TO_KPH
       ret.speedLimit = speedLimit if speedLimit < 255 else 0
+      
+      # ▼▼▼ [추가된 핵심 로직] 4BE가 섞이기 전에 순수 4A3 신호만 밖으로 빼냅니다! ▼▼▼
+      ret.navSpeedLimit = ret.speedLimit
+      ret.mapSource = int(self.hda_info_4a3["MapSource"])
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
       if int(self.hda_info_4a3["MapSource"]) == 2:
         speed_limit_cam = True
 
