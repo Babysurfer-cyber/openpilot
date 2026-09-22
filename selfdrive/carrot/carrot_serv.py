@@ -966,55 +966,70 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # ▼▼▼ [핵심 수정] 4A3 우선, 4BE 과속카메라 무시 로직 ▼▼▼
+      # 현재 차에 설정되어 있는 크루즈 속도를 가져옴
+      current_target = (CS.cruiseState.speed * 3.6) if CS is not None else 0
+      
+      # 1. 상태 변수 초기화
+      if not hasattr(self, 'auto_prev_limit_serv'): self.auto_prev_limit_serv = 0
+      if not hasattr(self, 'auto_is_pending_serv'): self.auto_is_pending_serv = False
+
       if CS is not None:
-        if hasattr(CS, 'navSpeedLimit') and CS.navSpeedLimit > 0:
-          # 1. 4A3 신호가 우선적으로 있을 때
-          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-          auto_raw_limit = CS.navSpeedLimit
+        # 2. 우측 깜빡이 7초 타이머 (시간 기반)
+        if getattr(CS, 'rightBlinker', False):
+          self.auto_last_blinker_time_serv = time.monotonic()
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
+
+        # 3. 통신망 속도 추출
+        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 짬뽕 데이터
+        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 순수 4A3 데이터
+        map_source = getattr(CS, 'mapSource', 0)              
+        cam_dist = getattr(CS, 'speedLimitDistance', 0.0)
+
+        target_raw_limit = 0
+        is_camera = False
+
+        # 4. 90km/h 분리 및 깜빡이 예외 처리 (cruise.py와 100% 동일)
+        if current_target >= 90 and not is_blinker_valid:
+          if speed_limit_pure > 0:
+            target_raw_limit = speed_limit_pure
+            is_camera = (map_source == 2)
         else:
-          # 2. 4A3 신호가 없을 때 (4BE 등)
-          auto_is_cam = (getattr(CS, 'speedLimitDistance', 0) > 0)
-          if auto_is_cam:
-            # 💡 4BE 과속카메라 신호는 오토모드에서 무시! (미리 변속 방지용 대기 상태만 유지)
-            auto_raw_limit = 0
+          if speed_limit_mixed > 0:
+            target_raw_limit = speed_limit_mixed
+            is_camera = (cam_dist > 0)
+
+        # 5. 펜딩 및 안내음 실시간 트리거
+        if target_raw_limit > 0:
+          if is_camera:
+            # 카메라 구역 진입: 안내 보류 (Pending)
+            self.auto_is_pending_serv = True
           else:
-            # 💡 4BE 일반 구간(카메라 아님) 신호는 기존처럼 사용
-            auto_raw_limit = CS.speedLimit if getattr(CS, 'speedLimit', 0) > 0 else 0
-      else:
-        auto_is_cam = False
-        auto_raw_limit = 0
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            # 카메라 구역 통과 시점!
+            if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
+              
+              # 실시간 오프셋 계산 (cruise.py와 동일하게 절반 깎기 적용)
+              if target_raw_limit < current_target:
+                raw_offset = (current_target - target_raw_limit) / 2.0
+              else:
+                raw_offset = 10.0
+                
+              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+              offset = max(10.0, calculated_offset)
+              expected_target = target_raw_limit + offset
 
-      effective_limit = self.prev_nav_limit
+              # 계산된 목표 속도가 현재 속도와 다를 때만 "띠링~" 안내음 송출
+              if int(round(expected_target)) != int(round(current_target)):
+                play_prompt = True
+                self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
 
-      if auto_is_cam:
-        # 카메라 통과 중: 속도 변경 보류, 암기
-        self.was_auto_cam_serv = True
-        if auto_raw_limit > 0:
-          self.pending_cam_limit_serv = auto_raw_limit
-      else:
-        if self.was_auto_cam_serv:
-          # 카메라를 막 통과했을 때
-          self.was_auto_cam_serv = False
-          if self.pending_cam_limit_serv > 0:
-            effective_limit = self.pending_cam_limit_serv
-            self.pending_cam_limit_serv = 0  # 💡 적용 후 안전하게 초기화
+              self.auto_prev_limit_serv = target_raw_limit
+              self.auto_is_pending_serv = False
         else:
-          # 일반 주행 중
-          if auto_raw_limit > 0 and auto_raw_limit != self.prev_nav_limit:
-            effective_limit = auto_raw_limit
-            
-      # 최종 결정된 effective_limit이 바뀌었을 때 즉시 띠링!
-      if effective_limit != self.prev_nav_limit:
-        if effective_limit > 0:
-          play_prompt = True
-          self.szPosRoadName = f"오토 속도 변경: {int(effective_limit)}km/h 🔔"
-        self.prev_nav_limit = effective_limit
-
-      # 화면 표시용 변수 업데이트
-      current_limit = self.prev_nav_limit if self.prev_nav_limit > 0 else raw_limit
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          self.auto_prev_limit_serv = 0
+          self.auto_is_pending_serv = False
+          
+      # 화면 표시용 변수 (오토모드에선 4A3/4BE 구분 없이 타겟 리밋을 화면에 띄워줌)
+      current_limit = self.auto_prev_limit_serv if self.auto_prev_limit_serv > 0 else raw_limit
         
     else:
       # 5번 모드가 아닐 때 (기존 방식 유지)
