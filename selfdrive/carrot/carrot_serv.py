@@ -966,8 +966,8 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # 현재 차에 설정되어 있는 크루즈 속도를 가져옴
-      current_target = (CS.cruiseState.speed * 3.6) if CS is not None else 0
+      # 차량 순정 개입에 흔들리지 않는 '콤마(오픈파일럿) 설정 크루즈 속도'를 가져옴
+      current_target = CS.vCruiseCluster if CS is not None else 0
       
       # 1. 상태 변수 초기화
       if not hasattr(self, 'auto_prev_limit_serv'): self.auto_prev_limit_serv = 0
