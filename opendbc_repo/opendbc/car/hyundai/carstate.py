@@ -764,34 +764,6 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
-    # =======================================================
-    # 1. 순정 내비 + 카메라 융합 속도 (speedLimit) 추출
-    # =======================================================
-    speedLimit = 0
-    map_source = 0
-    speed_limit_cam = False
-
-    if self.hda_info_4a3 is not None:
-      raw_limit = self.hda_info_4a3["SPEED_LIMIT"]
-      if not self.is_metric:
-        raw_limit *= CV.MPH_TO_KPH
-      
-      # 순정 상태 그대로 HUD에 표출 (예전처럼 완벽하게 작동)
-      speedLimit = raw_limit if raw_limit < 255 else 0
-      ret.speedLimit = speedLimit
-      
-      map_source = int(self.hda_info_4a3["MapSource"])
-      if map_source == 2:
-        speed_limit_cam = True
-
-    # =======================================================
-    # 2. 오토모드(5번) 전용 변수 전송 (capnp)
-    # =======================================================
-    ret.navSpeedLimit = speedLimit   # 내비+카메라 융합 속도 전송
-    ret.mapSource = map_source       # 2면 카메라 인식 구역
-    
-    self.update_speed_limit(ret, speed_limit_cam)
-
       if self.time_zone == "UTC":
         country_code = int(self.hda_info_4a3["CountryCode"])
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
@@ -881,33 +853,39 @@ class CarState(CarStateBase):
     vEgoClu, aEgoClu = self.update_clu_speed_kf(ret.vEgoCluster)
     ret.vCluRatio = (ret.vEgo / vEgoClu) if (vEgoClu > 3. and ret.vEgo > 3.) else 1.0
 
-    # ▼▼▼ [수정] 토글 상태 갱신 및 4A3/4BE 우선순위 로직 실행 ▼▼▼
-    self.frame_for_params += 1
-    if self.frame_for_params % 100 == 0:
-      self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
+    # =======================================================
+    # [완벽 복구] 순정 융합 데이터(speedLimit) 처리 및 오토모드 전송
+    # =======================================================
+    speedLimit = 0
+    map_source = 0
+    speed_limit_cam = False
 
-    # 기존 로직을 찾아서 아래로 완벽하게 덮어쓰기!
-    # ▼▼▼ 4개의 값을 모두 받아옵니다 ▼▼▼
-    cam_limit, cam_dist, is_4be_camera, is_4be_section = self._update_vehicle_navi_events(cp)
-        
-    # ▼▼▼ [필수] HUD에 4BE(카메라/표지판) 속도를 덮어쓰도록 우선순위 변경 ▼▼▼
-    if cam_limit > 0:
-      # 카메라 신호가 1이라도 있으면, 내비 속도가 높든 낮든 무조건 덮어씀! (평등 로직)
-      ret.speedLimit = cam_limit
-      if cam_dist > 0:
+    if self.hda_info_4a3 is not None:
+      raw_limit = self.hda_info_4a3["SPEED_LIMIT"]
+      if not self.is_metric:
+        raw_limit *= CV.MPH_TO_KPH
+      
+      # 순정 속도를 HUD(ret.speedLimit)에 그대로 띄움 (오류 0%)
+      speedLimit = raw_limit if raw_limit < 255 else 0
+      ret.speedLimit = speedLimit
+      
+      map_source = int(self.hda_info_4a3["MapSource"])
+      if map_source == 2:
         speed_limit_cam = True
-        self.speedLimitDistance = self.totalDistance + cam_dist
-      else:
-        speed_limit_cam = False
 
-    # capnp 구조체 변수에 다이렉트 할당
-    ret.navSpeedLimit = limit_4a3
-    ret.camLimit = cam_limit
-    ret.camDist = cam_dist
+      if self.time_zone == "UTC":
+        country_code = int(self.hda_info_4a3["CountryCode"])
+        self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
+
+    # 오토모드(5번)에 순정 융합 속도 1개만 깔끔하게 전송
+    ret.navSpeedLimit = speedLimit
     ret.mapSource = map_source
-    ret.is4beCamera = is_4be_camera
-    ret.is4beSection = is_4be_section
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    
+    # (파이썬 에러 방지용 깡통 변수 - 건드리지 마세요)
+    ret.camLimit = 0 
+    ret.camDist = 0
+    ret.is4beCamera = False
+    ret.is4beSection = False
 
     self.update_speed_limit(ret, speed_limit_cam)
 
