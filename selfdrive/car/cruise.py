@@ -714,11 +714,10 @@ class VCruiseCarrot:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
 
-        # 3. 통신망에서 두 종류의 속도 모두 추출
+        # 3. 통신망에서 두 종류의 속도 모두 추출 (cam_dist 삭제)
         speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 짬뽕 데이터 (4A3+4BE)
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 순수 4A3 데이터
         map_source = getattr(CS, 'mapSource', 0)              # 4A3 카메라 판독기 (2=카메라)
-        cam_dist = getattr(CS, 'speedLimitDistance', 0.0)
 
         target_raw_limit = 0
         is_camera = False
@@ -728,18 +727,15 @@ class VCruiseCarrot:
         # ==============================================================
         if v_cruise_kph >= 90 and not is_blinker_valid:
           # [상황 A] 고속도로 본선 (90 이상 & 깜빡이 꺼짐)
-          # -> 오직 순수 4A3(navSpeedLimit)만 사용! (4BE 오작동 철벽 방어)
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
-            # 순수 4A3에서는 map_source가 2일 때만 카메라 구역으로 인정!
             is_camera = (map_source == 2) 
         else:
           # [상황 B] 시내/국도 (90 미만) OR 출구 진입 (우측 깜빡이 작동)
-          # -> 짬뽕 데이터(speedLimit) 무조건 수용! (4A3, 4BE 모두 씀)
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
-            # 짬뽕 데이터는 거리가 0보다 크면 무조건 카메라(방지턱 포함) 구역으로 간주!
-            is_camera = (cam_dist > 0)
+            # 💡 [회원님 천재적 수정] cam_dist 펜딩 삭제! 오직 map_source(4A3)만 펜딩!
+            is_camera = (map_source == 2)  
         # ==============================================================
 
         # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산 (공통 로직)
