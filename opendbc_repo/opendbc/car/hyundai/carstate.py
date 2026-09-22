@@ -539,8 +539,8 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
 
   def _update_vehicle_navi_events(self, cp):
-    #if not getattr(self, 'vehicleNaviCanControl', False):
-      #return 0.0, 0.0, False, False
+    if not getattr(self, 'vehicleNaviCanControl', False):
+      return 0.0, 0.0
 
     if self.navi_segment_4b9 is not None:
       timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B9")
@@ -570,47 +570,34 @@ class CarState(CarStateBase):
     cam_dist = 0.0
     cam_limit = 0.0
     
-    # ▼▼▼ [추가 1] 4BE 신호가 카메라인지 구간단속인지 밖으로 알려줄 내부 플래그 ▼▼▼
-    is_4be_camera = False
-    is_4be_section = False
-    
+    # ▼▼▼ [추가] 4BE 카메라 속도별 거리 제한 필터링 ▼▼▼
     valid_cameras = []
     for c in cameras:
       c_dist = c["target"] - self.totalDistance
       c_limit = c["speed"]
-      c_kind = c.get("kind", 0)  # 카메라 종류(kind) 추출
-
-      # (선택) 고정식(1)이나 이동식(2) 과속카메라 신호를 무시하고 싶다면 아래 주석(#)을 푸세요.
-      # if c_kind in (1, 2):
-      #   continue
       
-      # ▼▼▼ 4be 신호 거리 제한
-      if c_dist <= 300:
+      # 80 미만은 300m 이하일 때, 80 이상은 600m 이하일 때만 유효한 카메라로 인정!
+      if c_limit < 80 and c_dist <= 300:
+        valid_cameras.append(c)
+      elif c_limit >= 80 and c_dist <= 600:
         valid_cameras.append(c)
         
     if valid_cameras:
       cam_dist = valid_cameras[0]["target"] - self.totalDistance
       cam_limit = valid_cameras[0]["speed"]
-      is_4be_camera = True
     elif zones:
+      # 유효한 카메라가 없거나 너무 멀리 있으면 일반 제한속도(zone)를 따름
       cam_dist = 0.0
       cam_limit = zones[-1]["speed"]
-      is_4be_section = True
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       
-    # 기존 코드를 찾아 아래처럼 덮어쓰기
-    if not hasattr(self, 'ram_disk_timer'):
-      self.ram_disk_timer = 0
-    self.ram_disk_timer += 1
-
-    # 기존의 /dev/shm/navi_4be_flags 쓰는 부분 삭제하고 아래로 덮어쓰기!
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
         f.write(str(bump_dist))
     except Exception:
       pass
 
-    # 💡 capnp를 쓰므로 램디스크 대신 4개의 값을 정정당당하게 리턴합니다!
-    return cam_limit, cam_dist, is_4be_camera, is_4be_section
+    return cam_limit, cam_dist
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
@@ -764,6 +751,14 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
+    if self.hda_info_4a3 is not None:
+      speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
+      if not self.is_metric:
+        speedLimit *= CV.MPH_TO_KPH
+      ret.speedLimit = speedLimit if speedLimit < 255 else 0
+      if int(self.hda_info_4a3["MapSource"]) == 2:
+        speed_limit_cam = True
+
       if self.time_zone == "UTC":
         country_code = int(self.hda_info_4a3["CountryCode"])
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
@@ -853,39 +848,23 @@ class CarState(CarStateBase):
     vEgoClu, aEgoClu = self.update_clu_speed_kf(ret.vEgoCluster)
     ret.vCluRatio = (ret.vEgo / vEgoClu) if (vEgoClu > 3. and ret.vEgo > 3.) else 1.0
 
-    # =======================================================
-    # [완벽 복구] 순정 융합 데이터(speedLimit) 처리 및 오토모드 전송
-    # =======================================================
-    speedLimit = 0
-    map_source = 0
-    speed_limit_cam = False
+    # ▼▼▼ [수정] 토글 상태 갱신 및 4A3/4BE 우선순위 로직 실행 ▼▼▼
+    self.frame_for_params += 1
+    if self.frame_for_params % 100 == 0:
+      self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
-    if self.hda_info_4a3 is not None:
-      raw_limit = self.hda_info_4a3["SPEED_LIMIT"]
-      if not self.is_metric:
-        raw_limit *= CV.MPH_TO_KPH
-      
-      # 순정 속도를 HUD(ret.speedLimit)에 그대로 띄움 (오류 0%)
-      speedLimit = raw_limit if raw_limit < 255 else 0
-      ret.speedLimit = speedLimit
-      
-      map_source = int(self.hda_info_4a3["MapSource"])
-      if map_source == 2:
+    cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
+        
+    # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
+    # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
+    if ret.speedLimit == 0 and cam_limit > 0:
+      ret.speedLimit = cam_limit
+      if cam_dist > 0:
         speed_limit_cam = True
-
-      if self.time_zone == "UTC":
-        country_code = int(self.hda_info_4a3["CountryCode"])
-        self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
-
-    # 오토모드(5번)에 순정 융합 속도 1개만 깔끔하게 전송
-    ret.navSpeedLimit = speedLimit
-    ret.mapSource = map_source
-    
-    # (파이썬 에러 방지용 깡통 변수 - 건드리지 마세요)
-    ret.camLimit = 0 
-    ret.camDist = 0
-    ret.is4beCamera = False
-    ret.is4beSection = False
+        self.speedLimitDistance = self.totalDistance + cam_dist
+      else:
+        speed_limit_cam = False
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
 
@@ -904,6 +883,9 @@ class CarState(CarStateBase):
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
+    # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
+    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan)]
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
       msgs += [
