@@ -764,24 +764,33 @@ class CarState(CarStateBase):
       if right_block:
         ret.rightBlindspot = True
         
-    # ▼▼▼ [추가] 오토모드 제어용 4A3 속도와 맵소스 분리 보관 변수 ▼▼▼
-    limit_4a3 = 0  
-    map_source = 0 
-    
+    # =======================================================
+    # 1. 순정 내비 + 카메라 융합 속도 (speedLimit) 추출
+    # =======================================================
+    speedLimit = 0
+    map_source = 0
+    speed_limit_cam = False
+
     if self.hda_info_4a3 is not None:
-      speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
+      raw_limit = self.hda_info_4a3["SPEED_LIMIT"]
       if not self.is_metric:
-        speedLimit *= CV.MPH_TO_KPH
+        raw_limit *= CV.MPH_TO_KPH
       
-      # 1. 콤마 UI를 위한 순정 융합용 변수 (원래 로직 100% 유지)
-      ret.speedLimit = speedLimit if speedLimit < 255 else 0
-      
-      # 2. 오토모드 제어를 위한 4A3 단독 복사본 저장
-      limit_4a3 = ret.speedLimit
+      # 순정 상태 그대로 HUD에 표출 (예전처럼 완벽하게 작동)
+      speedLimit = raw_limit if raw_limit < 255 else 0
+      ret.speedLimit = speedLimit
       
       map_source = int(self.hda_info_4a3["MapSource"])
       if map_source == 2:
         speed_limit_cam = True
+
+    # =======================================================
+    # 2. 오토모드(5번) 전용 변수 전송 (capnp)
+    # =======================================================
+    ret.navSpeedLimit = speedLimit   # 내비+카메라 융합 속도 전송
+    ret.mapSource = map_source       # 2면 카메라 인식 구역
+    
+    self.update_speed_limit(ret, speed_limit_cam)
 
       if self.time_zone == "UTC":
         country_code = int(self.hda_info_4a3["CountryCode"])
