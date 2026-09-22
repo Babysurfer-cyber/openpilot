@@ -738,11 +738,11 @@ class VCruiseCarrot:
             is_camera = (map_source == 2)  
         # ==============================================================
 
-        # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산
-        is_engaging = (not CC.enabled) and (button_type in [ButtonType.accelCruise, ButtonType.decelCruise])
-
-        if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
-          # 수동 개입 시 -> 암기만 하고 시스템 개입 차단 (깃발 꽂지 않음!)
+        # ==============================================================
+        # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산 (is_engaging 삭제 완료)
+        # ==============================================================
+        if button_type in [ButtonType.accelCruise, ButtonType.decelCruise]:
+          # 운전자가 버튼 개입(크루즈 ON 포함) -> 즉시 시스템 개입 차단 및 현재 제한속도 암기!
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
           self.auto_is_pending = False
@@ -751,8 +751,8 @@ class VCruiseCarrot:
             if is_camera:
               self.auto_is_pending = True
             else:
-              # 카메라 방금 통과했거나 막 크루즈 켰을 때
-              if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
+              # 카메라 방금 통과했거나, 제한속도가 바뀌었을 때만 찰나의 트리거 발동!
+              if self.auto_is_pending or target_raw_limit != self.auto_prev_limit:
                 
                 # 실시간 오프셋 계산
                 if target_raw_limit < v_cruise_kph:
@@ -768,7 +768,7 @@ class VCruiseCarrot:
                 self.auto_prev_limit = target_raw_limit
                 self.auto_is_pending = False
 
-                # 💡 [핵심] carrot_serv.py가 소리를 내도록 메모리에 깃발(Trigger) 꽂기!
+                # 💡 carrot_serv.py가 소리를 내도록 메모리에 깃발(Trigger) 꽂기!
                 try:
                   self.params_memory.put_nonblocking("CarrotAutoTrigger", str(int(target_raw_limit)))
                 except:
