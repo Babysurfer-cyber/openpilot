@@ -966,43 +966,67 @@ class CarrotServ:
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # 1. 화면 표시용 타겟 리밋 추출 (로직 없음, 단순 출력용)
-      if CS is not None:
-        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
-        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
+      # 차량 순정 개입에 흔들리지 않는 '콤마(오픈파일럿) 설정 크루즈 속도'를 가져옴
+      current_target = CS.vCruiseCluster if CS is not None else 0
+      
+      # 1. 상태 변수 초기화
+      if not hasattr(self, 'auto_prev_limit_serv'): self.auto_prev_limit_serv = 0
+      if not hasattr(self, 'auto_is_pending_serv'): self.auto_is_pending_serv = False
 
-        # 블링커 7초 처리
+      if CS is not None:
+        # 2. 우측 깜빡이 7초 타이머 (시간 기반)
         if getattr(CS, 'rightBlinker', False):
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 콤마 크루즈 속도 및 타겟 결정
-        current_target = CS.vCruiseCluster
-        if current_target >= 90 and not is_blinker_valid:
-          target_raw_limit = speed_limit_pure
-        else:
-          target_raw_limit = speed_limit_mixed
-      else:
-        target_raw_limit = 0
-        
-      # 화면에 띄워줄 최종 속도
-      current_limit = target_raw_limit if target_raw_limit > 0 else raw_limit
+        # 3. 통신망 속도 추출 (cam_dist 삭제)
+        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
+        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
+        map_source = getattr(CS, 'mapSource', 0)              
 
-      # 2. ▼▼▼ [핵심] cruise.py가 꽂아둔 깃발(Trigger) 감지 ▼▼▼
-      try:
-        trigger_val = self.params_memory.get("CarrotAutoTrigger", encoding="utf8")
-        if trigger_val is not None and trigger_val != "":
-          limit_val = int(trigger_val)
-          
-          # 깃발이 발견되면 즉시 안내음 "띠링~" 송출!
-          if limit_val > 0:
-            play_prompt = True
-            self.szPosRoadName = f"오토 속도 변경: {limit_val}km/h 🔔"
-          
-          # 안내음을 냈으니 깃발 즉시 파기 (초기화)
-          self.params_memory.put_nonblocking("CarrotAutoTrigger", "")
-      except Exception:
-        pass
+        target_raw_limit = 0
+        is_camera = False
+
+        # 4. 90km/h 분리 및 깜빡이 예외 처리 (cruise.py와 100% 동일)
+        if current_target >= 90 and not is_blinker_valid:
+          if speed_limit_pure > 0:
+            target_raw_limit = speed_limit_pure
+            is_camera = (map_source == 2)
+        else:
+          if speed_limit_mixed > 0:
+            target_raw_limit = speed_limit_mixed
+            # 💡 [회원님 천재적 수정] 오직 map_source(4A3)로만 안내음 펜딩!
+            is_camera = (map_source == 2)
+
+        # 5. 펜딩 및 안내음 실시간 트리거
+        if target_raw_limit > 0:
+          if is_camera:
+            # 카메라 구역 진입: 안내 보류 (Pending)
+            self.auto_is_pending_serv = True
+          else:
+            # 카메라 구역 통과 시점!
+            if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
+              
+              # 실시간 오프셋 계산 (cruise.py와 동일하게 절반 깎기 적용)
+              if target_raw_limit < current_target:
+                raw_offset = (current_target - target_raw_limit) / 2.0
+              else:
+                raw_offset = 10.0
+                
+              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+              offset = max(10.0, calculated_offset)
+              expected_target = target_raw_limit + offset
+
+              # 계산된 목표 속도가 현재 속도와 다를 때만 "띠링~" 안내음 송출
+              if int(round(expected_target)) != int(round(current_target)):
+                play_prompt = True
+                self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
+
+              self.auto_prev_limit_serv = target_raw_limit
+              self.auto_is_pending_serv = False
+        else:
+          self.auto_prev_limit_serv = 0
+          self.auto_is_pending_serv = False
           
       # 화면 표시용 변수 (오토모드에선 4A3/4BE 구분 없이 타겟 리밋을 화면에 띄워줌)
       current_limit = self.auto_prev_limit_serv if self.auto_prev_limit_serv > 0 else raw_limit
