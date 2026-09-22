@@ -695,7 +695,7 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [기본기 완결판] 오토모드(5번): 진입 시 보류 -> 통과 시점 실시간 오프셋 계산
+    # ▼ [궁극의 오토모드 5번] 90km/h 분리 + 실시간 오프셋 + 카메라 펜딩
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -705,17 +705,46 @@ class VCruiseCarrot:
         # 1. 상태 변수 초기화
         if not hasattr(self, 'auto_prev_limit'): self.auto_prev_limit = 0
         if not hasattr(self, 'auto_is_pending'): self.auto_is_pending = False
+        if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
 
-        # 2. 롤백된 순정 통합 데이터(speedLimit)만 깔끔하게 사용
-        target_raw_limit = getattr(CS, 'speedLimit', 0)
+        # 2. 우측 깜빡이 7초(700프레임) 유지 타이머
+        if getattr(CS, 'rightBlinker', False):
+          self.auto_blinker_timer = 700
+        else:
+          self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
+
+        # 3. 통신망에서 두 종류의 속도 모두 추출
+        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 짬뽕 데이터 (4A3+4BE)
+        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 순수 4A3 데이터
+        map_source = getattr(CS, 'mapSource', 0)              # 4A3 카메라 판독기 (2=카메라)
         cam_dist = getattr(CS, 'speedLimitDistance', 0.0)
-        
-        # 거리가 0보다 크면 카메라 구역으로 간주! (map_source 변수 필요 없음)
-        is_camera = (cam_dist > 0)
 
-        # 3. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산
+        target_raw_limit = 0
+        is_camera = False
+
+        # ==============================================================
+        # 4. [회원님 기획 핵심] 90km/h 조건부 분리 및 깜빡이 예외 처리
+        # ==============================================================
+        if v_cruise_kph >= 90 and not is_blinker_valid:
+          # [상황 A] 고속도로 본선 (90 이상 & 깜빡이 꺼짐)
+          # -> 오직 순수 4A3(navSpeedLimit)만 사용! (4BE 오작동 철벽 방어)
+          if speed_limit_pure > 0:
+            target_raw_limit = speed_limit_pure
+            # 순수 4A3에서는 map_source가 2일 때만 카메라 구역으로 인정!
+            is_camera = (map_source == 2) 
+        else:
+          # [상황 B] 시내/국도 (90 미만) OR 출구 진입 (우측 깜빡이 작동)
+          # -> 짬뽕 데이터(speedLimit) 무조건 수용! (4A3, 4BE 모두 씀)
+          if speed_limit_mixed > 0:
+            target_raw_limit = speed_limit_mixed
+            # 짬뽕 데이터는 거리가 0보다 크면 무조건 카메라(방지턱 포함) 구역으로 간주!
+            is_camera = (cam_dist > 0)
+        # ==============================================================
+
+        # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산 (공통 로직)
         if button_type in [ButtonType.accelCruise, ButtonType.decelCruise]:
-          # 운전자가 버튼으로 속도를 직접 바꾼 경우 -> 시스템 개입 차단 및 현재 상태 암기
+          # 운전자가 버튼 개입 -> 시스템 개입 차단 및 현재 상태 암기
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
           self.auto_is_pending = False
@@ -725,21 +754,22 @@ class VCruiseCarrot:
               # 카메라 구역 진입: 속도 변경 보류 (Pending)
               self.auto_is_pending = True
             else:
-              # 카메라 구역이 아니거나, 방금 카메라를 갓 통과(거리가 0이 됨) 했을 때!
+              # 카메라가 아니거나, 카메라를 방금 통과(is_camera == False) 했을 때 트리거!
               if self.auto_is_pending or target_raw_limit != self.auto_prev_limit:
-                # 💡 [핵심] 미리 계산 X! 적용되는 바로 그 시점(Right Now)에 실시간 오프셋 계산!
+                
+                # 💡 [핵심] 통과하는 바로 그 시점의 현재 속도를 기준으로 오프셋 계산
                 if target_raw_limit < v_cruise_kph:
-                  # 현재 설정된 크루즈 속도와 새 제한속도 차이의 1/2 적용
+                  # 현재 속도와 제한 속도 차이의 1/2
                   raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
                 else:
-                  # 속도가 올라갈 땐 기본 오프셋 10
+                  # 속도가 올라갈 땐 기본 +10
                   raw_offset = 10.0
 
-                # 5단위 반올림 및 최소 10은 무조건 보장
+                # 5단위 반올림 및 최소 10 보장
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
                 offset = max(10.0, calculated_offset)
 
-                # 최종 크루즈 속도 반영 및 상태 암기
+                # 크루즈 속도 즉시 반영
                 v_cruise_kph = target_raw_limit + offset
                 self.auto_prev_limit = target_raw_limit
                 self.auto_is_pending = False
@@ -752,7 +782,7 @@ class VCruiseCarrot:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
 
-    # 🚨 기존 로직 유지 (이 아래 코드는 절대 지우지 마세요)
+    # 🚨 기존 시스템 호출 유지
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return self._auto_speed_up(v_cruise_kph)
 
