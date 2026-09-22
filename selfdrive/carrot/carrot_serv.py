@@ -993,35 +993,38 @@ class CarrotServ:
             target_raw_limit = speed_limit_mixed
             is_camera = (map_source == 2)
 
-        # 💡 [핵심 픽스 1] 최초 실행 시 0으로 시작해서 오알림이 울리는 버그 원천 차단!
+        # 💡 [동기화 1] 상태 변수 초기화 (cruise.py와 똑같이 0으로 시작!)
         if not hasattr(self, 'auto_prev_limit_serv'): 
-          self.auto_prev_limit_serv = target_raw_limit
+          self.auto_prev_limit_serv = 0
         if not hasattr(self, 'auto_is_pending_serv'): 
           self.auto_is_pending_serv = False
 
-        # 💡 [핵심 픽스 2] 수동 버튼 조작 감지 (cruise.py의 방어 로직과 완벽 동기화)
-        is_manual_override = False
+        # 💡 [동기화 2] 버튼 입력 및 is_engaging 완벽 감지
+        button_type_serv = 0
         for b in CS.buttonEvents:
-          if b.type.raw in [3, 4]:  # 3: accelCruise(+), 4: decelCruise(-)
-            is_manual_override = True
+          if b.pressed and b.type.raw in [3, 4]:  # 3: accelCruise(+), 4: decelCruise(-)
+            button_type_serv = b.type.raw
             break
+            
+        cc_enabled = getattr(CS.cruiseState, 'enabled', False)
+        is_engaging_serv = (not cc_enabled) and (button_type_serv in [3, 4])
 
-        if is_manual_override:
-          # 수동 개입 시 -> 안내음 트리거 차단 및 현재 제한속도 조용히 암기!
+        # 💡 [동기화 3] 수동 조작 방어 및 통과 시점 실시간 안내음 트리거
+        if button_type_serv in [3, 4] and not is_engaging_serv:
+          # 수동 개입 시 -> 안내음 내지 말고 현재 제한속도 조용히 암기!
           if target_raw_limit > 0:
             self.auto_prev_limit_serv = target_raw_limit
           self.auto_is_pending_serv = False
         else:
-          # 펜딩 및 안내음 실시간 트리거
           if target_raw_limit > 0:
             if is_camera:
               # 카메라 구역 진입: 안내 보류 (Pending)
               self.auto_is_pending_serv = True
             else:
-              # 카메라 구역 통과했거나, 제한속도 바뀌었을 때!
-              if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
+              # 카메라 구역 통과했거나, 제한속도 바뀌었거나, 막 크루즈 켰을 때!
+              if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv or is_engaging_serv:
                 
-                # 실시간 오프셋 계산 (cruise.py와 동일하게 절반 깎기 적용)
+                # 실시간 오프셋 계산 (cruise.py와 똑같은 공식)
                 if target_raw_limit < current_target:
                   raw_offset = (current_target - target_raw_limit) / 2.0
                 else:
