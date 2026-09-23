@@ -970,36 +970,51 @@ class CarrotServ:
       current_target = CS.vCruiseCluster if CS is not None else 0
       
       if CS is not None:
-        # 우측 깜빡이 7초 타이머 (시간 기반)
+        # 1. 우측 깜빡이 7초 타이머 (시간 기반)
         if getattr(CS, 'rightBlinker', False):
           self.auto_last_blinker_time_serv = time.monotonic()
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 7.0)
 
-        # 통신망 속도 추출 (cam_dist 삭제 완료)
+        # 2. 통신망 속도 추출
         speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
 
-        target_raw_limit = 0
-        is_camera = False
+        # 💡 [동기화 핵심] 카메라 거리(cam_dist) 대신 10초 타이머 로직 적용!
+        if not hasattr(self, 'auto_cam_start_time_serv'): self.auto_cam_start_time_serv = 0.0
+        
+        if map_source == 2:
+          # 카메라가 처음 발견된 순간의 시간을 기록
+          if self.auto_cam_start_time_serv == 0.0:
+            self.auto_cam_start_time_serv = time.monotonic()
+          # 10초 동안은 펜딩(보류) 상태 유지
+          is_camera_pending_serv = (time.monotonic() - self.auto_cam_start_time_serv < 10.0)
+        else:
+          # 카메라 구역이 아니면 타이머 초기화
+          self.auto_cam_start_time_serv = 0.0
+          is_camera_pending_serv = False
 
-        # 90km/h 분리 및 깜빡이 예외 처리 (cruise.py와 100% 동일)
+        target_raw_limit = 0
+
+        # 3. 90km/h 분리 및 타이머 펜딩 조건 연동
         if current_target >= 90 and not is_blinker_valid:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
-            is_camera = (map_source == 2)
+          else:
+            is_camera_pending_serv = False
         else:
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
-            is_camera = (map_source == 2)
+          else:
+            is_camera_pending_serv = False
 
-        # 💡 [동기화 1] 상태 변수 초기화 (cruise.py와 똑같이 0으로 시작!)
+        # 상태 변수 초기화
         if not hasattr(self, 'auto_prev_limit_serv'): 
           self.auto_prev_limit_serv = 0
         if not hasattr(self, 'auto_is_pending_serv'): 
           self.auto_is_pending_serv = False
 
-        # 💡 [동기화 2] 버튼 입력 및 is_engaging 완벽 감지
+        # 4. 버튼 입력 감지
         button_type_serv = 0
         for b in CS.buttonEvents:
           if b.pressed and b.type.raw in [3, 4]:  # 3: accelCruise(+), 4: decelCruise(-)
@@ -1009,22 +1024,25 @@ class CarrotServ:
         cc_enabled = getattr(CS.cruiseState, 'enabled', False)
         is_engaging_serv = (not cc_enabled) and (button_type_serv in [3, 4])
 
-        # 💡 [동기화 3] 수동 조작 방어 및 통과 시점 실시간 안내음 트리거
+        # 5. 수동 조작 방어 및 10초 통과 시점 실시간 안내음 트리거
         if button_type_serv in [3, 4] and not is_engaging_serv:
           # 수동 개입 시 -> 안내음 내지 말고 현재 제한속도 조용히 암기!
           if target_raw_limit > 0:
             self.auto_prev_limit_serv = target_raw_limit
           self.auto_is_pending_serv = False
+          
+          # 💡 수동 개입 시 10초 타이머 강제 만료 처리 (오작동 방지)
+          self.auto_cam_start_time_serv = time.monotonic() - 10.0
         else:
           if target_raw_limit > 0:
-            if is_camera:
-              # 카메라 구역 진입: 안내 보류 (Pending)
+            # 💡 10초가 안 지났으면 계속 대기
+            if is_camera_pending_serv:
               self.auto_is_pending_serv = True
             else:
-              # 카메라 구역 통과했거나, 제한속도 바뀌었거나, 막 크루즈 켰을 때!
+              # 💡 10초가 지났거나, 일반 속도변경이거나, 막 크루즈를 켰을 때 트리거 폭발!
               if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv or is_engaging_serv:
                 
-                # 실시간 오프셋 계산 (cruise.py와 똑같은 공식)
+                # 실시간 오프셋 계산
                 if target_raw_limit < current_target:
                   raw_offset = (current_target - target_raw_limit) / 2.0
                 else:
