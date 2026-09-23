@@ -980,23 +980,20 @@ class CarrotServ:
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
 
-        # 💡 [동기화 핵심] 카메라 거리(cam_dist) 대신 10초 타이머 로직 적용!
+        # 3. 카메라 10초 타이머 로직 적용
         if not hasattr(self, 'auto_cam_start_time_serv'): self.auto_cam_start_time_serv = 0.0
         
         if map_source == 2:
-          # 카메라가 처음 발견된 순간의 시간을 기록
           if self.auto_cam_start_time_serv == 0.0:
             self.auto_cam_start_time_serv = time.monotonic()
-          # 10초 동안은 펜딩(보류) 상태 유지
           is_camera_pending_serv = (time.monotonic() - self.auto_cam_start_time_serv < 10.0)
         else:
-          # 카메라 구역이 아니면 타이머 초기화
           self.auto_cam_start_time_serv = 0.0
           is_camera_pending_serv = False
 
         target_raw_limit = 0
 
-        # 3. 90km/h 분리 및 타이머 펜딩 조건 연동
+        # 4. 90km/h 분리
         if current_target >= 90 and not is_blinker_valid:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
@@ -1014,46 +1011,42 @@ class CarrotServ:
         if not hasattr(self, 'auto_is_pending_serv'): 
           self.auto_is_pending_serv = False
 
-        # 4. 버튼 입력 감지
+        # 5. 버튼 입력 감지
         button_type_serv = 0
         for b in CS.buttonEvents:
-          if b.pressed and b.type.raw in [3, 4]:  # 3: accelCruise(+), 4: decelCruise(-)
+          if b.pressed and b.type.raw in [3, 4]: 
             button_type_serv = b.type.raw
             break
             
         cc_enabled = getattr(CS.cruiseState, 'enabled', False)
-        is_engaging_serv = (not cc_enabled) and (button_type_serv in [3, 4])
+        
+        if not hasattr(self, 'auto_engage_timer_serv'): self.auto_engage_timer_serv = 0
+        if cc_enabled and not getattr(self, 'enabled_last_serv', False):
+          self.auto_engage_timer_serv = 150
+        elif self.auto_engage_timer_serv > 0:
+          self.auto_engage_timer_serv -= 1
+        self.enabled_last_serv = cc_enabled
 
-        # 5. 수동 조작 방어 및 10초 통과 시점 실시간 안내음 트리거
+        is_engaging_serv = (not cc_enabled or self.auto_engage_timer_serv > 0) and (button_type_serv in [3, 4])
+
+        # 6. 수동 조작 방어 및 안내음 트리거
         if button_type_serv in [3, 4] and not is_engaging_serv:
-          # 수동 개입 시 -> 안내음 내지 말고 현재 제한속도 조용히 암기!
           if target_raw_limit > 0:
             self.auto_prev_limit_serv = target_raw_limit
           self.auto_is_pending_serv = False
           
-          # 💡 수동 개입 시 10초 타이머 강제 만료 처리 (오작동 방지)
+          # 수동 개입 시 10초 타이머 강제 만료
           self.auto_cam_start_time_serv = time.monotonic() - 10.0
         else:
           if target_raw_limit > 0:
-            # 💡 10초가 안 지났으면 계속 대기
             if is_camera_pending_serv:
               self.auto_is_pending_serv = True
             else:
-              # 💡 10초가 지났거나, 일반 속도변경이거나, 막 크루즈를 켰을 때 트리거 폭발!
               if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv or is_engaging_serv:
                 
-                # 실시간 오프셋 계산
-                if target_raw_limit < current_target:
-                  raw_offset = (current_target - target_raw_limit) / 2.0
-                else:
-                  raw_offset = 10.0
-                  
-                calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-                offset = max(10.0, calculated_offset)
-                expected_target = target_raw_limit + offset
-
-                # 계산된 목표 속도가 현재 속도와 다를 때만 "띠링~" 안내음 송출
-                if int(round(expected_target)) != int(round(current_target)):
+                # 💡 [핵심 버그 픽스] 현재 속도(current_target) 비교 연산 싹 삭제!
+                # 10초 펜딩이 딱 끝났거나, 도로 제한속도가 바뀌었을 때 무조건 안내음 송출!
+                if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
                   play_prompt = True
                   self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
 
