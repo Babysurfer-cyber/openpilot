@@ -1010,6 +1010,8 @@ class CarrotServ:
           self.auto_prev_limit_serv = 0
         if not hasattr(self, 'auto_is_pending_serv'): 
           self.auto_is_pending_serv = False
+        if not hasattr(self, 'auto_active_target'): 
+          self.auto_active_target = current_target
 
         # 5. 버튼 입력 감지
         button_type_serv = 0
@@ -1029,6 +1031,10 @@ class CarrotServ:
 
         is_engaging_serv = (not cc_enabled or self.auto_engage_timer_serv > 0) and (button_type_serv in [3, 4])
 
+        # 💡 [핵심] 대기(펜딩) 중이 아니며 제한속도 변경도 없다면, 평소 크루즈 속도를 "변경 전 기준 속도"로 암기!
+        if not self.auto_is_pending_serv and target_raw_limit == self.auto_prev_limit_serv and not is_engaging_serv:
+          self.auto_active_target = current_target
+
         # 6. 수동 조작 방어 및 안내음 트리거
         if button_type_serv in [3, 4] and not is_engaging_serv:
           if target_raw_limit > 0:
@@ -1044,14 +1050,24 @@ class CarrotServ:
             else:
               if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv or is_engaging_serv:
                 
-                # 💡 [핵심 버그 픽스] 현재 속도(current_target) 비교 연산 싹 삭제!
-                # 10초 펜딩이 딱 끝났거나, 도로 제한속도가 바뀌었을 때 무조건 안내음 송출!
-                if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv:
+                # 💡 '변경 직전의 속도(auto_active_target)'를 기준으로 오프셋 계산
+                if target_raw_limit < self.auto_active_target:
+                  raw_offset = (self.auto_active_target - target_raw_limit) / 2.0
+                else:
+                  raw_offset = 10.0
+                  
+                calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+                offset = max(10.0, calculated_offset)
+                expected_target = target_raw_limit + offset
+
+                # 💡 [버그 픽스] 계산된 속도가 '기억하던 예전 속도'와 진짜로 다를 때만 소리 울림!
+                if int(round(expected_target)) != int(round(self.auto_active_target)) or is_engaging_serv:
                   play_prompt = True
                   self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
 
                 self.auto_prev_limit_serv = target_raw_limit
                 self.auto_is_pending_serv = False
+                self.auto_active_target = expected_target  # 다음 계산을 위해 업데이트
           else:
             self.auto_prev_limit_serv = 0
             self.auto_is_pending_serv = False
