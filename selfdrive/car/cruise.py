@@ -695,7 +695,7 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [궁극의 오토모드 5번] 90km/h 분리 + 실시간 오프셋 + 카메라 펜딩
+    # ▼ [궁극의 오토모드 5번] 90km/h 분리 + 실시간 오프셋 + 10초 타이머
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -719,7 +719,7 @@ class VCruiseCarrot:
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
 
-        # 💡 [핵심] 거리(cam_dist) 삭제하고 10초 타이머 장착!
+        # 💡 [핵심] 10초(1000프레임) 타이머 장착!
         if not hasattr(self, 'auto_cam_timer'): self.auto_cam_timer = 0
         if map_source == 2:
           self.auto_cam_timer += 1
@@ -777,14 +777,6 @@ class VCruiseCarrot:
                 self.auto_prev_limit = target_raw_limit
                 self.auto_is_pending = False
           else:
-            self.auto_prev_limit = 0
-            self.auto_is_pending = False
-
-                v_cruise_kph = target_raw_limit + offset
-                self.auto_prev_limit = target_raw_limit
-                self.auto_is_pending = False
-          else:
-            # 제한속도 구간 끝 (0)
             self.auto_prev_limit = 0
             self.auto_is_pending = False
             
