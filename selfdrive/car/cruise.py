@@ -714,49 +714,57 @@ class VCruiseCarrot:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
 
-        # 3. 통신망에서 두 종류의 속도 모두 추출 (cam_dist 삭제)
-        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 짬뽕 데이터 (4A3+4BE)
-        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 순수 4A3 데이터
-        map_source = getattr(CS, 'mapSource', 0)              # 4A3 카메라 판독기 (2=카메라)
+        # 3. 통신망에서 추출
+        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
+        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
+        map_source = getattr(CS, 'mapSource', 0)              
+
+        # 💡 [핵심] 거리(cam_dist) 삭제하고 10초 타이머 장착!
+        if not hasattr(self, 'auto_cam_timer'): self.auto_cam_timer = 0
+        if map_source == 2:
+          self.auto_cam_timer += 1
+        else:
+          self.auto_cam_timer = 0
+          
+        is_camera_pending = (map_source == 2 and self.auto_cam_timer < 1000) # 10초(1000프레임) 동안 보류
 
         target_raw_limit = 0
-        is_camera = False
 
-        # ==============================================================
-        # 4. [회원님 기획 핵심] 90km/h 조건부 분리 및 깜빡이 예외 처리
-        # ==============================================================
+        # 4. 90km/h 분리 및 10초 펜딩 조건
         if v_cruise_kph >= 90 and not is_blinker_valid:
-          # [상황 A] 고속도로 본선 (90 이상 & 깜빡이 꺼짐)
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
-            is_camera = (map_source == 2) 
+          else:
+            is_camera_pending = False
         else:
-          # [상황 B] 시내/국도 (90 미만) OR 출구 진입 (우측 깜빡이 작동)
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
-            # 💡 [회원님 천재적 수정] cam_dist 펜딩 삭제! 오직 map_source(4A3)만 펜딩!
-            is_camera = (map_source == 2)  
-        # ==============================================================
+          else:
+            is_camera_pending = False
 
-        # 5. 수동 조작 방어 및 통과 시점 실시간 오프셋 계산 (공통 로직)
-        # 💡 [추가] 크루즈가 꺼져 있다가 막 켜지는 순간인지 확인하는 변수
-        is_engaging = (not CC.enabled) and (button_type in [ButtonType.accelCruise, ButtonType.decelCruise])
+        # 5. 수동 조작 방어
+        if not hasattr(self, 'auto_engage_timer'): self.auto_engage_timer = 0
+        if CC.enabled and not getattr(self, 'enabled_last', False):
+          self.auto_engage_timer = 150  
+        elif self.auto_engage_timer > 0:
+          self.auto_engage_timer -= 1
+
+        is_engaging = (not CC.enabled or self.auto_engage_timer > 0) and (button_type in [ButtonType.accelCruise, ButtonType.decelCruise])
 
         if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
-          # 크루즈가 이미 켜진 상태에서 버튼 개입 -> 시스템 개입 차단 및 암기
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
           self.auto_is_pending = False
+          self.auto_cam_timer = 1000  # 💡 수동 개입 시 타이머 강제 종료 (오작동 방지)
         else:
           if target_raw_limit > 0:
-            if is_camera:
-              # 카메라 구역 진입: 속도 변경 보류 (Pending)
+            # 💡 10초가 안 지났으면 계속 대기
+            if is_camera_pending:
               self.auto_is_pending = True
             else:
-              # 카메라가 아니거나, 카메라를 방금 통과했거나, **방금 크루즈를 켰을 때(is_engaging)** 트리거!
+              # 💡 10초가 지났거나, 일반 속도변경일 때 트리거 폭발!
               if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
                 
-                # 💡 [핵심] 통과하는 (또는 켜는) 바로 그 시점의 현재 속도를 기준으로 오프셋 계산
                 if target_raw_limit < v_cruise_kph:
                   raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
                 else:
@@ -764,6 +772,13 @@ class VCruiseCarrot:
 
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
                 offset = max(10.0, calculated_offset)
+
+                v_cruise_kph = target_raw_limit + offset
+                self.auto_prev_limit = target_raw_limit
+                self.auto_is_pending = False
+          else:
+            self.auto_prev_limit = 0
+            self.auto_is_pending = False
 
                 v_cruise_kph = target_raw_limit + offset
                 self.auto_prev_limit = target_raw_limit
