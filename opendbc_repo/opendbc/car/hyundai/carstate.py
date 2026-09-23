@@ -752,41 +752,21 @@ class CarState(CarStateBase):
         ret.rightBlindspot = True
         
     if self.hda_info_4a3 is not None:
-      # 1. 4A3 신호에서 일반 도로 속도와 과속카메라 속도를 모두 가져옵니다.
-      road_limit = self.hda_info_4a3.get("SPEED_LIMIT", 0)
-      cam_limit = self.hda_info_4a3.get("SPEED_LIMIT_CAM", 0)
-
+      speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
       if not self.is_metric:
-        road_limit *= CV.MPH_TO_KPH
-        cam_limit *= CV.MPH_TO_KPH
-
-      # 💡 [핵심] 카메라 속도가 존재하면 1순위로 덮어씁니다!
-      if 0 < cam_limit < 255:
-        final_4a3_speed = cam_limit
-        ret.mapSource = 2  # 카메라 구간임을 명확히 플래그 처리
-      elif 0 < road_limit < 255:
-        final_4a3_speed = road_limit
-        ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))
-      else:
-        final_4a3_speed = 0
-        ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))
-
-      ret.speedLimit = final_4a3_speed
+        speedLimit *= CV.MPH_TO_KPH
+      ret.speedLimit = speedLimit if speedLimit < 255 else 0
       
-      # ▼▼▼ 4BE(앱)가 섞이기 전, 4A3(도로+카메라) 완전체 신호를 pure에 저장! ▼▼▼
+      # ▼▼▼ [추가된 핵심 로직] 4BE가 섞이기 전에 순수 4A3 신호만 밖으로 빼냅니다! ▼▼▼
       ret.navSpeedLimit = ret.speedLimit
+      ret.mapSource = int(self.hda_info_4a3["MapSource"])
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-      # 💡 [추가] 4A3 카메라 거리 추출 (cruise.py의 300m 펜딩 해제 방아쇠 작동용!)
-      cam_dist_4a3 = self.hda_info_4a3.get("CAM_DISTANCE", 0) or self.hda_info_4a3.get("SPEED_LIMIT_CAM_DIST", 0)
-      
-      if ret.mapSource == 2:
+      if int(self.hda_info_4a3["MapSource"]) == 2:
         speed_limit_cam = True
-        if cam_dist_4a3 > 0:
-          self.speedLimitDistance = self.totalDistance + cam_dist_4a3
 
       if self.time_zone == "UTC":
-        country_code = int(self.hda_info_4a3.get("CountryCode", 0))
+        country_code = int(self.hda_info_4a3["CountryCode"])
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
@@ -930,4 +910,4 @@ class CarState(CarStateBase):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-      }
+              }
