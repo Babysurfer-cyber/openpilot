@@ -759,14 +759,14 @@ class CarState(CarStateBase):
       
       # ▼▼▼ [추가된 핵심 로직] 4BE가 섞이기 전에 순수 4A3 신호만 밖으로 빼냅니다! ▼▼▼
       ret.navSpeedLimit = ret.speedLimit
-      ret.mapSource = int(self.hda_info_4a3["MapSource"])
+      ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))  # 💡 에러 방지 안전장치!
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-      if int(self.hda_info_4a3["MapSource"]) == 2:
+      if int(self.hda_info_4a3.get("MapSource", 0)) == 2:         # 💡 에러 방지 안전장치!
         speed_limit_cam = True
 
       if self.time_zone == "UTC":
-        country_code = int(self.hda_info_4a3["CountryCode"])
+        country_code = int(self.hda_info_4a3.get("CountryCode", 0)) # 💡 에러 방지 안전장치!
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
