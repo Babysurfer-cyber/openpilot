@@ -87,6 +87,7 @@ class DesireHelper:
   def _make_model_turn_speed(self, modeldata, carstate):
     # v_ego와 우측 깜빡이 정보를 carstate에서 가져옵니다.
     v_ego = carstate.vEgo
+    v_ego_kph = v_ego * CV.MS_TO_KPH  # km/h 속도 변환
     right_blinker = carstate.rightBlinker
     
     if self.modelTurnSpeedFactor > 0:
@@ -99,11 +100,11 @@ class DesireHelper:
       is_dynamic_active = (right_blinker or self.right_blinker_timer > 0.0)
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-      if is_dynamic_active:
-        # 우측 깜빡이가 켜져있거나 꺼진 후 5초 이내일 때: 시야를 5초 늘림
-        dynamic_time = self.modelTurnSpeedFactor + 5.0
+      # 💡 [핵심 수정] 시속 60km 이상 & 우측 깜빡이(5초 유지) 조건일 때 시야 8초 고정!
+      if is_dynamic_active and v_ego_kph >= 60.0:
+        dynamic_time = 8.0
       else:
-        # 그 외의 일반 주행 시: 기본 시야 유지
+        # 60km/h 미만이거나 깜빡이 조건이 아닐 때는 기본 시야 유지
         dynamic_time = self.modelTurnSpeedFactor
 
       # 원본의 보간 및 속도 계산 로직 유지
