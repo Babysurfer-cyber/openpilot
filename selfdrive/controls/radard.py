@@ -885,9 +885,9 @@ class RadarD:
 
     # 앞차 정보 기반 동적 최대 감시 거리 설정
     if lead_dict['status'] and lead_dict['dRel'] > 0:
-      dynamic_max_long = min(30.0, lead_dict['dRel'])
+      dynamic_max_long = min(20.0, lead_dict['dRel'])
     else:
-      dynamic_max_long = 30.0
+      dynamic_max_long = 20.0
 
     if left_long > dynamic_max_long:
       left_long = 0.0  
