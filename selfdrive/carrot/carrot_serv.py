@@ -1162,11 +1162,8 @@ class CarrotServ:
         fake_bump_dist = max(0.0, bump_dist - bump_offset)
         bump_decel_rate = self.autoNaviSpeedDecelRate * 1.0
 
-        # ▼▼▼ [수정] 제한속도가 30인 도로에서는 타겟 속도에서 5 추가 감속 ▼▼▼
+        # ▼ 원래 설정한 방지턱 통과 속도를 그대로 사용합니다. ▼
         target_bump_speed = self.autoNaviSpeedBumpSpeed
-        # 💡 self.nRoadLimitSpeed 대신 current_limit 사용!
-        if current_limit == 30:
-          target_bump_speed -= 5
 
         vehicle_bump_speed = self.calculate_current_speed(fake_bump_dist,
                                                           target_bump_speed,
@@ -1174,8 +1171,7 @@ class CarrotServ:
                                                           bump_decel_rate)
         self.active_carrot = 5
         final_xSpdType = 22  
-        final_xSpdLimit = target_bump_speed  # 💡 화면에도 -5 깎인 속도가 뜨도록 수정 완료!
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        final_xSpdLimit = target_bump_speed
         final_xSpdDist = fake_bump_dist  
     
     if self.autoTurnControl not in [2, 3]:
