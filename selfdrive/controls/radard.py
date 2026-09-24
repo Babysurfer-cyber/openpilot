@@ -435,12 +435,12 @@ class RadarD:
     self.leadCutIn = empty_lead()
 
     self._corner_hist = {
-      "L": deque(maxlen=16),
-      "R": deque(maxlen=16),
+      "L": deque(maxlen=14),
+      "R": deque(maxlen=14),
     }
     self._corner_missing_cnt = {"L": 0, "R": 0} 
-    # ▼▼▼ [수정] 0.8초(16프레임) 타임머신 메모리로 확장 ▼▼▼
-    self.yaw_rate_hist = deque([0.0]*16, maxlen=16)
+    # ▼▼▼ [수정] 0.7초(14프레임) 타임머신 메모리로 확장 ▼▼▼
+    self.yaw_rate_hist = deque([0.0]*14, maxlen=14)
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
 
 
@@ -935,8 +935,8 @@ class RadarD:
     abs_left_lat = float(abs(raw_left_lat))
     abs_right_lat = float(abs(raw_right_lat))
 
-    # ▼▼▼ [수정] 0.8초(16프레임) 전의 yawRate를 꺼내옵니다 ▼▼▼
-    past_yaw_rate = self.yaw_rate_hist[0] if len(self.yaw_rate_hist) == 16 else CS.yawRate
+    # ▼▼▼ [수정] 0.7초(14프레임) 전의 yawRate를 꺼내옵니다 ▼▼▼
+    past_yaw_rate = self.yaw_rate_hist[0] if len(self.yaw_rate_hist) == 14 else CS.yawRate
 
     # ▼▼▼ [수정] 호출 시 past_yaw_rate를 넘겨줍니다 ▼▼▼
     left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, past_yaw_rate, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
