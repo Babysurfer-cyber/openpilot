@@ -70,6 +70,9 @@ class DesireHelper:
     self.lane_change_available_left = False
     self.lane_change_available_right = False
 
+    # ▼▼▼ 동적 시야를 위한 깜빡이 유지 타이머 추가 ▼▼▼
+    self.right_blinker_timer = 0.0
+
   # ─────────────────────────────────────────────
   # params/model
   # ─────────────────────────────────────────────
@@ -81,22 +84,29 @@ class DesireHelper:
       self.laneChangeDelay = self.params.get_float("LaneChangeDelay") * 0.1
       self.modelTurnSpeedFactor = self.params.get_float("ModelTurnSpeedFactor") * 0.1
 
-  def _make_model_turn_speed(self, modeldata, v_ego):
+  def _make_model_turn_speed(self, modeldata, carstate):
+    # v_ego와 우측 깜빡이 정보를 carstate에서 가져옵니다.
+    v_ego = carstate.vEgo
+    right_blinker = carstate.rightBlinker
+    
     if self.modelTurnSpeedFactor > 0:
-      # ▼▼▼ 동적 시야(Lookahead) 계산 로직 추가 ▼▼▼
-      v_ego_kph = v_ego * CV.MS_TO_KPH
-
-      if v_ego_kph <= 50.0:
-        dynamic_time = self.modelTurnSpeedFactor
-      elif v_ego_kph >= 70.0:
-        # 시속 100km/h 이상일 때 최대 2.0초를 더해 한계치 고정
-        dynamic_time = self.modelTurnSpeedFactor + 0.0
+      # ▼▼▼ 우측 깜빡이 감지 & 5초(5.0s) 유지 타이머 로직 ▼▼▼
+      if right_blinker:
+        self.right_blinker_timer = 5.0
       else:
-        # 시속 n부터 m까지 1km/h당 0.x초씩 증가
-        dynamic_time = self.modelTurnSpeedFactor + (v_ego_kph - 50.0) * 0
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        self.right_blinker_timer = max(0.0, self.right_blinker_timer - DT_MDL)
 
-      # 원래 self.modelTurnSpeedFactor가 들어가던 자리에 dynamic_time 적용!
+      is_dynamic_active = (right_blinker or self.right_blinker_timer > 0.0)
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+      if is_dynamic_active:
+        # 우측 깜빡이가 켜져있거나 꺼진 후 5초 이내일 때: 시야를 4초 늘림
+        dynamic_time = self.modelTurnSpeedFactor + 4.0
+      else:
+        # 그 외의 일반 주행 시: 기본 시야 유지
+        dynamic_time = self.modelTurnSpeedFactor
+
+      # 원본의 보간 및 속도 계산 로직 유지
       model_turn_speed = np.interp(dynamic_time,
                                    modeldata.velocity.t,
                                    modeldata.velocity.x) * CV.MS_TO_KPH * 1.2
@@ -233,8 +243,8 @@ class DesireHelper:
     self.frame += 1
     self._update_params_periodic()
     
-    # ▼▼▼ 함수 호출 시 carstate.vEgo를 넘겨주도록 수정 ▼▼▼
-    self._make_model_turn_speed(modeldata, carstate.vEgo)
+    # ▼▼▼ 함수 호출 시 carstate 전체를 넘겨주도록 수정 ▼▼▼
+    self._make_model_turn_speed(modeldata, carstate)
 
     # counts
     self.carrot_lane_change_count = max(0, self.carrot_lane_change_count - 1)
