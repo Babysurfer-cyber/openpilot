@@ -490,6 +490,14 @@ class VCruiseCarrot:
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
       if getattr(self, 'carrot_cruise_active', False):
+        
+        # 1. 금고에 저장된 기존 속도(100 등)를 꺼내서 복구합니다.
+        if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+          v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+          button_kph = v_cruise_kph  # 💡 하위 로직에서 감속된 속도로 다시 덮어쓰지 못하도록 버튼 속도도 동기화!
+          self._v_cruise_kph_at_brake = 0
+          
+        self.carrot_cruise_active = False
         button_type = ButtonType.accelCruise
         self._add_log("Carrot Cruise OFF & Restore Speed (LFA toggle)")
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
@@ -633,8 +641,7 @@ class VCruiseCarrot:
       self.prev_carrot_active = False
       
     if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
-      if getattr(self, '_v_cruise_kph_at_brake', 0) == 0:  
-        self._v_cruise_kph_at_brake = v_cruise_kph         
+      self._v_cruise_kph_at_brake = v_cruise_kph  # 💡 0일 때만 저장하는 조건 삭제 (무조건 현재 속도를 백업!)
         
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
