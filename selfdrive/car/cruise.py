@@ -714,9 +714,9 @@ class VCruiseCarrot:
         if not hasattr(self, 'auto_is_pending'): self.auto_is_pending = False
         if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
 
-        # 2. 우측 깜빡이 7초(700프레임) 유지 타이머
+        # 2. 우측 깜빡이 10초(1000프레임) 유지 타이머
         if getattr(CS, 'rightBlinker', False):
-          self.auto_blinker_timer = 700
+          self.auto_blinker_timer = 1000
         else:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
         is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
