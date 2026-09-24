@@ -100,8 +100,8 @@ class DesireHelper:
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if is_dynamic_active:
-        # 우측 깜빡이가 켜져있거나 꺼진 후 5초 이내일 때: 시야를 4초 늘림
-        dynamic_time = self.modelTurnSpeedFactor + 4.0
+        # 우측 깜빡이가 켜져있거나 꺼진 후 5초 이내일 때: 시야를 5초 늘림
+        dynamic_time = self.modelTurnSpeedFactor + 5.0
       else:
         # 그 외의 일반 주행 시: 기본 시야 유지
         dynamic_time = self.modelTurnSpeedFactor
