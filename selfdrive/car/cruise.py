@@ -650,6 +650,8 @@ class VCruiseCarrot:
     if is_ic_jc and not self.prev_is_ic_jc:
       if CC.enabled:  # 크루즈 주행 중일 때만 작동
         self.carrot_cruise_active = True
+        self.auto_carrot_ic_jc = True  # 💡 [추가] 자동 진입 꼬리표 달기!
+        self.auto_carrot_timer = 0     # 💡 [추가] 5초 타이머 초기화!
         self._add_log("Carrot Cruise ON (IC/JC Ramp Entry)")
 
     self.prev_is_ic_jc = is_ic_jc
@@ -698,6 +700,16 @@ class VCruiseCarrot:
         else:
           self.target_speed_reach_timer = 0
 
+      # ▼▼▼ [추가] 4. IC/JC 진입으로 켜진 당근크루즈 한정 5초 타임아웃 ▼▼▼
+      if not restore_triggered and getattr(self, 'auto_carrot_ic_jc', False):
+        if not hasattr(self, 'auto_carrot_timer'): self.auto_carrot_timer = 0
+        self.auto_carrot_timer += 1
+        if self.auto_carrot_timer >= 500:  # 💡 5초 (1초 = 100프레임)
+          restore_triggered = True
+          restore_reason = "IC/JC Auto 5s Timeout"
+          self.auto_carrot_ic_jc = False  # 꼬리표 떼기
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
       # 🚀 복귀 트리거 발동
       if restore_triggered:
         self.carrot_cruise_active = False
@@ -717,6 +729,8 @@ class VCruiseCarrot:
     else:
       self.stationary_lead_timer = 0
       self.target_speed_reach_timer = 0
+      self.auto_carrot_ic_jc = False  # 💡 [추가] 꼬리표 확실하게 초기화
+      self.auto_carrot_timer = 0      # 💡 [추가] 타이머 초기화
     # ==============================================================
 
     # ==============================================================
