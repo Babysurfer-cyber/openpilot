@@ -637,11 +637,29 @@ class VCruiseCarrot:
       if not CC.enabled:
         self._cruise_control(1, -1, "Cruise on (paddle decel)")
 
+    # ==============================================================
+    # ▼▼▼ [추가] IC/JC 램프 진입 시 당근크루즈 자동 켜기 ▼▼▼
+    # ==============================================================
+    nav_link_class = getattr(CS, 'navLinkClass', 0)
+    is_ic_jc = (nav_link_class in [2, 3])
+
+    if not hasattr(self, 'prev_is_ic_jc'):
+      self.prev_is_ic_jc = False
+
+    # 램프에 막 진입하는 '순간' 포착 (기존엔 아니었는데 지금 IC/JC일 때)
+    if is_ic_jc and not self.prev_is_ic_jc:
+      if CC.enabled:  # 크루즈 주행 중일 때만 작동
+        self.carrot_cruise_active = True
+        self._add_log("Carrot Cruise ON (IC/JC Ramp Entry)")
+
+    self.prev_is_ic_jc = is_ic_jc
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     if not hasattr(self, 'prev_carrot_active'):
       self.prev_carrot_active = False
       
     if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
-      self._v_cruise_kph_at_brake = v_cruise_kph  # 💡 0일 때만 저장하는 조건 삭제 (무조건 현재 속도를 백업!)
+      self._v_cruise_kph_at_brake = v_cruise_kph  # 💡 방금 위에서 켜졌으므로 원래 달리던 속도(100)가 바로 저장됨!
         
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
