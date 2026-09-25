@@ -726,19 +726,25 @@ class VCruiseCarrot:
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
 
-        # 💡 [핵심] 10초(1000프레임) 타이머 장착!
+        # ▼▼▼ [추가] CS(capnp)에서 구조체 변수 바로 읽어오기 ▼▼▼
+        nav_link_class = getattr(CS, 'navLinkClass', 0)
+        is_ic_jc = (nav_link_class in [2, 3])  # 2: IC, 3: JC
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        # 💡 10초(1000프레임) 타이머 장착!
         if not hasattr(self, 'auto_cam_timer'): self.auto_cam_timer = 0
         if map_source == 2:
           self.auto_cam_timer += 1
         else:
           self.auto_cam_timer = 0
           
-        is_camera_pending = (map_source == 2 and self.auto_cam_timer < 1000) # 10초(1000프레임) 동안 보류
+        is_camera_pending = (map_source == 2 and self.auto_cam_timer < 1000)
 
         target_raw_limit = 0
 
         # 4. 90km/h 분리 및 10초 펜딩 조건
-        if v_cruise_kph >= 90 and not is_blinker_valid:
+        # 💡 [핵심] 깜빡이가 켜져있거나(is_blinker_valid), IC/JC 위(is_ic_jc)라면 무조건 4BE(mixed) 사용!
+        if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
           else:
