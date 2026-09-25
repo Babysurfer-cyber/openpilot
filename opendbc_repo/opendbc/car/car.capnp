@@ -266,6 +266,7 @@ struct CarState {
   # ▼▼▼ [필수 추가] 4A3 순수 데이터 전용 변수 ▼▼▼
   navSpeedLimit @83 :Float32;  # 4A3가 알려주는 순수 제한속도
   mapSource @84 :Int16;        # 4A3가 알려주는 카메라 유무 (2면 카메라)
+  navLinkClass @85 :Int16;     # 4A3에서 추출한 실시간 도로 링크 정보 (1:고속도로, 2:IC, 3:JC)
 
   struct Tpms {
     fl @0 :Float32;
