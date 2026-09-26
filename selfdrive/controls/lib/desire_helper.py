@@ -70,10 +70,6 @@ class DesireHelper:
     self.lane_change_available_left = False
     self.lane_change_available_right = False
 
-    # ▼▼▼ 차선 변경 완료 시점을 잡기 위한 변수들 추가 ▼▼▼
-    self.right_lc_timer = 0.0
-    self.trigger_right_lc = False
-
   # ─────────────────────────────────────────────
   # params/model
   # ─────────────────────────────────────────────
@@ -85,34 +81,10 @@ class DesireHelper:
       self.laneChangeDelay = self.params.get_float("LaneChangeDelay") * 0.1
       self.modelTurnSpeedFactor = self.params.get_float("ModelTurnSpeedFactor") * 0.1
 
-  def _make_model_turn_speed(self, modeldata, carstate):
-    v_ego = carstate.vEgo
-    v_ego_kph = v_ego * CV.MS_TO_KPH  # km/h 속도 변환
-    
-    # 💡 [추가] 내비게이션 링크 클래스(LinkClass) 가져오기
-    nav_link_class = getattr(carstate, 'navLinkClass', 0)
-    
+  def _make_model_turn_speed(self, modeldata):
     if self.modelTurnSpeedFactor > 0:
-      # ▼▼▼ 우측 차선 변경 완료 신호(trigger)를 받으면 3초 타이머 시작 ▼▼▼
-      if self.trigger_right_lc:
-        self.right_lc_timer = 3.0
-        self.trigger_right_lc = False
-        
-      # 타이머 카운트 다운
-      if self.right_lc_timer > 0.0:
-        self.right_lc_timer = max(0.0, self.right_lc_timer - DT_MDL)
-
-      is_dynamic_active = (self.right_lc_timer > 0.0)
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-      # 💡 [핵심 수정] 시속 60km 이상 & 차선변경 완료 3초 내 & 고속도로 본선(1)이 아닐 때만 8초 고정!
-      if is_dynamic_active and v_ego_kph >= 60.0 and nav_link_class != 1:
-        dynamic_time = 8.0
-      else:
-        dynamic_time = self.modelTurnSpeedFactor
-
       # 원본의 보간 및 속도 계산 로직 유지
-      model_turn_speed = np.interp(dynamic_time,
+      model_turn_speed = np.interp(self.modelTurnSpeedFactor,
                                    modeldata.velocity.t,
                                    modeldata.velocity.x) * CV.MS_TO_KPH * 1.2
       self.model_turn_speed = self.model_turn_speed * 0.8 + model_turn_speed * 0.2
@@ -248,8 +220,7 @@ class DesireHelper:
     self.frame += 1
     self._update_params_periodic()
     
-    # ▼▼▼ 함수 호출 시 carstate 전체를 넘겨주도록 수정 ▼▼▼
-    self._make_model_turn_speed(modeldata, carstate)
+    self._make_model_turn_speed(modeldata)
 
     # counts
     self.carrot_lane_change_count = max(0, self.carrot_lane_change_count - 1)
@@ -309,9 +280,6 @@ class DesireHelper:
         )
       self.desireLog = (
         f"{side.name}:ALC={self.auto_lane_change_enable}, "
-        #f"L={side.lane_available},E={side.edge_available}, "
-        #f"T={side.lane_available_trigger},A={side.lane_appeared}, "
-        #f"OBJ={side.side_object_detected},BSD={side.bsd_hold_counter>0}"
       )
     else:
       self.auto_lane_change_enable = False
@@ -401,18 +369,11 @@ class DesireHelper:
             atc_geometry_release = atc_lane_change_only and auto_lane_change_trigger
             atc_line_release = (atc_driver_confirm or atc_geometry_release) and side_clear_without_line
 
-            # 차선이 일정시간 이상 안보이면 auto 허용(원본 유지)
-            #if (not side.lane_available) or (side.lane_exist_count.counter < int(2.0 / DT_MDL)):
-            #  self.auto_lane_change_enable = True
-
             if not desire_enabled or below_lane_change_speed:
               self.lane_change_state = LaneChangeState.off
               self.lane_change_direction = LaneChangeDirection.none
             else:
               # 차선변경 시작 조건:
-              # - side.lane_change_available는 BSD+object 포함(요구사항)
-              # - 하지만 BSD 중에도 torque override 허용해야 하므로, BSD 분기를 별도로 둠(원본 동작 유지)
-              # LaneLineCheck=2: 실선에서도 토크 override 허용
               solid_line_blocked = (self.laneLineCheck >= 2) and (not side.lane_change_available_geom) and \
                                    (side.lane_available or side.edge_available)
               block_released = side.lane_change_available_released
@@ -431,15 +392,12 @@ class DesireHelper:
                   if torque_applied:
                     self.lane_change_state = LaneChangeState.laneChangeStarting
                 elif driver_enabled:
-                  # driver blinker면 바로 시작(원본 유지)
-                  # 단, object/bzd 막힘은 side.lane_change_available에서 걸림
                   if side.lane_change_available or atc_line_release:
                     self.lane_change_state = LaneChangeState.laneChangeStarting
                 else:
                   if torque_applied or ((not atc_lane_change_manual_only) and (
                     auto_lane_change_trigger or side.lane_line_info_edge_detect or block_released_auto
                   )):
-                    # 여기서는 시작 직전 안전성 체크
                     if side.lane_change_available or atc_line_release:
                       self.lane_change_state = LaneChangeState.laneChangeStarting
 
@@ -451,11 +409,6 @@ class DesireHelper:
         elif self.lane_change_state == LaneChangeState.laneChangeFinishing:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
-            
-            # ▼▼▼ [핵심] 차선 변경이 완벽히 끝난 시점을 포착하여 타이머 발동! ▼▼▼
-            if self.lane_change_direction == LaneChangeDirection.right:
-              self.trigger_right_lc = True
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
             self.lane_change_direction = LaneChangeDirection.none
             if desire_enabled:
