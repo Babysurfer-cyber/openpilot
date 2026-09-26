@@ -1193,11 +1193,18 @@ class CarrotServ:
     current_time = time.monotonic()
     nav_link_class = getattr(CS, 'navLinkClass', 0) if CS is not None else 0
 
+    # 💡 [추가] 크루즈 설정 속도 가져오기 및 속도 조건 계산
+    current_cruise_speed = getattr(CS, 'vCruiseCluster', 0) if CS is not None else 0
+    is_speed_condition_met = (current_cruise_speed - v_ego_kph) <= 30.0
+
     # IC(2) 또는 JC(3) 진입하는 엣지(Edge) 순간 포착
     if nav_link_class in [2, 3] and self.prev_nav_link_class not in [2, 3]:
-      self.ramp_decel_active = True
-      self.ramp_start_time = current_time
-      self.ramp_start_v_ego = v_ego  # 진입 순간의 속도 (m/s 단위)
+      if is_speed_condition_met:  # 💡 속도 차이가 30 이하일 때만 작동!
+        self.ramp_decel_active = True
+        self.ramp_start_time = current_time
+        self.ramp_start_v_ego = v_ego  # 진입 순간의 속도 (m/s 단위)
+      else:
+        self.debugText += f" RAMP Bypass(Diff: {current_cruise_speed - v_ego_kph:.0f})"
 
     self.prev_nav_link_class = nav_link_class
     ramp_target_speed_kph = 255.0  # 기본값 (무제한)
@@ -1207,7 +1214,7 @@ class CarrotServ:
       if elapsed_time <= 5.0:  # 정확히 5초 동안만 작동
         # v = v0 - at (가속도 a = 1.5m/s^2)
         current_target_v = self.ramp_start_v_ego - (1.5 * elapsed_time)
-        ramp_target_speed_kph = max(40.0, current_target_v * 3.6)  # 최저 30km/h 보장 및 km/h 변환
+        ramp_target_speed_kph = max(40.0, current_target_v * 3.6)  # 최저 40km/h 보장 및 km/h 변환
         
         # 화면(UI) 최상단에 텍스트 강제 덮어쓰기!
         self.szPosRoadName = f"RAMP 감속중 ({int(ramp_target_speed_kph)}km/h)"
