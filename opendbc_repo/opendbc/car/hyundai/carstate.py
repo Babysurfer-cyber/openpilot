@@ -761,6 +761,7 @@ class CarState(CarStateBase):
       ret.navSpeedLimit = ret.speedLimit
       ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))  # 💡 에러 방지 안전장치!
       ret.navLinkClass = int(self.hda_info_4a3.get("LinkClass", 0)) # 💡 IC/JC 판별용 링크 클래스 추가!
+      ret.navTollExist = int(self.hda_info_4a3.get("TollExist", 0)) # 💡 [추가] 톨게이트 판별용 추가!
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if int(self.hda_info_4a3.get("MapSource", 0)) == 2:         # 💡 에러 방지 안전장치!
@@ -862,9 +863,11 @@ class CarState(CarStateBase):
 
     cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
         
+    nav_toll_exist = getattr(ret, 'navTollExist', 0)
+    
     # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
-    # 4A3 신호가 없을 때(0)만 4BE(cam_limit)를 쓴다! (4A3 우선 적용)
-    if ret.speedLimit == 0 and cam_limit > 0:
+    # 💡 [핵심 수정] 4A3 신호가 없거나(0), 전방에 톨게이트가 있으면 4BE(cam_limit)를 무조건 사용!
+    if (ret.speedLimit == 0 or nav_toll_exist != 0) and cam_limit > 0:
       ret.speedLimit = cam_limit
       if cam_dist > 0:
         speed_limit_cam = True
