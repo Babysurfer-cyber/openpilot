@@ -191,6 +191,13 @@ class CarrotServ:
 
     self.debugText = ""
 
+    # ▼▼▼ [추가] RAMP 진입 물리 감속 관련 초기 변수 ▼▼▼
+    self.ramp_decel_active = False
+    self.ramp_start_time = 0.0
+    self.ramp_start_v_ego = 0.0
+    self.prev_nav_link_class = 0
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     # 默认语言，稍后在 update_params 中从 Params 读取覆盖，
     # 规则：main_ko -> 韩语；main_zh-CHS -> 中文；其他 -> 英文
     self.lang = "en"
@@ -1180,12 +1187,41 @@ class CarrotServ:
     if self.autoTurnControl not in [1,2]:
       self.atcType = "none"
 
+    # =========================================================
+    # ▼▼▼ [추가] RAMP (IC/JC) 진입 시 5초간 1.5m/s^2 감속 로직 ▼▼▼
+    # =========================================================
+    current_time = time.monotonic()
+    nav_link_class = getattr(CS, 'navLinkClass', 0) if CS is not None else 0
+
+    # IC(2) 또는 JC(3) 진입하는 엣지(Edge) 순간 포착
+    if nav_link_class in [2, 3] and self.prev_nav_link_class not in [2, 3]:
+      self.ramp_decel_active = True
+      self.ramp_start_time = current_time
+      self.ramp_start_v_ego = v_ego  # 진입 순간의 속도 (m/s 단위)
+
+    self.prev_nav_link_class = nav_link_class
+    ramp_target_speed_kph = 255.0  # 기본값 (무제한)
+
+    if self.ramp_decel_active:
+      elapsed_time = current_time - self.ramp_start_time
+      if elapsed_time <= 5.0:  # 정확히 5초 동안만 작동
+        # v = v0 - at (가속도 a = 1.5m/s^2)
+        current_target_v = self.ramp_start_v_ego - (1.5 * elapsed_time)
+        ramp_target_speed_kph = max(40.0, current_target_v * 3.6)  # 최저 30km/h 보장 및 km/h 변환
+        
+        # 화면(UI) 최상단에 텍스트 강제 덮어쓰기!
+        self.szPosRoadName = f"RAMP 감속중 ({int(ramp_target_speed_kph)}km/h)"
+      else:
+        self.ramp_decel_active = False  # 5초 종료 시 해제
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
       (sdi_speed, "HDA" if hda_active else "bump" if final_xSpdType == 22 else "section" if final_xSpdType == 4 else "police" if final_xSpdType == 100 else "waze" if final_xSpdType == 101 else "CAM"),
       (vehicle_bump_speed, "bump"),
       (limit_speed, "road"),
+      (ramp_target_speed_kph, "RAMP"),  # 💡 [추가] RAMP 감속 속도 경쟁 합류!
     ]
 
     if self.turnSpeedControlMode in [1,2]:
