@@ -731,7 +731,8 @@ class VCruiseCarrot:
         is_ic_jc = (nav_link_class in [2, 3])  # 2: IC, 3: JC
         
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
-        is_tollgate = (nav_toll_exist != 0)  # 💡 0이 아니면 톨게이트 감지됨!
+        # 💡 [수정] 기존 (nav_toll_exist != 0) 에서 정확히 1일 때만 인식하도록 변경!
+        is_tollgate = (nav_toll_exist == 1)  
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         # 💡 10초(1000프레임) 타이머 장착!
