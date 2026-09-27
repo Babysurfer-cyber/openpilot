@@ -2374,6 +2374,7 @@ public:
         auto car_state_hud = (*(s->sm))["carState"].getCarState();
         float cs_limit = car_state_hud.getSpeedLimit();
         float cs_limit_dist = car_state_hud.getSpeedLimitDistance();
+        int nav_frwinfo = car_state_hud.getNavFrwinfo(); // <-- [추가] Frwinfo 값 가져오기
 
         bool cam_detected = false;
         // 1. 스마트폰 앱에서 과속카메라로 판정한 경우
@@ -2400,6 +2401,16 @@ public:
         
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
+
+        // ▼▼▼ [추가] Frwinfo 신호가 1~7일 경우 HUD 위쪽 공간에 표시 ▼▼▼
+        if (nav_frwinfo >= 1 && nav_frwinfo <= 7) {
+            char frw_str[32];
+            sprintf(frw_str, "frwinfo-%d", nav_frwinfo);
+            // x = bx + 117 (HUD 박스의 정중앙), y = by - 100 (HUD 박스 위쪽 여백)
+            // 💡 COLOR_YELLOW를 nvgRGBA(255, 165, 0, 255)로 변경하여 주황색 적용
+            ui_draw_text(s, bx + 117, by - 100, frw_str, 45, nvgRGBA(255, 165, 0, 255), BOLD);
+        }
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         // draw speed
         char speed[32];
