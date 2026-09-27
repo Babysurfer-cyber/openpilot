@@ -865,9 +865,8 @@ class CarState(CarStateBase):
         
     nav_toll_exist = getattr(ret, 'navTollExist', 0)
     
-    # ret.speedLimit은 위에서 4A3 신호로 먼저 설정됨 (없으면 0)
-    # 💡 [핵심 수정] 4A3 신호가 없거나(0), 전방에 톨게이트가 있으면 4BE(cam_limit)를 무조건 사용!
-    if (ret.speedLimit == 0 or nav_toll_exist != 0) and cam_limit > 0:
+    # ▼▼▼ [수정] 4A3 기본 속도가 있더라도, 전방에 진짜 카메라/방지턱 거리(cam_dist > 0)가 들어오면 무조건 통과시킵니다! ▼▼▼
+    if cam_limit > 0 and (cam_dist > 0 or nav_toll_exist != 0 or ret.speedLimit == 0):
       ret.speedLimit = cam_limit
       if cam_dist > 0:
         speed_limit_cam = True
