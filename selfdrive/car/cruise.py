@@ -759,6 +759,58 @@ class VCruiseCarrot:
           else:
             is_camera_pending = False
 
+        # ==============================================================
+        # ▼ [추가] 톨게이트 진입 시 -10 감속 및 이탈 시 원복/오프셋 재계산 ▼
+        # ==============================================================
+        if not hasattr(self, 'prev_is_tollgate'): self.prev_is_tollgate = False
+        if not hasattr(self, 'toll_restore_speed'): self.toll_restore_speed = 0
+        if not hasattr(self, 'toll_entry_limit'): self.toll_entry_limit = 0
+
+        if is_tollgate and not self.prev_is_tollgate:
+          # [진입] 현재 크루즈 속도와 제한속도를 금고에 백업
+          self.toll_restore_speed = v_cruise_kph
+          self.toll_entry_limit = target_raw_limit
+          
+          # 💡 20% 감속 후 5단위로 수학적 반올림 계산
+          reduced_speed = v_cruise_kph * 0.8
+          rounded_speed = float(math.floor((reduced_speed / 5.0) + 0.5) * 5.0)
+          
+          v_cruise_kph = max(30.0, rounded_speed)
+          
+          button_type = ButtonType.decelCruise  
+          self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
+          
+        elif not is_tollgate and self.prev_is_tollgate:
+          # [이탈] 원복 처리
+          if self.toll_restore_speed > 0:
+            if target_raw_limit > 0 and target_raw_limit != self.toll_entry_limit:
+              # 💡 그 사이에 제한속도가 바뀌었음! 바뀐 속도를 기준으로 오토모드 오프셋 공식 적용
+              if target_raw_limit < self.toll_restore_speed:
+                raw_offset = (self.toll_restore_speed - target_raw_limit) / 2.0
+              else:
+                raw_offset = 10.0
+                
+              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+              offset = max(10.0, calculated_offset)
+              
+              v_cruise_kph = target_raw_limit + offset
+              self._add_log(f"Tollgate OUT: Limit Changed! New Speed ({v_cruise_kph}km/h)")
+            else:
+              # 💡 제한속도 그대로임! 원래 백업한 속도로 쿨하게 원복
+              v_cruise_kph = max(v_cruise_kph, self.toll_restore_speed)
+              self._add_log(f"Tollgate OUT: Speed Restored ({v_cruise_kph}km/h)")
+              
+            self.toll_restore_speed = 0
+            self.toll_entry_limit = 0
+            button_type = ButtonType.accelCruise  
+
+        # 톨게이트 구간 안에서는 오토모드가 제한속도 변경을 인지하고 멋대로 속도를 바꾸지 못하게 묶어둠
+        if is_tollgate:
+          self.auto_prev_limit = target_raw_limit
+          
+        self.prev_is_tollgate = is_tollgate
+        # ==============================================================
+
         # 5. 수동 조작 방어
         if not hasattr(self, 'auto_engage_timer'): self.auto_engage_timer = 0
         if CC.enabled and not getattr(self, 'enabled_last', False):
