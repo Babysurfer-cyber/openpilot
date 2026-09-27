@@ -762,6 +762,7 @@ class CarState(CarStateBase):
       ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))  # 💡 에러 방지 안전장치!
       ret.navLinkClass = int(self.hda_info_4a3.get("LinkClass", 0)) # 💡 IC/JC 판별용 링크 클래스 추가!
       ret.navTollExist = int(self.hda_info_4a3.get("TollExist", 0)) # 💡 [추가] 톨게이트 판별용 추가!
+      ret.navFrwinfo = int(self.hda_info_4a3.get("Frwinfo", 0))     # 💡 [추가] Frwinfo 신호 전달!
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if int(self.hda_info_4a3.get("MapSource", 0)) == 2:         # 💡 에러 방지 안전장치!
