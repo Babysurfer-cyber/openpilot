@@ -2375,6 +2375,7 @@ public:
         float cs_limit = car_state_hud.getSpeedLimit();
         float cs_limit_dist = car_state_hud.getSpeedLimitDistance();
         int nav_frwinfo = car_state_hud.getNavFrwinfo(); // <-- [추가] Frwinfo 값 가져오기
+        int nav_tollexist = car_state_hud.getNavTollExist(); // 💡 [추가] TollExist 값 가져오기
 
         bool cam_detected = false;
         // 1. 스마트폰 앱에서 과속카메라로 판정한 경우
@@ -2409,6 +2410,14 @@ public:
             // x = bx + 117 (HUD 박스의 정중앙), y = by - 100 (HUD 박스 위쪽 여백)
             // 💡 COLOR_YELLOW를 nvgRGBA(255, 165, 0, 255)로 변경하여 주황색 적용
             ui_draw_text(s, bx + 117, by - 100, frw_str, 45, nvgRGBA(255, 165, 0, 255), BOLD);
+        }
+        
+        // ▼▼▼ [추가] TollExist 신호가 1~3일 경우 Frwinfo 위쪽에 녹색으로 표시 ▼▼▼
+        if (nav_tollexist >= 1 && nav_tollexist <= 3) {
+            char toll_str[32];
+            sprintf(toll_str, "tollexist-%d", nav_tollexist);
+            // Frwinfo(by - 100)보다 위에 표시하기 위해 y좌표를 by - 150으로 설정
+            ui_draw_text(s, bx + 117, by - 150, toll_str, 45, COLOR_GREEN, BOLD);
         }
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
