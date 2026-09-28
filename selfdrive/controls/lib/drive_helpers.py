@@ -15,7 +15,7 @@ MAX_VEL_ERR = 5.0  # m/s
 # EU guidelines
 MAX_LATERAL_JERK = 5.0  # m/s^3
 MAX_LATERAL_ACCEL_NO_ROLL = 3.0  # m/s^2
-MAX_LATERAL_ACCEL_NO_ROLL_LOW_SPEED = 6.0  # m/s^2
+MAX_LATERAL_ACCEL_NO_ROLL_LOW_SPEED = 5.0  # m/s^2
 
 def apply_deadzone(error, deadzone):
   if error > deadzone:
