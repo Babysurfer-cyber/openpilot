@@ -714,12 +714,14 @@ class VCruiseCarrot:
         if not hasattr(self, 'auto_is_pending'): self.auto_is_pending = False
         if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
 
-        # 2. 우측 깜빡이 10초(1000프레임) 유지 타이머
+        # 2. 우측 깜빡이 20초(2000프레임) 유지 타이머
         if getattr(CS, 'rightBlinker', False):
-          self.auto_blinker_timer = 1000
+          self.auto_blinker_timer = 2000  # 💡 10초(1000) -> 20초(2000)로 연장
         else:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
-        is_blinker_valid = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
+          
+        # (임시) 깜빡이가 켜져 있거나 20초 이내인지 확인
+        is_blinker_on_or_pending = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
 
         # 3. 통신망에서 추출
         speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
@@ -729,6 +731,9 @@ class VCruiseCarrot:
         # ▼▼▼ [추가] CS(capnp)에서 구조체 변수 바로 읽어오기 ▼▼▼
         nav_link_class = getattr(CS, 'navLinkClass', 0)
         is_ic_jc = (nav_link_class in [2, 3])  # 2: IC, 3: JC
+        
+        # 💡 [핵심] 우측 깜빡이 4BE 수용 예외 조건은 링크 클래스가 1(고속도로 본선)일 때만 발동!
+        is_blinker_valid = is_blinker_on_or_pending and (nav_link_class == 1)
         
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
         # 💡 [수정] 기존 (nav_toll_exist != 0) 에서 정확히 1일 때만 인식하도록 변경!
