@@ -1193,33 +1193,55 @@ class CarrotServ:
     current_time = time.monotonic()
     nav_link_class = getattr(CS, 'navLinkClass', 0) if CS is not None else 0
 
-    # 💡 [추가] 크루즈 설정 속도 가져오기 및 속도 조건 계산
+    # 💡 크루즈 설정 속도 가져오기 및 속도 조건 계산
     current_cruise_speed = getattr(CS, 'vCruiseCluster', 0) if CS is not None else 0
     is_speed_condition_met = (current_cruise_speed - v_ego_kph) <= 30.0
 
     # IC(2) 또는 JC(3) 진입하는 엣지(Edge) 순간 포착
     if nav_link_class in [2, 3] and self.prev_nav_link_class not in [2, 3]:
-      if is_speed_condition_met:  # 💡 속도 차이가 30 이하일 때만 작동!
+      
+      # 💡 [핵심1] 모델이 예측하는 전방 최대 거리의 곡률(반경) 계산
+      is_straight = True
+      if sm.alive['modelV2']:
+        model_x = sm['modelV2'].position.x
+        model_y = sm['modelV2'].position.y
+        if len(model_x) > 0 and len(model_y) > 0:
+          last_x = model_x[-1]        # 모델이 보는 가장 먼 거리 (보통 100m 부근)
+          last_y = abs(model_y[-1])   # 해당 거리에서의 좌우 편차
+          
+          # 곡률 반경 계산 (R = X^2 / 2Y)
+          radius = (last_x ** 2) / (2 * last_y) if last_y > 0.1 else float('inf')
+          
+          # 곡률 반경이 800m 미만이면 확실한 커브(램프 구간)로 인식
+          if radius < 800.0:
+            is_straight = False
+
+      if is_speed_condition_met and not is_straight:
         self.ramp_decel_active = True
         self.ramp_start_time = current_time
-        self.ramp_start_v_ego = v_ego  # 진입 순간의 속도 (m/s 단위)
+        self.ramp_start_v_ego = v_ego
+        self.ramp_start_cruise_speed = current_cruise_speed # 💡 취소 감지를 위해 진입 시점의 설정 속도 백업
       else:
-        self.debugText += f" RAMP Bypass(Diff: {current_cruise_speed - v_ego_kph:.0f})"
+        reason = "Straight" if is_straight else f"Diff: {current_cruise_speed - v_ego_kph:.0f}"
+        self.debugText += f" RAMP Bypass({reason})"
 
     self.prev_nav_link_class = nav_link_class
-    ramp_target_speed_kph = 255.0  # 기본값 (무제한)
+    ramp_target_speed_kph = 255.0
 
-    if self.ramp_decel_active:
-      elapsed_time = current_time - self.ramp_start_time
-      if elapsed_time <= 5.0:  # 정확히 5초 동안만 작동
-        # v = v0 - at (가속도 a = 1.5m/s^2)
-        current_target_v = self.ramp_start_v_ego - (1.5 * elapsed_time)
-        ramp_target_speed_kph = max(40.0, current_target_v * 3.6)  # 최저 40km/h 보장 및 km/h 변환
-        
-        # 화면(UI) 최상단에 텍스트 강제 덮어쓰기!
-        self.szPosRoadName = f"RAMP 감속중 ({int(ramp_target_speed_kph)}km/h)"
+    if getattr(self, 'ramp_decel_active', False):
+      # 💡 [핵심2] 취소 조건: 가속 페달을 밟거나, 크루즈 설정 속도가 사용자에 의해 변경된 경우 즉시 해제
+      if CS is not None and (CS.gasPressed or current_cruise_speed != getattr(self, 'ramp_start_cruise_speed', current_cruise_speed)):
+        self.ramp_decel_active = False
+        self.szPosRoadName = "RAMP 감속 취소됨" 
+        self.debugText += " RAMP Canceled"
       else:
-        self.ramp_decel_active = False  # 5초 종료 시 해제
+        elapsed_time = current_time - self.ramp_start_time
+        if elapsed_time <= 5.0:
+          current_target_v = self.ramp_start_v_ego - (1.5 * elapsed_time)
+          ramp_target_speed_kph = max(40.0, current_target_v * 3.6)
+          self.szPosRoadName = f"RAMP 감속중 ({int(ramp_target_speed_kph)}km/h)"
+        else:
+          self.ramp_decel_active = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     speed_n_sources = [
