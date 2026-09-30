@@ -977,6 +977,30 @@ class CarrotServ:
       current_target = CS.vCruiseCluster if CS is not None else 0
       
       if CS is not None:
+        # ==============================================================
+        # ▼ [추가] 톨게이트 최초 진입 시 -20% 감속 안내음 동기화 ▼
+        # ==============================================================
+        nav_toll_exist = getattr(CS, 'navTollExist', 0)
+        is_tollgate = (nav_toll_exist == 1)
+        
+        if not hasattr(self, 'prev_is_tollgate_serv'): 
+          self.prev_is_tollgate_serv = False
+          
+        if is_tollgate and not self.prev_is_tollgate_serv:
+          # 내부 속도(v_cruise_kph)를 전달받은 current_target을 기준으로 계산
+          reduced_speed = current_target * 0.8
+          rounded_speed = float(math.floor((reduced_speed / 5.0) + 0.5) * 5.0)
+          target_toll_speed = max(30.0, rounded_speed)
+          
+          play_prompt = True
+          self.szPosRoadName = f"톨게이트 진입: {int(target_toll_speed)}km/h 🔔"
+          
+          # 오토모드 기준 속도를 감속된 속도로 강제 동기화 (오류 방지)
+          self.auto_active_target = target_toll_speed
+          
+        self.prev_is_tollgate_serv = is_tollgate
+        # ==============================================================
+
         # 1. 우측 깜빡이 10초 타이머 (시간 기반)
         if getattr(CS, 'rightBlinker', False):
           self.auto_last_blinker_time_serv = time.monotonic()
