@@ -883,11 +883,15 @@ class RadarD:
     right_long = CS.rightLongDist
     raw_right_lat = CS.rightLatDist
 
+    # navLinkClass 확인 (1 = 고속도로 본선)
+    nav_link_class = getattr(CS, 'navLinkClass', 0)
+    base_max_long = 30.0 if nav_link_class == 1 else 20.0
+
     # 앞차 정보 기반 동적 최대 감시 거리 설정
     if lead_dict['status'] and lead_dict['dRel'] > 0:
-      dynamic_max_long = min(20.0, lead_dict['dRel'])
+      dynamic_max_long = min(base_max_long, lead_dict['dRel'])
     else:
-      dynamic_max_long = 20.0
+      dynamic_max_long = base_max_long
 
     if left_long > dynamic_max_long:
       left_long = 0.0  
