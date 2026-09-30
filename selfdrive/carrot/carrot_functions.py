@@ -167,7 +167,20 @@ class CarrotPlanner:
 
     if self.params_count == 10:
       self.myHighModeFactor = 1.2 #float(self.params.get_int("MyHighModeFactor")) / 100.
-      self.trafficLightDetectMode = self.params.get_int("TrafficLightDetectMode") # 0: None, 1:Stop, 2:Stop&Go
+      
+      # 당근맨 앱에 설정된 TrafficLightDetectMode 값을 먼저 읽어옵니다.
+      app_traffic_mode = self.params.get_int("TrafficLightDetectMode") 
+      
+      # 현재 주행 모드에 따라 신호등 감지 모드를 결정합니다.
+      if self.myDrivingMode == DrivingMode.Normal:
+        # 3번 일반모드일 경우 신호등 감지 모드를 0으로 강제합니다.
+        self.trafficLightDetectMode = 0
+      elif self.myDrivingMode == DrivingMode.Auto:
+        # 5번 오토모드일 경우 당근맨 앱의 설정을 그대로 따릅니다.
+        self.trafficLightDetectMode = app_traffic_mode
+      else:
+        # 그 외 모드(Eco, Safe, High)의 경우에도 기본적으로 앱 설정을 따르도록 합니다.
+        self.trafficLightDetectMode = app_traffic_mode
     elif self.params_count == 20:
       self.tFollowGap1 = self.params.get_float("TFollowGap1") / 100.
       self.tFollowGap2 = self.params.get_float("TFollowGap2") / 100.
