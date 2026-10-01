@@ -1025,9 +1025,22 @@ protected:
             //const auto carrot_man = sm["carrotMan"].getCarrotMan();
             //szTBTMainText = QString::fromStdString(carrot_man.getSzTBTMainText());
 
-            const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
             const auto road_edges = model.getRoadEdges();
-            int idx = get_path_length_idx(road_edges[0], xDistToTurn);
+            // 도로 엣지 데이터가 정상적으로 존재하는지 먼저 확인
+            if (road_edges.size() > 1 && road_edges[0].getX().size() > 0 && road_edges[1].getX().size() > 0) {
+                int idx = get_path_length_idx(road_edges[0], xDistToTurn);
+                int max_idx = road_edges[0].getX().size() - 1;
+                if (idx > max_idx) idx = max_idx; // 인덱스 초과 방지
+
+                int m_idx[2] = { 0, 1 };
+                for (int i = 0; i < 2; i++) {
+                    int m = m_idx[i];
+                    _model->mapToScreen(road_edges[m].getX()[idx], road_edges[m].getY()[idx], road_edges[m].getZ()[idx], &navi_turn_point[i]);
+                }
+            } else {
+                navi_turn_point_flag = true;
+                return; // 데이터가 없을 때는 그리지 않고 스킵
+            }
             int m_idx[2] = { 0, 1 };
             for (int i = 0; i < 2; i++) {
                 int m = m_idx[i];
@@ -2064,8 +2077,30 @@ public:
 
                   // 🚨 차선 데이터가 1개라도 있을 때만 그리도록 방어막 추가!
                   if (max_z > 0) {
+                      int idx = get_path_length_idx(lane_lines[2], d); // ✅ 방어막 내부로 이동
+                      
                       if (idx >= max_z) {
                           idx = max_z - 1; 
+                          z_offset -= 0.05;
+                      }
+                      nav_path_vertex_xy[nav_path_vertex_count] = QPointF(y, -x);
+                      _model->mapToScreen((x < 3.0) ? 5.0 : x, y, lane_lines[2].getZ()[idx] + z_offset, &nav_path_vertex[nav_path_vertex_count++]);
+                  }            const auto road_edges = model.getRoadEdges();
+            // 도로 엣지 데이터가 정상적으로 존재하는지 먼저 확인
+            if (road_edges.size() > 1 && road_edges[0].getX().size() > 0 && road_edges[1].getX().size() > 0) {
+                int idx = get_path_length_idx(road_edges[0], xDistToTurn);
+                int max_idx = road_edges[0].getX().size() - 1;
+                if (idx > max_idx) idx = max_idx; // 인덱스 초과 방지
+
+                int m_idx[2] = { 0, 1 };
+                for (int i = 0; i < 2; i++) {
+                    int m = m_idx[i];
+                    _model->mapToScreen(road_edges[m].getX()[idx], road_edges[m].getY()[idx], road_edges[m].getZ()[idx], &navi_turn_point[i]);
+                }
+            } else {
+                navi_turn_point_flag = true;
+                return; // 데이터가 없을 때는 그리지 않고 스킵
+            } 
                           z_offset -= 0.05;
                       }
                       nav_path_vertex_xy[nav_path_vertex_count] = QPointF(y, -x);
