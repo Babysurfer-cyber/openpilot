@@ -1022,8 +1022,8 @@ protected:
         if (xDistToTurn < 1500 && xDistToTurn > 0) {
             SubMaster& sm = *(s->sm);
 
-            //const auto carrot_man = sm["carrotMan"].getCarrotMan();
-            //szTBTMainText = QString::fromStdString(carrot_man.getSzTBTMainText());
+            // 👇 이 줄을 추가해 주세요! 👇
+            const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
 
             const auto road_edges = model.getRoadEdges();
             // 도로 엣지 데이터가 정상적으로 존재하는지 먼저 확인
