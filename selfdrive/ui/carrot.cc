@@ -1041,11 +1041,6 @@ protected:
                 navi_turn_point_flag = true;
                 return; // 데이터가 없을 때는 그리지 않고 스킵
             }
-            int m_idx[2] = { 0, 1 };
-            for (int i = 0; i < 2; i++) {
-                int m = m_idx[i];
-                _model->mapToScreen(road_edges[m].getX()[idx], road_edges[m].getY()[idx], road_edges[m].getZ()[idx], &navi_turn_point[i]);
-            }
 
             float scale = 0.2;
             if (xDistToTurn < 200) scale = 1.0 - (0.8 * xDistToTurn / 200.);
