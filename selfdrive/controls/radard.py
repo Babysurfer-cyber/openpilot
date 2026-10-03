@@ -972,6 +972,11 @@ class RadarD:
         lead_dict['vLead'] = actual_vLead 
         lead_dict['vLeadK'] = actual_vLead
         lead_dict['vLat'] = v_lat
+        
+        # 👇 아래 두 줄을 반드시 추가해야 합니다.
+        lead_dict['aLead'] = 0.0       
+        lead_dict['aLeadK'] = 0.0      
+        
         lead_dict['aLeadTau'] = 0.3       
         lead_dict['modelProb'] = 0.8
         lead_dict['radarTrackId'] = -1
@@ -984,6 +989,11 @@ class RadarD:
       lead_dict['vLead'] = actual_vLead
       lead_dict['vLeadK'] = actual_vLead
       lead_dict['vLat'] = v_lat
+      
+      # 👇 여기도 동일하게 추가합니다.
+      lead_dict['aLead'] = 0.0         
+      lead_dict['aLeadK'] = 0.0        
+      
       lead_dict['aLeadTau'] = 0.3         
       lead_dict['modelProb'] = 0.8
       lead_dict['radarTrackId'] = -1
