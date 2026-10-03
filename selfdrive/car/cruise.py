@@ -751,9 +751,11 @@ class VCruiseCarrot:
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 및 10초 펜딩 조건
-        # 💡 [핵심] 깜빡이가 켜져있거나, IC/JC이거나, 톨게이트 앞이라면 무조건 4BE(mixed) 사용!
-        if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
+        # 4. 90km/h 분리 및 10초 펜딩 조건 (수정됨: 톨게이트 진입 시 속도제한 무시)
+        if is_tollgate:
+          target_raw_limit = 0          # 💡 톨게이트 안에서는 도로 제한속도 로직을 끕니다.
+          is_camera_pending = False
+        elif v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
           else:
@@ -772,38 +774,36 @@ class VCruiseCarrot:
         if not hasattr(self, 'tollgate_speed_changed'): self.tollgate_speed_changed = False
         if not hasattr(self, 'expected_tollgate_speed'): self.expected_tollgate_speed = 0
 
-        # 1. 톨게이트 구간 내부에서 속도가 변경되었는지 감지 (수동 조작 & 오토모드 개입 모두 포함)
+        # 1. 톨게이트 구간 내부에서 속도가 변경되었는지 감지
         if is_tollgate and self.prev_is_tollgate:
-          # 💡 설정된 감속 속도와 현재 속도가 달라졌다면(누군가/무언가 개입했다면) 복귀 취소 플래그 ON
           if v_cruise_kph != self.expected_tollgate_speed:
             self.tollgate_speed_changed = True
 
-        # 2. 톨게이트 최초 진입 시 (-20% 감속 및 기존 속도 금고에 보관)
+        # 2. 톨게이트 최초 진입 시 (-20% 감속)
         if is_tollgate and not self.prev_is_tollgate:
-          self.v_cruise_before_tollgate = v_cruise_kph  # 현재 원래 속도 백업
-          self.tollgate_speed_changed = False           # 개입 플래그 초기화
+          self.v_cruise_before_tollgate = v_cruise_kph
+          self.tollgate_speed_changed = False
           
-          # 20% 감속 후 5단위로 수학적 반올림 계산
+          # 20% 감속 후 5단위로 반올림
           reduced_speed = v_cruise_kph * 0.8
           rounded_speed = float(math.floor((reduced_speed / 5.0) + 0.5) * 5.0)
           
           v_cruise_kph = max(30.0, rounded_speed)
-          self.expected_tollgate_speed = v_cruise_kph   # 💡 방금 감속시킨 목표 속도를 기억함
+          self.expected_tollgate_speed = v_cruise_kph   # 감속된 목표 속도 기억
           
-          button_type = ButtonType.decelCruise  
+          # 💡 버그 유발 요소였던 button_type = ButtonType.decelCruise 삭제 완료
           self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
           
-        # 3. 톨게이트 신호가 끝날 때 (원래 속도로 복귀)
+        # 3. 톨게이트 통과 후 (원래 속도로 복귀)
         elif not is_tollgate and self.prev_is_tollgate:
-          # 톨게이트 내부에서 사용자나 오토모드의 속도 개입이 전혀 없었을 때만 안전하게 복귀
           if not self.tollgate_speed_changed and self.v_cruise_before_tollgate > 0:
             if v_cruise_kph < self.v_cruise_before_tollgate:
               v_cruise_kph = self.v_cruise_before_tollgate
               
-              button_type = ButtonType.accelCruise  
+              # 💡 버그 유발 요소였던 button_type = ButtonType.accelCruise 삭제 완료
               self._add_log(f"Tollgate OUT: Restore Speed ({v_cruise_kph}km/h)")
           
-          # 톨게이트를 빠져나왔으므로 변수 초기화
+          # 변수 초기화
           self.v_cruise_before_tollgate = 0
           self.tollgate_speed_changed = False
           self.expected_tollgate_speed = 0
