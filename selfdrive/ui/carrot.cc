@@ -2705,10 +2705,13 @@ public:
             // 👇 지난번에 실수로 날아갔던 "박스 그리기"와 "숫자/- 출력" 코드 복구!
             ui_fill_rect(s->vg, { dx - 55, dy - 38, 110, 48 }, limit_color, 15, 2);
             
+            // CAM(빨간 바탕)일 땐 흰 글씨, LIMIT(흰 바탕)일 땐 검은 글씨 적용
+            NVGcolor text_color = cam_detected ? COLOR_WHITE : COLOR_BLACK;
+
             if (disp_speed > 0) {
-                ui_draw_text(s, dx, dy, QString::number(disp_speed).toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+                ui_draw_text(s, dx, dy, QString::number(disp_speed).toStdString().c_str(), 40, text_color, BOLD);
             } else {
-                ui_draw_text(s, dx, dy, "-", 40, COLOR_WHITE, BOLD);
+                ui_draw_text(s, dx, dy, "-", 40, text_color, BOLD);
             }
         }
 
