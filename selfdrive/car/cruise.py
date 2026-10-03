@@ -751,11 +751,9 @@ class VCruiseCarrot:
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 및 10초 펜딩 조건 (수정됨: 톨게이트 진입 시 속도제한 무시)
-        if is_tollgate:
-          target_raw_limit = 0          # 💡 톨게이트 안에서는 도로 제한속도 로직을 끕니다.
-          is_camera_pending = False
-        elif v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc:
+        # 4. 90km/h 분리 및 10초 펜딩 조건 (원상 복구: 톨게이트 구간도 정상적으로 제한속도 수용)
+        # 💡 [핵심] 톨게이트 안에서는 속도가 90 이상이더라도 무조건 4BE(mixed) 카메라/제한속도를 사용합니다.
+        if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
           else:
@@ -774,7 +772,8 @@ class VCruiseCarrot:
         if not hasattr(self, 'tollgate_speed_changed'): self.tollgate_speed_changed = False
         if not hasattr(self, 'expected_tollgate_speed'): self.expected_tollgate_speed = 0
 
-        # 1. 톨게이트 구간 내부에서 속도가 변경되었는지 감지
+        # 1. 톨게이트 구간 내부에서 속도가 변경되었는지 감지 
+        # (수동 조작 & 제한속도 변경으로 인한 오토모드 개입 모두 잡아냄)
         if is_tollgate and self.prev_is_tollgate:
           if v_cruise_kph != self.expected_tollgate_speed:
             self.tollgate_speed_changed = True
@@ -791,19 +790,17 @@ class VCruiseCarrot:
           v_cruise_kph = max(30.0, rounded_speed)
           self.expected_tollgate_speed = v_cruise_kph   # 감속된 목표 속도 기억
           
-          # 💡 버그 유발 요소였던 button_type = ButtonType.decelCruise 삭제 완료
           self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
           
         # 3. 톨게이트 통과 후 (원래 속도로 복귀)
         elif not is_tollgate and self.prev_is_tollgate:
+          # 톨게이트 구간에서 오토모드나 수동 개입이 한 번도 없었을 때만 안전하게 복귀
           if not self.tollgate_speed_changed and self.v_cruise_before_tollgate > 0:
             if v_cruise_kph < self.v_cruise_before_tollgate:
               v_cruise_kph = self.v_cruise_before_tollgate
-              
-              # 💡 버그 유발 요소였던 button_type = ButtonType.accelCruise 삭제 완료
               self._add_log(f"Tollgate OUT: Restore Speed ({v_cruise_kph}km/h)")
           
-          # 변수 초기화
+          # 톨게이트를 빠져나왔으므로 변수 초기화
           self.v_cruise_before_tollgate = 0
           self.tollgate_speed_changed = False
           self.expected_tollgate_speed = 0
