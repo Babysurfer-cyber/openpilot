@@ -1001,10 +1001,10 @@ class CarrotServ:
         self.prev_is_tollgate_serv = is_tollgate
         # ==============================================================
 
-        # 1. 우측 깜빡이 10초 타이머 (시간 기반)
+        # 1. 우측 깜빡이 15초 타이머 (시간 기반)
         if getattr(CS, 'rightBlinker', False):
           self.auto_last_blinker_time_serv = time.monotonic()
-        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 10.0)
+        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 15.0)
 
         # 2. 통신망 속도 추출
         speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
