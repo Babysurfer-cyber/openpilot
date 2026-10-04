@@ -966,7 +966,7 @@ class RadarD:
 
     # ▼▼▼ [추가] 5m 이내 근접 끼어들기 시 강한 감속을 위해 aLead 값을 음수로 설정 ▼▼▼
     # -1.5m/s² 로 설정했습니다. 제동력이 부족하면 -2.0 이나 -3.0 으로 변경하세요.
-    cutin_aLead = -1.5 if long_dist <= 5.0 else 0.0
+    cutin_aLead = -3.0 if long_dist <= 3.0 else 0.0
 
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
