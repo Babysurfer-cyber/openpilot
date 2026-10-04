@@ -1011,13 +1011,13 @@ class CarrotServ:
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
         map_source = getattr(CS, 'mapSource', 0)              
 
-        # 3. 카메라 15초 타이머 로직 적용
+        # 3. 카메라 10초 타이머 로직 적용
         if not hasattr(self, 'auto_cam_start_time_serv'): self.auto_cam_start_time_serv = 0.0
         
         if map_source == 2:
           if self.auto_cam_start_time_serv == 0.0:
             self.auto_cam_start_time_serv = time.monotonic()
-          is_camera_pending_serv = (time.monotonic() - self.auto_cam_start_time_serv < 15.0)
+          is_camera_pending_serv = (time.monotonic() - self.auto_cam_start_time_serv < 10.0)
         else:
           self.auto_cam_start_time_serv = 0.0
           is_camera_pending_serv = False
@@ -1072,8 +1072,8 @@ class CarrotServ:
             self.auto_prev_limit_serv = target_raw_limit
           self.auto_is_pending_serv = False
           
-          # 수동 개입 시 15초 타이머 강제 만료
-          self.auto_cam_start_time_serv = time.monotonic() - 15.0
+          # 수동 개입 시 10초 타이머 강제 만료
+          self.auto_cam_start_time_serv = time.monotonic() - 10.0
         else:
           if target_raw_limit > 0:
             if is_camera_pending_serv:
