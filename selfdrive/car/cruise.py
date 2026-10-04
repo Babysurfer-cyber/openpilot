@@ -740,18 +740,18 @@ class VCruiseCarrot:
         is_tollgate = (nav_toll_exist == 1)  
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-        # 💡 10초(1000프레임) 타이머 장착!
+        # 💡 15초(1500프레임) 타이머 장착!
         if not hasattr(self, 'auto_cam_timer'): self.auto_cam_timer = 0
         if map_source == 2:
           self.auto_cam_timer += 1
         else:
           self.auto_cam_timer = 0
           
-        is_camera_pending = (map_source == 2 and self.auto_cam_timer < 1000)
+        is_camera_pending = (map_source == 2 and self.auto_cam_timer < 1500)
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 및 10초 펜딩 조건 (원상 복구: 톨게이트 구간도 정상적으로 제한속도 수용)
+        # 4. 90km/h 분리 및 15초 펜딩 조건 (원상 복구: 톨게이트 구간도 정상적으로 제한속도 수용)
         # 💡 [핵심] 톨게이트 안에서는 속도가 90 이상이더라도 무조건 4BE(mixed) 카메라/제한속도를 사용합니다.
         if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
           if speed_limit_pure > 0:
