@@ -964,9 +964,8 @@ class RadarD:
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # ▼▼▼ [추가] 5m 이내 근접 끼어들기 시 강한 감속을 위해 aLead 값을 음수로 설정 ▼▼▼
-    # -1.5m/s² 로 설정했습니다. 제동력이 부족하면 -2.0 이나 -3.0 으로 변경하세요.
-    cutin_aLead = -3.0 if long_dist <= 3.0 else 0.0
+    # ▼▼▼ 수정한 방정식 적용 부분 ▼▼▼
+    cutin_aLead = max(-3.0, min(0.0, (long_dist - 6.0) * 1.5))
 
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
@@ -977,7 +976,7 @@ class RadarD:
         lead_dict['vLeadK'] = actual_vLead
         lead_dict['vLat'] = v_lat
         
-        # 👇 5m 이내일 경우 음수값이 반영되도록 수정
+        # 👇 방정식 결과값(cutin_aLead) 적용
         lead_dict['aLead'] = cutin_aLead       
         lead_dict['aLeadK'] = cutin_aLead      
         
@@ -994,7 +993,7 @@ class RadarD:
       lead_dict['vLeadK'] = actual_vLead
       lead_dict['vLat'] = v_lat
       
-      # 👇 여기도 동일하게 반영
+      # 👇 방정식 결과값(cutin_aLead) 적용
       lead_dict['aLead'] = cutin_aLead         
       lead_dict['aLeadK'] = cutin_aLead        
       
