@@ -713,6 +713,7 @@ class VCruiseCarrot:
         if not hasattr(self, 'auto_prev_limit'): self.auto_prev_limit = 0
         if not hasattr(self, 'auto_is_pending'): self.auto_is_pending = False
         if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
+        if not hasattr(self, 'auto_speed_offset'): self.auto_speed_offset = 10.0 # ▼ 추가: 사용자 오프셋 (기본 10)
 
         # 2. 우측 깜빡이 20초(2000프레임) 유지 타이머
         if getattr(CS, 'rightBlinker', False):
@@ -820,6 +821,12 @@ class VCruiseCarrot:
         if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
+            
+            # ▼▼▼ [핵심 추가] 사용자가 버튼으로 맞춘 속도를 바탕으로 오프셋 기억 (0~10 제한) ▼▼▼
+            new_offset = button_kph - target_raw_limit
+            self.auto_speed_offset = float(max(0.0, min(10.0, new_offset)))
+            self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
+            
           self.auto_is_pending = False
           self.auto_cam_timer = 1000  # 💡 수동 개입 시 타이머 강제 종료 (오작동 방지)
         else:
@@ -831,13 +838,14 @@ class VCruiseCarrot:
               # 💡 10초가 지났거나, 일반 속도변경일 때 트리거 폭발!
               if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
                 
+                # ▼▼▼ [수정] 10.0 대신 저장된 사용자 오프셋(auto_speed_offset) 사용 ▼▼▼
                 if target_raw_limit < v_cruise_kph:
                   raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
                 else:
-                  raw_offset = 10.0
+                  raw_offset = self.auto_speed_offset
 
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-                offset = max(10.0, calculated_offset)
+                offset = max(self.auto_speed_offset, calculated_offset)
 
                 v_cruise_kph = target_raw_limit + offset
                 self.auto_prev_limit = target_raw_limit
