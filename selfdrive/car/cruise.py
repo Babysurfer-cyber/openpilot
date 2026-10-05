@@ -694,6 +694,7 @@ class VCruiseCarrot:
           
           # ★ 핵심: 오토모드(5번)가 이 복귀 속도를 무시하지 않고 즉시 동기화하도록 가짜 +버튼 신호 발생!
           button_type = ButtonType.accelCruise 
+          button_kph = v_cruise_kph  # ▼▼▼ [버그 픽스] 복구된 속도를 버튼 속도에도 덮어씌워 오프셋 계산 오류 방지! ▼▼▼
           
         self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
     else:
