@@ -900,12 +900,12 @@ class RadarD:
 
     # 기존의 복잡했던 미래 조향각(get_predicted_steering) 예측 등 모두 제거
     def get_lane_edge(target_long, is_left):
-      if target_long < 10.0:
-        return 2.25, 2.75, 2.6
-      
       if md is None or len(md.laneLineProbs) < 3:
-        return 2.25, 2.75, 2.6
-    
+        return 2.35, 2.85, 2.8
+
+      if target_long < 10.0:
+        return 2.45, 2.95, 3.0
+        
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
         calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
@@ -930,7 +930,7 @@ class RadarD:
         
         return lane_edge, max_search_dist, lane_width
       
-      return 2.25, 2.75, 2.6
+      return 2.35, 2.85, 2.8
 
     left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
