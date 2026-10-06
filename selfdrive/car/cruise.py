@@ -729,8 +729,12 @@ class VCruiseCarrot:
         if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
         if not hasattr(self, 'auto_speed_offset'): self.auto_speed_offset = 10.0 # ▼ 추가: 사용자 오프셋 (기본 10)
 
-        # 2. 우측 깜빡이 20초(2000프레임) 유지 타이머
-        if getattr(CS, 'rightBlinker', False):
+        # 2. 우측 깜빡이 20초(2000프레임) 유지 타이머 (비상깜빡이 제외)
+        left_blinker = getattr(CS, 'leftBlinker', False)
+        right_blinker = getattr(CS, 'rightBlinker', False)
+
+        # 좌측이 꺼져있고 우측만 켜져 있을 때(순수 우측 깜빡이)만 타이머 작동
+        if right_blinker and not left_blinker:
           self.auto_blinker_timer = 2000  # 💡 10초(1000) -> 20초(2000)로 연장
         else:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
