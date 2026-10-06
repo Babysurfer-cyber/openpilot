@@ -896,20 +896,24 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         danger_left = CS.out.leftBlindspot or left_lane_warning
         danger_right = CS.out.rightBlindspot or right_lane_warning
         
+        # ▼▼ [추가] 순수하게 한쪽 깜빡이만 켰는지 판별 (비상깜빡이 제외용) ▼▼
+        is_only_left_blinker = CS.out.leftBlinker and not CS.out.rightBlinker
+        is_only_right_blinker = CS.out.rightBlinker and not CS.out.leftBlinker
+        
         # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
         if v_ego_kph >= 30.0 and not is_changing_lane:
             
-            # [왼쪽 방향]
-            #if CS.out.leftBlinker and danger_left:
-                #alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
-            if nudge_left and left_solid:
-                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
+            # [왼쪽 방향] (비상깜빡이가 아닐 때만)
+            #if is_only_left_blinker and danger_left:
+                #alc_msg = 1  
+            if is_only_left_blinker and nudge_left and left_solid:
+                alc_msg = 10 
                 
-            # [오른쪽 방향]
-            #elif CS.out.rightBlinker and danger_right:
-                #alc_msg = 1  # 조건 A: 위험 감지 -> 메시지 1번 즉시 팝업
-            elif nudge_right and right_solid:
-                alc_msg = 10 # 조건 B: 계기판에 주황색 선이 뜨는 바로 그 실선 조건일 때 -> 메시지 10번 팝업
+            # [오른쪽 방향] (비상깜빡이가 아닐 때만)
+            #elif is_only_right_blinker and danger_right:
+                #alc_msg = 1  
+            elif is_only_right_blinker and nudge_right and right_solid:
+                alc_msg = 10 
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
@@ -917,9 +921,9 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # 💡 [수정] 후측방(Blindspot) + 전측방/모델 위험(lane_warning) 종합 판단!
-        bsd_warning_active = (CS.out.leftBlinker and danger_left) or \
-                             (CS.out.rightBlinker and danger_right)
+        # 💡 [수정] 비상깜빡이(양쪽 점등) 시에는 BSD 위험 경고(HDA_MODE2=2) 제외!
+        bsd_warning_active = (is_only_left_blinker and danger_left) or \
+                             (is_only_right_blinker and danger_right)
         
         if corner_radar_cutin:
           values['HDA_MODE2'] = 4
