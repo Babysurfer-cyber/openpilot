@@ -670,11 +670,11 @@ class VCruiseCarrot:
       else:
         self.stationary_lead_timer = 0
         
-      # 3. 감속 목표 속도 도달 후 5초 유지
+      # 3. 감속 목표 속도 도달 후 1초 유지
       if not restore_triggered:
         if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
           self.target_speed_reach_timer += 1
-          if self.target_speed_reach_timer >= 500:  # 5초
+          if self.target_speed_reach_timer >= 100:  # 1초
             restore_triggered = True
             restore_reason = f"Target Speed {self.desiredSpeed} Reached"
         else:
