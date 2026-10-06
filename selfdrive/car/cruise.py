@@ -330,13 +330,17 @@ class VCruiseCarrot:
       #self.events.append(EventName.buttonCancel)
       self._cruise_ready = True if self._activate_cruise == -2 else False
 
+    # [방어막 개폐] 목표 속도가 정확히 0일 때만 예외적으로 하한선을 0으로 개방
+    # 오토모드나 당근크루즈 자동 감속 등 모든 자동 제어는 self._cruise_speed_min(5)에 걸립니다.
+    dynamic_min = 0 if v_cruise_kph == 0 else self._cruise_speed_min
+
     if CS.cruiseState.available:
       if not self.cruise_state_available_last:
         self._lat_enabled = True
         v_cruise_kph = self.v_ego_kph_set
       if not self.CP.pcmCruise:
         # if stock cruise is completely disabled, then we can use our own set speed logic
-        self.v_cruise_kph = np.clip(v_cruise_kph, self._cruise_speed_min, self._cruise_speed_max)
+        self.v_cruise_kph = np.clip(v_cruise_kph, dynamic_min, self._cruise_speed_max)
         self.v_cruise_cluster_kph = self.v_cruise_kph
       else:
         if self.speed_from_pcm == 1:
@@ -346,10 +350,8 @@ class VCruiseCarrot:
           self.v_cruise_kph = np.clip(v_cruise_kph, 30, self._cruise_speed_max)
           self.v_cruise_cluster_kph = self.v_cruise_kph
     else:
-      self.v_cruise_kph = np.clip(v_cruise_kph, self._cruise_speed_min, self._cruise_speed_max) #max(20, self.v_ego_kph_set) #V_CRUISE_UNSET
-      self.v_cruise_cluster_kph = self.v_cruise_kph #V_CRUISE_UNSET
-      #if self.cruise_state_available_last: # 최초 한번이라도 cruiseState.available이 True였다면
-      #  self._lat_enabled = False
+      self.v_cruise_kph = np.clip(v_cruise_kph, dynamic_min, self._cruise_speed_max) 
+      self.v_cruise_cluster_kph = self.v_cruise_kph 
 
     self.cruise_state_available_last = CS.cruiseState.available
     self.enabled_last = CC.enabled
@@ -421,7 +423,9 @@ class VCruiseCarrot:
             button_kph = math.ceil((button_kph + 0.01) / unit) * unit
           elif bt == ButtonType.decelCruise:
             unit = SPEED_DOWN_UNIT if is_metric else SPEED_DOWN_UNIT * CV.MPH_TO_KPH
-            button_kph = math.floor((button_kph - 0.01) / unit) * unit
+            new_kph = math.floor((button_kph - 0.01) / unit) * unit
+            # [수정] 짧게 누를 땐 평소처럼 최소 5km/h 방어 (이미 0이라면 0 유지)
+            button_kph = max(self._cruise_speed_min, new_kph) if button_kph > 0 else 0
           button_type = bt
         self.long_pressed = False
         self.button_cnt = 0
@@ -432,12 +436,19 @@ class VCruiseCarrot:
       bt = self.button_prev
 
       if bt in [ButtonType.accelCruise, ButtonType.decelCruise]:
-        # ▼ [수정] 1초(100프레임) 주기마다 계속해서 속도가 조절되도록 변경!
+        # 1초(100프레임) 주기마다 계속해서 속도가 조절되도록 변경
         if (self.button_cnt - self.button_long_time) % 100 == 1:
           if bt == ButtonType.accelCruise:
             button_kph += 30
           else:
-            button_kph -= 30
+            new_kph = button_kph - 30
+            # [수정] 일반 롱프레스 시에도 무조건 최소 5km/h 방어
+            button_kph = max(self._cruise_speed_min, new_kph) if button_kph > 0 else 0
+          button_type = bt
+          
+        # [우회 핵심] 딱 3초(300프레임) 입력되는 순간에만 방어막 뚫고 0 세팅!
+        if self.button_cnt == 300 and bt == ButtonType.decelCruise:
+          button_kph = 0
           button_type = bt
           
       else: 
@@ -606,6 +617,8 @@ class VCruiseCarrot:
         self._pause_auto_speed_up = True
         v_cruise_kph = button_kph
         self._v_cruise_kph_at_brake = 0
+        if v_cruise_kph == 0:
+          self.carrot_cruise_active = False # [수정] 0일 땐 타력주행 방어 로직과 충돌 차단
       elif button_type == ButtonType.gapAdjustCruise:
         current_mode = self.params.get_int("MyDrivingMode")
         new_mode = 5 if current_mode == 3 else 3
