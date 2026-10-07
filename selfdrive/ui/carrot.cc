@@ -2694,7 +2694,9 @@ public:
                 ui_draw_text(s, dx, dy-45, "CAM", 30, COLOR_RED, BOLD);
             }
             else {
-                float target_speed = (nRoadLimitSpeed > 0) ? nRoadLimitSpeed : cs_limit;
+                // ▼▼▼ [수정] 디스플레이 표기용으로만 CAN 4BE 신호(cs_limit)를 최우선 반영 ▼▼▼
+                // 오토모드 실제 제어에는 영향을 주지 않으며 화면의 LIMIT 숫자만 바뀝니다.
+                float target_speed = (cs_limit > 0) ? cs_limit : nRoadLimitSpeed;
                 disp_speed = (int)(target_speed * ((s->scene.is_metric)?1.0:KM_TO_MILE) + 0.5);
                 
                 limit_color = COLOR_WHITE_ALPHA(190);
