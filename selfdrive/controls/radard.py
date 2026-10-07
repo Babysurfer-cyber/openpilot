@@ -879,9 +879,19 @@ class RadarD:
     # ▼ [시공간 통합 보정] 동적 곡률 공식 + 0.5초 전(과거) 센서 데이터
     # =========================================================================
     safe_v_ego = max(CS.vEgo, 1.0)  
-    dynamic_factor = p3_long / safe_v_ego  
     
-    false_v_lat = v_long_rel * past_yaw_rate * dynamic_factor
+    # 💡 [추가] 커브 안쪽 차선 추월 시(상대속도 < 0) 레이더 딜레이로 인한 오차를 추가 보정 (부스터)
+    curve_comp_multiplier = 1.0
+    if v_long_rel < -0.5: # 내 차가 더 빨라서 거리가 좁혀질 때
+        # 커브가 심할수록(yaw_rate가 클수록) 보정치를 최대 1.3배(30%)까지 부드럽게 증가시킴
+        curve_comp_multiplier = 1.0 + min(abs(past_yaw_rate) * 2.0, 0.3)
+        
+    dynamic_factor = (p3_long / safe_v_ego) * curve_comp_multiplier  
+    
+    # 추월 중일 때 상대 속도에 10% 가중치를 주어 오감지(잔여 마이너스 횡속도)를 바깥으로 완벽히 밀어냄
+    compensated_v_long_rel = v_long_rel * 1.1 if v_long_rel < 0 else v_long_rel
+    
+    false_v_lat = compensated_v_long_rel * past_yaw_rate * dynamic_factor
 
     if side == "L":
         v_lat_corrected = v_lat_measured - false_v_lat
@@ -963,7 +973,11 @@ class RadarD:
     abs_left_lat = float(abs(raw_left_lat))
     abs_right_lat = float(abs(raw_right_lat))
 
-    past_yaw_rate = self.yaw_rate_hist[0] if len(self.yaw_rate_hist) == 14 else CS.yawRate
+    # [개선] 단일 프레임 대신 가장 오래된 3개 프레임(0.6~0.7초 전)의 평균을 내어 레이더 지터(Jitter) 억제
+    if len(self.yaw_rate_hist) == 14:
+      past_yaw_rate = (self.yaw_rate_hist[0] + self.yaw_rate_hist[1] + self.yaw_rate_hist[2]) / 3.0
+    else:
+      past_yaw_rate = CS.yawRate
 
     # ▼▼▼ [수정] 반환받을 때 4번째 변수(a_lead)를 받도록 수정 ▼▼▼
     left_cutin, left_vrel, left_vlat, left_alead = self._corner_update_state(CS, past_yaw_rate, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
