@@ -442,7 +442,9 @@ class RadarD:
     # ▼▼▼ [수정] 0.7초(14프레임) 타임머신 메모리로 확장 ▼▼▼
     self.yaw_rate_hist = deque([0.0]*14, maxlen=14)
     self._corner_state = {"L": 0, "R": 0}  # -1,0,+1
-
+    
+    # ▼ [추가] 코너 레이더 가속도 로우패스 필터용 초기화
+    self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -866,8 +868,7 @@ class RadarD:
     # 클리핑: 너무 비현실적인 급가속/급감속(-4.0 ~ +2.0)은 자릅니다.
     clamped_a_lead = float(np.clip(raw_a_lead, -4.0, 2.0))
     
-    if not hasattr(self, '_corner_a_lead_filt'):
-        self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
+    # [수정] hasattr 검사 두 줄 삭제 완료
     
     # 로우패스 필터(Low-pass filter) 적용: 기존 값 80% + 새 값 20%
     alpha = 0.2
