@@ -819,39 +819,67 @@ class RadarD:
       self.radar_detected = detected
 
   def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
-  # ▼ 인자에 past_yaw_rate 추가
-    # 1. 값이 없거나 너무 멀면 대기
+    # 1. 값이 없거나 너무 멀면 대기 (초기화)
     if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 30.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
-      return False, 0.0, 0.0
+      return False, 0.0, 0.0, 0.0  # 반환값에 가속도(0.0) 추가
     else:
       self._corner_missing_cnt[side] = 0      
       self._corner_hist[side].append((cur_long, raw_lat))
 
     h = self._corner_hist[side]
     n = len(h)
-    if n < 5:
-      return False, 0.0, 0.0
-
-    past_long = (h[0][0] + h[1][0]) / 2.0
-    curr_long = (h[-1][0] + h[-2][0]) / 2.0
-    past_lat  = (h[0][1] + h[1][1]) / 2.0
-    curr_lat  = (h[-1][1] + h[-2][1]) / 2.0
     
-    time_diff = max((n - 2) * DT_MDL, DT_MDL) 
+    # 가속도를 구하려면 데이터가 더 많이 필요합니다 (최소 8프레임 = 0.4초)
+    if n < 8:
+      return False, 0.0, 0.0, 0.0
 
-    v_long_rel = (curr_long - past_long) / time_diff
-    v_lat_measured = (curr_lat - past_lat) / time_diff
+    # 2. 속도 및 가속도 계산 (과거, 중간, 현재 데이터 포인트 3개 추출)
+    # h = [(long, lat), ...] 
+    p1_long = (h[0][0] + h[1][0]) / 2.0    # 가장 과거
+    p2_long = (h[n//2-1][0] + h[n//2][0]) / 2.0 # 중간
+    p3_long = (h[-1][0] + h[-2][0]) / 2.0  # 가장 현재
+
+    p1_lat = (h[0][1] + h[1][1]) / 2.0
+    p3_lat = (h[-1][1] + h[-2][1]) / 2.0
+    
+    # 속도를 구하기 위한 시간 간격 (과거~중간, 중간~현재)
+    time_diff_1_2 = max(((n//2) - 1) * DT_MDL, DT_MDL)
+    time_diff_2_3 = max((n - 1 - (n//2)) * DT_MDL, DT_MDL)
+    time_diff_total = max((n - 2) * DT_MDL, DT_MDL)
+
+    # 구간별 속도 (상대 속도)
+    v_long_past = (p2_long - p1_long) / time_diff_1_2
+    v_long_curr = (p3_long - p2_long) / time_diff_2_3
+    v_long_rel  = (p3_long - p1_long) / time_diff_total # 전체 평균 상대 속도
+
+    v_lat_measured = (p3_lat - p1_lat) / time_diff_total
+
+    # 가속도 계산: (현재 속도 - 과거 속도) / 걸린 시간
+    # 상대 가속도이므로 내 차의 가속도를 더해야 앞차의 절대 가속도(aLead)가 나옵니다.
+    a_long_rel = (v_long_curr - v_long_past) / (time_diff_total / 2.0)
+    raw_a_lead = CS.aEgo + a_long_rel
+    
+    # 💡 [필터링] 코너 레이더의 가속도는 노이즈가 엄청나므로, 부드럽게 깎아줍니다.
+    # 클리핑: 너무 비현실적인 급가속/급감속(-4.0 ~ +2.0)은 자릅니다.
+    clamped_a_lead = float(np.clip(raw_a_lead, -4.0, 2.0))
+    
+    if not hasattr(self, '_corner_a_lead_filt'):
+        self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
+    
+    # 로우패스 필터(Low-pass filter) 적용: 기존 값 80% + 새 값 20%
+    alpha = 0.2
+    self._corner_a_lead_filt[side] = (alpha * clamped_a_lead) + ((1.0 - alpha) * self._corner_a_lead_filt[side])
+    final_a_lead = self._corner_a_lead_filt[side]
 
     # =========================================================================
-    # ▼▼▼ [시공간 통합 보정] 동적 곡률 공식 + 0.5초 전(과거) 센서 데이터 ▼▼▼
+    # ▼ [시공간 통합 보정] 동적 곡률 공식 + 0.5초 전(과거) 센서 데이터
     # =========================================================================
     safe_v_ego = max(CS.vEgo, 1.0)  
-    dynamic_factor = curr_long / safe_v_ego  
+    dynamic_factor = p3_long / safe_v_ego  
     
-    # 💡 CS.yawRate 대신, 시공간이 일치하는 past_yaw_rate 사용!
     false_v_lat = v_long_rel * past_yaw_rate * dynamic_factor
 
     if side == "L":
@@ -872,22 +900,19 @@ class RadarD:
 
     is_cutting_in = v_lat_corrected < v_lat_threshold
 
-    return is_cutting_in, v_long_rel, v_lat_corrected
+    # 반환값 4개: (끼어들기 여부, 상대 속도, 보정된 횡속도, 계산된 가속도)
+    return is_cutting_in, v_long_rel, v_lat_corrected, final_a_lead
 
 
   def corner_radar(self, CS, md, lead_dict):
-    # 복잡했던 COMP_FACTOR, yaw_rate_hist 타임머신, path_y 곡률 평탄화 모두 제거!
-    # 순수하게 원본 데이터만 가져옵니다.
     left_long = CS.leftLongDist
     raw_left_lat = CS.leftLatDist
     right_long = CS.rightLongDist
     raw_right_lat = CS.rightLatDist
 
-    # navLinkClass 확인 (1 = 고속도로 본선)
     nav_link_class = getattr(CS, 'navLinkClass', 0)
     base_max_long = 25.0 if nav_link_class == 1 else 20.0
 
-    # 앞차 정보 기반 동적 최대 감시 거리 설정
     if lead_dict['status'] and lead_dict['dRel'] > 0:
       dynamic_max_long = min(base_max_long, lead_dict['dRel'])
     else:
@@ -898,7 +923,6 @@ class RadarD:
     if right_long > dynamic_max_long:
       right_long = 0.0 
 
-    # 기존의 복잡했던 미래 조향각(get_predicted_steering) 예측 등 모두 제거
     def get_lane_edge(target_long, is_left):
       if md is None or len(md.laneLineProbs) < 3:
         return 2.45, 2.95, 3.0
@@ -935,16 +959,14 @@ class RadarD:
     left_lane_edge, left_max_dist, left_lane_width = get_lane_edge(left_long, True)
     right_lane_edge, right_max_dist, right_lane_width = get_lane_edge(right_long, False)
 
-    # raw_lat을 그대로 절댓값으로 사용
     abs_left_lat = float(abs(raw_left_lat))
     abs_right_lat = float(abs(raw_right_lat))
 
-    # ▼▼▼ [수정] 0.7초(14프레임) 전의 yawRate를 꺼내옵니다 ▼▼▼
     past_yaw_rate = self.yaw_rate_hist[0] if len(self.yaw_rate_hist) == 14 else CS.yawRate
 
-    # ▼▼▼ [수정] 호출 시 past_yaw_rate를 넘겨줍니다 ▼▼▼
-    left_cutin, left_vrel, left_vlat = self._corner_update_state(CS, past_yaw_rate, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
-    right_cutin, right_vrel, right_vlat = self._corner_update_state(CS, past_yaw_rate, "R", right_long, abs_right_lat, right_lane_edge, right_max_dist)
+    # ▼▼▼ [수정] 반환받을 때 4번째 변수(a_lead)를 받도록 수정 ▼▼▼
+    left_cutin, left_vrel, left_vlat, left_alead = self._corner_update_state(CS, past_yaw_rate, "L", left_long, abs_left_lat, left_lane_edge, left_max_dist)
+    right_cutin, right_vrel, right_vlat, right_alead = self._corner_update_state(CS, past_yaw_rate, "R", right_long, abs_right_lat, right_lane_edge, right_max_dist)
     
     left_ok = left_cutin and (1.0 < abs_left_lat <= left_lane_edge + (left_lane_width * 0.15)) and (left_long > 0.0)
     right_ok = right_cutin and (1.0 < abs_right_lat <= right_lane_edge + (right_lane_width * 0.15)) and (right_long > 0.0)
@@ -952,20 +974,20 @@ class RadarD:
     if not left_ok and not right_ok:
       return lead_dict
 
+    # ▼▼▼ [수정] 누가 선택되었는지에 따라 a_lead 값도 가져옴 ▼▼▼
     if left_ok and right_ok:
       if left_long <= right_long:
-        lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
+        lat_dist, long_dist, v_rel, v_lat, final_aLead = +abs_left_lat, left_long, left_vrel, left_vlat, left_alead
       else:
-        lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
+        lat_dist, long_dist, v_rel, v_lat, final_aLead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
     elif left_ok:
-      lat_dist, long_dist, v_rel, v_lat = +abs_left_lat, left_long, left_vrel, left_vlat
+      lat_dist, long_dist, v_rel, v_lat, final_aLead = +abs_left_lat, left_long, left_vrel, left_vlat, left_alead
     else:
-      lat_dist, long_dist, v_rel, v_lat = -abs_right_lat, right_long, right_vrel, right_vlat
+      lat_dist, long_dist, v_rel, v_lat, final_aLead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # ▼▼▼ 수정한 방정식 적용 부분 ▼▼▼
-    cutin_aLead = max(-3.0, min(0.0, (long_dist - 6.0) * 1.5))
+    # 기존의 인위적인 감속 방정식(cutin_aLead) 삭제 완료!
 
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
@@ -976,9 +998,9 @@ class RadarD:
         lead_dict['vLeadK'] = actual_vLead
         lead_dict['vLat'] = v_lat
         
-        # 👇 방정식 결과값(cutin_aLead) 적용
-        lead_dict['aLead'] = cutin_aLead       
-        lead_dict['aLeadK'] = cutin_aLead      
+        # 👇 계산된 실제 가속도(final_aLead) 적용
+        lead_dict['aLead'] = final_aLead       
+        lead_dict['aLeadK'] = final_aLead      
         
         lead_dict['aLeadTau'] = 0.3       
         lead_dict['modelProb'] = 0.8
@@ -993,9 +1015,9 @@ class RadarD:
       lead_dict['vLeadK'] = actual_vLead
       lead_dict['vLat'] = v_lat
       
-      # 👇 방정식 결과값(cutin_aLead) 적용
-      lead_dict['aLead'] = cutin_aLead         
-      lead_dict['aLeadK'] = cutin_aLead        
+      # 👇 계산된 실제 가속도(final_aLead) 적용
+      lead_dict['aLead'] = final_aLead         
+      lead_dict['aLeadK'] = final_aLead        
       
       lead_dict['aLeadTau'] = 0.3         
       lead_dict['modelProb'] = 0.8
