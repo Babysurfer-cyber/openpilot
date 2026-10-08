@@ -15,21 +15,27 @@ def classify_maneuver_type(blinker_state: int,
   accel = carstate.aEgo
 
   score_turn = 0
-  if v_kph < 30.0:
-    score_turn += 1
-  elif v_kph < 40.0 and accel < -1.0:
-    score_turn += 1
 
-  # Â÷·Î ¾ø°í edge ¿©À¯µµ ¾øÀ¸¸é turn °¡»ê
-  if v_kph < 40.0 and (not side.lane_available) and (not side.edge_available):
-    score_turn += 1
+  # â–¼â–¼â–¼ [í•µì‹¬] carrot-wipì˜ blinkerLever ê°’ í™•ì¸ (1: Tap, 2: Latched) â–¼â–¼â–¼
+  # í˜¹ì‹œ ë³€ìˆ˜ê°€ ì•„ì§ ê°±ì‹ ë˜ì§€ ì•Šì•˜ì„ ê²½ìš°ë¥¼ ëŒ€ë¹„í•´ ê¸°ë³¸ê°’ì„ 2(Latched)ë¡œ ë‘ì–´ ì—ëŸ¬ ë°©ì§€
+  blinker_lever = getattr(carstate, 'blinkerLever', 2)
+  is_tap = (blinker_lever == 1)
 
-  # Â÷¼±ÀÌ Àß ¾È º¸ÀÌ¸é(±³Â÷·Î µî)
-  if v_kph < 40.0 and side.lane_exist_count.counter < int(0.5 / DT_MDL):
-    score_turn += 1
+  # ì™„ì „ížˆ ì œì³¤ì„ ë•Œ(not is_tap)ë§Œ êµì°¨ë¡œ íšŒì „(Turn) ê°€ì¤‘ì¹˜ ë¶€ì—¬
+  if not is_tap:
+    if v_kph < 50.0:
+      score_turn += 1
+    elif v_kph < 60.0 and accel < -1.0:
+      score_turn += 1
 
-  if turn_desire_state:
-    score_turn += 1
+    if v_kph < 60.0 and (not side.lane_available) and (not side.edge_available):
+      score_turn += 1
+
+    if v_kph < 60.0 and side.lane_exist_count.counter < int(0.5 / DT_MDL):
+      score_turn += 1
+
+    if turn_desire_state:
+      score_turn += 1
 
   if atc_type in ("turn left", "turn right"):
     score_turn += 2
