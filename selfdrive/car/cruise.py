@@ -710,16 +710,16 @@ class VCruiseCarrot:
           self.stationary_lead_timer = 0
           self.target_speed_reach_timer = 0
         
-        # 금고 속도로 복귀
-        if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-          v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
-          self._v_cruise_kph_at_brake = 0
-          
-          # ★ 핵심: 오토모드(5번)가 이 복귀 속도를 무시하지 않고 즉시 동기화하도록 가짜 +버튼 신호 발생!
-          button_type = ButtonType.accelCruise 
-          button_kph = v_cruise_kph  # ▼▼▼ [버그 픽스] 복구된 속도를 버튼 속도에도 덮어씌워 오프셋 계산 오류 방지! ▼▼▼
-          
-        self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
+          # ▼▼▼ [버그 픽스] 금고 복귀 로직은 실제로 당근크루즈가 완전히 '해제'될 때만 꺼내오도록 안으로 이동! ▼▼▼
+          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+            v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+            self._v_cruise_kph_at_brake = 0
+            
+            # ★ 핵심: 오토모드(5번)가 이 복귀 속도를 무시하지 않고 즉시 동기화하도록 가짜 +버튼 신호 발생!
+            button_type = ButtonType.accelCruise 
+            button_kph = v_cruise_kph  
+            
+          self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
     else:
       self.stationary_lead_timer = 0
       self.target_speed_reach_timer = 0
