@@ -270,6 +270,11 @@ struct CarState {
   navTollExist @86 :Int32;     # <-- [추가] 톨게이트 판별용 추가!
   navFrwinfo @87 :Int16;       # <-- [추가] Frwinfo 표시용
 
+  # ▼▼▼ [추가] 방향지시등 스위치 물리적 상태 인식용 ▼▼▼
+  leftBlinkerStalkCount @88 :UInt8;
+  rightBlinkerStalkCount @89 :UInt8;
+  blinkerLever @90 :UInt8;  # 0: 꺼짐, 1: 툭(Tap), 2: 제침(Latched)
+
   struct Tpms {
     fl @0 :Float32;
     fr @1 :Float32;
