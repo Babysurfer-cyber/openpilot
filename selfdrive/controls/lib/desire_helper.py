@@ -409,7 +409,7 @@ class DesireHelper:
               start_gate = (side.lane_change_available_geom and self.lane_change_delay == 0) or \
                            side.lane_line_info_edge_detect or solid_line_blocked or block_released_auto or atc_line_release
 
-              # ▼▼▼ [수정 2] 아직 0.15초 판독 중(0)이면 차선변경 출발을 잠시 지연시킴 ▼▼▼
+              # ▼▼▼ [수정 2] 아직 0.5초 판독 중(0)이면 차선변경 출발을 잠시 지연시킴 ▼▼▼
               if driver_enabled and self.lever_state == 0:
                 start_gate = False
 
