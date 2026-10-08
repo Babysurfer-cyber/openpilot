@@ -126,6 +126,7 @@ class CarState(CarStateBase):
     self.manual_speed_limit_assist = None
     self.accelerator = None
     self.blinkers = None
+    self.blinker_stalks = None # <--- 이 줄 추가!
     self.doors_seatbelts = None
     self.cruise_buttons_alt2 = None
 
@@ -274,11 +275,12 @@ class CarState(CarStateBase):
             add_and_cache(self.cp_alt, "CAM_0x362", "cam_0x362")
           if not add_and_cache(self.cp_alt, "CAM_0x2a4", "cam_0x2a4") and self.cp_cam is not None:
             add_and_cache(self.cp_cam, "CAM_0x2a4", "cam_0x2a4")
-        elif self.controls_ready_count == 125:
+          elif self.controls_ready_count == 125:
           add_and_cache(self.cp, "MANUAL_SPEED_LIMIT_ASSIST", "manual_speed_limit_assist", ignore_counter = True)
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
+          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks") # <--- 이 줄 반드시 추가!
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
@@ -286,9 +288,11 @@ class CarState(CarStateBase):
   
   def _update_blinker_stalks(self, cp, ret):
     """BLINKER_STALKS 메시지에서 툭(Tap) 쳤는지 제쳤는지(Latched) 판별"""
-    if "BLINKER_STALKS" in cp.vl:
-      stalks = cp.vl["BLINKER_STALKS"]
-      left_stalk, right_stalk = bool(stalks["LEFT_BLINKER"]), bool(stalks["RIGHT_BLINKER"])
+    if hasattr(self, 'blinker_stalks') and self.blinker_stalks is not None:
+      stalks = self.blinker_stalks
+      # 값을 안전하게 가져옵니다.
+      left_stalk = bool(stalks.get("LEFT_BLINKER", 0))
+      right_stalk = bool(stalks.get("RIGHT_BLINKER", 0))
       
       if left_stalk and not self.left_stalk_prev:
         self.left_blinker_stalk_count = (self.left_blinker_stalk_count + 1) % 256
@@ -296,13 +300,13 @@ class CarState(CarStateBase):
         self.right_blinker_stalk_count = (self.right_blinker_stalk_count + 1) % 256
       self.left_stalk_prev, self.right_stalk_prev = left_stalk, right_stalk
       
-      tap = stalks["LEFT_BLINKER_TAP"] or stalks["RIGHT_BLINKER_TAP"]
+      tap = stalks.get("LEFT_BLINKER_TAP", 0) or stalks.get("RIGHT_BLINKER_TAP", 0)
       ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
     else:
       ret.blinkerLever = 0
 
     ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
-    ret.rightBlinkerStalkCount = self.right_blinker_stalk_count          
+    ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
                   
     
   def update(self, can_parsers) -> structs.CarState:
@@ -704,13 +708,12 @@ class CarState(CarStateBase):
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
     #ret.steerFaultTemporary = False
 
+    # 기존 코드 (CAN FD용 정상 코드)
     if self.blinkers is not None:
-      blinkers_info = self.blinkers
-      left_blinker_lamp = blinkers_info["LEFT_LAMP"] or blinkers_info["LEFT_LAMP_ALT"]
-      right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
-    # 기존 코드
-    ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(
-      50, cp.vl["CGW1"]["CF_Gway_TurnSigLh"], cp.vl["CGW1"]["CF_Gway_TurnSigRh"])
+      ret.leftBlinker = bool(self.blinkers["LEFT_LAMP"] or self.blinkers["LEFT_LAMP_ALT"])
+      ret.rightBlinker = bool(self.blinkers["RIGHT_LAMP"] or self.blinkers["RIGHT_LAMP_ALT"])
+    else:
+      ret.leftBlinker, ret.rightBlinker = False, False
       
     # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
     self._update_blinker_stalks(cp, ret)
