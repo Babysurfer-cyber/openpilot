@@ -38,6 +38,11 @@ class DesireHelper:
     self.left = SideState("left")
     self.right = SideState("right")
 
+    # ▼▼▼ [추가] 물리 레버 스캐닝(디바운싱) 변수 ▼▼▼
+    self.lever_timer = 0.0
+    self.lever_max = 0
+    self.lever_state = 0  # 0: 판독 중(대기), 1: 딸깍(Tap) 확정, 2: 제침(Latched) 확정
+
     # blinker/ATC state (원본 변수들 유지)
     self.blinker_ignore = False
     self.driver_blinker_state = BLINKER_NONE
@@ -107,8 +112,30 @@ class DesireHelper:
   # ─────────────────────────────────────────────
   def _update_driver_blinker(self, carstate):
     st = carstate.leftBlinker * 1 + carstate.rightBlinker * 2
+    lever_raw = getattr(carstate, 'blinkerLever', 0)
+
+    # 깜빡이가 새로 켜지는 순간 타이머 및 최대값 초기화
+    if st != 0 and self.driver_blinker_state == 0:
+      self.lever_timer = 0.0
+      self.lever_max = lever_raw
+      self.lever_state = 2 if lever_raw == 2 else 0
+
     changed = st != self.driver_blinker_state
     self.driver_blinker_state = st
+
+    if st != 0:
+      self.lever_timer += DT_MDL
+      self.lever_max = max(self.lever_max, lever_raw)
+
+      # ▼▼▼ 0.5초(500ms) 동안 레버가 제쳐지는지(2) 대기하며 지켜봄 ▼▼▼
+      if self.lever_max == 2:
+        self.lever_state = 2  # 제침이 감지되면 즉시 2로 확정
+      elif self.lever_timer > 0.5 and self.lever_max == 1:
+        self.lever_state = 1  # 0.5초 동안 2가 없었고 최대가 1이면 딸깍 확정
+    else:
+      self.lever_state = 0
+      self.lever_max = 0
+      self.lever_timer = 0.0
 
     enabled = st in (BLINKER_LEFT, BLINKER_RIGHT)
     if self.laneChangeNeedTorque < 0:
@@ -370,24 +397,21 @@ class DesireHelper:
             atc_geometry_release = atc_lane_change_only and auto_lane_change_trigger
             atc_line_release = (atc_driver_confirm or atc_geometry_release) and side_clear_without_line
 
-            # 차선이 일정시간 이상 안보이면 auto 허용(원본 유지)
-            #if (not side.lane_available) or (side.lane_exist_count.counter < int(2.0 / DT_MDL)):
-            #  self.auto_lane_change_enable = True
-
-            if not desire_enabled or below_lane_change_speed:
+            # ▼▼▼ [수정 1] 제침(Latched, 2)으로 확정되면 차선변경 즉시 취소! ▼▼▼
+            if not desire_enabled or below_lane_change_speed or (driver_enabled and self.lever_state == 2):
               self.lane_change_state = LaneChangeState.off
               self.lane_change_direction = LaneChangeDirection.none
             else:
-              # 차선변경 시작 조건:
-              # - side.lane_change_available는 BSD+object 포함(요구사항)
-              # - 하지만 BSD 중에도 torque override 허용해야 하므로, BSD 분기를 별도로 둠(원본 동작 유지)
-              # LaneLineCheck=2: 실선에서도 토크 override 허용
               solid_line_blocked = (self.laneLineCheck >= 2) and (not side.lane_change_available_geom) and \
                                    (side.lane_available or side.edge_available)
               block_released = side.lane_change_available_released
               block_released_auto = block_released and not atc_lane_change_retry_line_blocked
               start_gate = (side.lane_change_available_geom and self.lane_change_delay == 0) or \
                            side.lane_line_info_edge_detect or solid_line_blocked or block_released_auto or atc_line_release
+
+              # ▼▼▼ [수정 2] 아직 0.15초 판독 중(0)이면 차선변경 출발을 잠시 지연시킴 ▼▼▼
+              if driver_enabled and self.lever_state == 0:
+                start_gate = False
 
               if start_gate:
                 if solid_line_blocked:
