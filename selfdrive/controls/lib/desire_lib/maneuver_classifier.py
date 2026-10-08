@@ -17,12 +17,10 @@ def classify_maneuver_type(blinker_state: int,
   score_turn = 0
 
   # ▼▼▼ [핵심] carrot-wip의 blinkerLever 값 확인 (1: Tap, 2: Latched) ▼▼▼
-  # 혹시 변수가 아직 갱신되지 않았을 경우를 대비해 기본값을 2(Latched)로 두어 에러 방지
   blinker_lever = getattr(carstate, 'blinkerLever', 2)
-  is_tap = (blinker_lever == 1)
 
-  # 완전히 제쳤을 때(not is_tap)만 교차로 회전(Turn) 가중치 부여
-  if not is_tap:
+  # 완전히 제쳤을 때(blinker_lever == 2)만 교차로 회전(Turn) 가중치 부여
+  if blinker_lever == 2:
     if v_kph < 50.0:
       score_turn += 1
     elif v_kph < 60.0 and accel < -1.0:
