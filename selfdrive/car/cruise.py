@@ -191,6 +191,7 @@ class VCruiseCarrot:
 
     self._paddle_decel_active = False
     self.carrot_cruise_active = False
+    self.carrot_cruise_min_timer = 0  # <--- [추가] 5초 타이머 변수
 
     #self.events = []
     self.xState = 0
@@ -655,6 +656,7 @@ class VCruiseCarrot:
       
     if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
       self._v_cruise_kph_at_brake = v_cruise_kph  # 💡 0일 때만 저장하는 조건 삭제 (무조건 현재 속도를 백업!)
+      self.carrot_cruise_min_timer = 500  # <--- [추가] 당근크루즈 켜지면 5초(500프레임) 장전
         
     self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
@@ -662,7 +664,12 @@ class VCruiseCarrot:
     # ▼ [통합 복귀 로직] 가속 페달, 정지차량 5초, 목표속도 5초 도달 시 
     # 당근크루즈 자동 해제 및 기존 속도(오토모드 완벽 동기화) 복귀
     # ==============================================================
+    # ==============================================================
     if getattr(self, 'carrot_cruise_active', False):
+      # ▼▼▼ [추가] 5초 타이머 차감 ▼▼▼
+      if self.carrot_cruise_min_timer > 0:
+        self.carrot_cruise_min_timer -= 1
+
       restore_triggered = False
       restore_reason = ""
       
@@ -695,10 +702,13 @@ class VCruiseCarrot:
 
       # 🚀 복귀 트리거 발동
       if restore_triggered:
-        self.carrot_cruise_active = False
-        self.stationary_lead_timer = 0
-        self.target_speed_reach_timer = 0
-        self._pause_auto_speed_up = False
+        # ▼▼▼ [수정] 가속 페달(Gas Override) 개입 시 5초 타이머 무시하고 즉시 해제! ▼▼▼
+        if self.carrot_cruise_min_timer > 0 and restore_reason != "Gas Override":
+          restore_triggered = False
+        else:
+          self.carrot_cruise_active = False
+          self.stationary_lead_timer = 0
+          self.target_speed_reach_timer = 0
         
         # 금고 속도로 복귀
         if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
