@@ -45,5 +45,10 @@ def classify_maneuver_type(blinker_state: int,
   if score_turn >= 2:
     if edge_far:
       return "turn"
+      
+    # ▼▼▼ [추가] 턴이 물리적으로 끝나서 차선이 다시 보인다면, 즉시 Turn 상태를 종료! ▼▼▼
+    if side.lane_available:
+      return "lane_change"
+      
     return old_type
   return "lane_change"
