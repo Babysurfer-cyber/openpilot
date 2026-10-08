@@ -275,12 +275,12 @@ class CarState(CarStateBase):
             add_and_cache(self.cp_alt, "CAM_0x362", "cam_0x362")
           if not add_and_cache(self.cp_alt, "CAM_0x2a4", "cam_0x2a4") and self.cp_cam is not None:
             add_and_cache(self.cp_cam, "CAM_0x2a4", "cam_0x2a4")
-          elif self.controls_ready_count == 125:
+        elif self.controls_ready_count == 125:
           add_and_cache(self.cp, "MANUAL_SPEED_LIMIT_ASSIST", "manual_speed_limit_assist", ignore_counter = True)
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
-          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks") # <--- 이 줄 반드시 추가!
+          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks")
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
