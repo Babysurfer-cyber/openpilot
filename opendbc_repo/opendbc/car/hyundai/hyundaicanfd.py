@@ -921,9 +921,13 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # 💡 [수정] 비상깜빡이(양쪽 점등) 시에는 BSD 위험 경고(HDA_MODE2=2) 제외!
-        bsd_warning_active = (is_only_left_blinker and danger_left) or \
-                             (is_only_right_blinker and danger_right)
+        # 💡 [수정] 비상깜빡이(양쪽 점등) 시에는 BSD 위험 경고 제외
+        # 그리고 깜빡이 레버를 끝까지 제낀 상태(2)가 아닐 때만 BSD 경고 작동하도록 추가!
+        blinker_lever_val = getattr(CS, 'blinkerLever', 0)
+        bsd_warning_active = (
+            ((is_only_left_blinker and danger_left) or (is_only_right_blinker and danger_right))
+            and blinker_lever_val != 2
+        )
         
         if corner_radar_cutin:
           values['HDA_MODE2'] = 4
