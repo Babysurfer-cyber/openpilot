@@ -126,6 +126,7 @@ class CarState(CarStateBase):
     self.manual_speed_limit_assist = None
     self.accelerator = None
     self.blinkers = None
+    self.blinker_stalks = None # <--- 이 줄 추가!
     self.doors_seatbelts = None
     self.cruise_buttons_alt2 = None
 
@@ -176,6 +177,12 @@ class CarState(CarStateBase):
 
     self.cp_bsm = None
     self.time_zone = "UTC"
+    
+    # ▼▼▼ [추가] 깜빡이 레버 상태 추적용 초기화 ▼▼▼
+    self.left_blinker_stalk_count = 0
+    self.right_blinker_stalk_count = 0
+    self.left_stalk_prev = False
+    self.right_stalk_prev = False
     
     self.cp = None
     self.cp_cam = None
@@ -273,13 +280,34 @@ class CarState(CarStateBase):
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
+          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks")
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
-         
-          
-          
-        
+
+  
+  def _update_blinker_stalks(self, cp, ret):
+    """BLINKER_STALKS 메시지에서 툭(Tap) 쳤는지 제쳤는지(Latched) 판별"""
+    if hasattr(self, 'blinker_stalks') and self.blinker_stalks is not None:
+      stalks = self.blinker_stalks
+      # 값을 안전하게 가져옵니다.
+      left_stalk = bool(stalks.get("LEFT_BLINKER", 0))
+      right_stalk = bool(stalks.get("RIGHT_BLINKER", 0))
+      
+      if left_stalk and not self.left_stalk_prev:
+        self.left_blinker_stalk_count = (self.left_blinker_stalk_count + 1) % 256
+      if right_stalk and not self.right_stalk_prev:
+        self.right_blinker_stalk_count = (self.right_blinker_stalk_count + 1) % 256
+      self.left_stalk_prev, self.right_stalk_prev = left_stalk, right_stalk
+      
+      tap = stalks.get("LEFT_BLINKER_TAP", 0) or stalks.get("RIGHT_BLINKER_TAP", 0)
+      ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+    else:
+      ret.blinkerLever = 0
+
+    ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
+    ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
+                  
     
   def update(self, can_parsers) -> structs.CarState:
     self.monitor_fingerprint(can_parsers, self.CP.flags & HyundaiFlags.CANFD)
@@ -326,8 +354,12 @@ class CarState(CarStateBase):
     ret.steeringAngleDeg = cp.vl["SAS11"]["SAS_Angle"]
     ret.steeringRateDeg = cp.vl["SAS11"]["SAS_Speed"]
     ret.yawRate = cp.vl["ESP12"]["YAW_RATE"]
+    # 기존 코드
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(
       50, cp.vl["CGW1"]["CF_Gway_TurnSigLh"], cp.vl["CGW1"]["CF_Gway_TurnSigRh"])
+      
+    # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
+    self._update_blinker_stalks(cp, ret)
     ret.steeringTorque = cp.vl["MDPS12"]["CR_Mdps_StrColTq"]
     ret.steeringTorqueEps = cp.vl["MDPS12"]["CR_Mdps_OutTq"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
@@ -676,11 +708,15 @@ class CarState(CarStateBase):
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
     #ret.steerFaultTemporary = False
 
+    # 기존 코드 (CAN FD용 정상 코드)
     if self.blinkers is not None:
-      blinkers_info = self.blinkers
-      left_blinker_lamp = blinkers_info["LEFT_LAMP"] or blinkers_info["LEFT_LAMP_ALT"]
-      right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
-      ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, left_blinker_lamp, right_blinker_lamp)
+      ret.leftBlinker = bool(self.blinkers["LEFT_LAMP"] or self.blinkers["LEFT_LAMP_ALT"])
+      ret.rightBlinker = bool(self.blinkers["RIGHT_LAMP"] or self.blinkers["RIGHT_LAMP_ALT"])
+    else:
+      ret.leftBlinker, ret.rightBlinker = False, False
+      
+    # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
+    self._update_blinker_stalks(cp, ret)
 
     if self.CP.enableBsm:
       if self.cp_bsm is None:
