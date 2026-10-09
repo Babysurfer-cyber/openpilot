@@ -15,25 +15,21 @@ def classify_maneuver_type(blinker_state: int,
   accel = carstate.aEgo
 
   score_turn = 0
+  if v_kph < 30.0:
+    score_turn += 1
+  elif v_kph < 40.0 and accel < -1.0:
+    score_turn += 1
 
-  # ▼▼▼ [핵심] carrot-wip의 blinkerLever 값 확인 (1: Tap, 2: Latched) ▼▼▼
-  blinker_lever = getattr(carstate, 'blinkerLever', 2)
+  # ���� ���� edge ������ ������ turn ����
+  if v_kph < 40.0 and (not side.lane_available) and (not side.edge_available):
+    score_turn += 1
 
-  # 완전히 제쳤을 때(blinker_lever == 2)만 교차로 회전(Turn) 가중치 부여
-  if blinker_lever == 2:
-    if v_kph < 30.0:
-      score_turn += 1
-    elif v_kph < 50.0 and accel < -1.0:
-      score_turn += 1
+  # ������ �� �� ���̸�(������ ��)
+  if v_kph < 40.0 and side.lane_exist_count.counter < int(0.5 / DT_MDL):
+    score_turn += 1
 
-    if v_kph < 50.0 and (not side.lane_available) and (not side.edge_available):
-      score_turn += 1
-
-    if v_kph < 50.0 and side.lane_exist_count.counter < int(0.5 / DT_MDL):
-      score_turn += 1
-
-    if turn_desire_state:
-      score_turn += 1
+  if turn_desire_state:
+    score_turn += 1
 
   if atc_type in ("turn left", "turn right"):
     score_turn += 2
