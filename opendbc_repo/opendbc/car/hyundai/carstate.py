@@ -177,12 +177,6 @@ class CarState(CarStateBase):
     self.cp_bsm = None
     self.time_zone = "UTC"
     
-    # ▼▼▼ [추가] 깜빡이 레버 상태 추적용 초기화 ▼▼▼
-    self.left_blinker_stalk_count = 0
-    self.right_blinker_stalk_count = 0
-    self.left_stalk_prev = False
-    self.right_stalk_prev = False
-    
     self.cp = None
     self.cp_cam = None
     self.cp_alt = None
@@ -282,28 +276,10 @@ class CarState(CarStateBase):
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
-
-  
-  def _update_blinker_stalks(self, cp, ret):
-    """BLINKER_STALKS 메시지에서 툭(Tap) 쳤는지 제쳤는지(Latched) 판별"""
-    if "BLINKER_STALKS" in cp.vl:
-      stalks = cp.vl["BLINKER_STALKS"]
-      left_stalk, right_stalk = bool(stalks["LEFT_BLINKER"]), bool(stalks["RIGHT_BLINKER"])
-      
-      if left_stalk and not self.left_stalk_prev:
-        self.left_blinker_stalk_count = (self.left_blinker_stalk_count + 1) % 256
-      if right_stalk and not self.right_stalk_prev:
-        self.right_blinker_stalk_count = (self.right_blinker_stalk_count + 1) % 256
-      self.left_stalk_prev, self.right_stalk_prev = left_stalk, right_stalk
-      
-      tap = stalks["LEFT_BLINKER_TAP"] or stalks["RIGHT_BLINKER_TAP"]
-      ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
-    else:
-      ret.blinkerLever = 0
-
-    ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
-    ret.rightBlinkerStalkCount = self.right_blinker_stalk_count          
-                  
+         
+          
+          
+        
     
   def update(self, can_parsers) -> structs.CarState:
     self.monitor_fingerprint(can_parsers, self.CP.flags & HyundaiFlags.CANFD)
@@ -350,12 +326,8 @@ class CarState(CarStateBase):
     ret.steeringAngleDeg = cp.vl["SAS11"]["SAS_Angle"]
     ret.steeringRateDeg = cp.vl["SAS11"]["SAS_Speed"]
     ret.yawRate = cp.vl["ESP12"]["YAW_RATE"]
-    # 기존 코드
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(
       50, cp.vl["CGW1"]["CF_Gway_TurnSigLh"], cp.vl["CGW1"]["CF_Gway_TurnSigRh"])
-      
-    # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
-    self._update_blinker_stalks(cp, ret)
     ret.steeringTorque = cp.vl["MDPS12"]["CR_Mdps_StrColTq"]
     ret.steeringTorqueEps = cp.vl["MDPS12"]["CR_Mdps_OutTq"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
@@ -708,12 +680,7 @@ class CarState(CarStateBase):
       blinkers_info = self.blinkers
       left_blinker_lamp = blinkers_info["LEFT_LAMP"] or blinkers_info["LEFT_LAMP_ALT"]
       right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
-    # 기존 코드
-    ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(
-      50, cp.vl["CGW1"]["CF_Gway_TurnSigLh"], cp.vl["CGW1"]["CF_Gway_TurnSigRh"])
-      
-    # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
-    self._update_blinker_stalks(cp, ret)
+      ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, left_blinker_lamp, right_blinker_lamp)
 
     if self.CP.enableBsm:
       if self.cp_bsm is None:
@@ -947,4 +914,4 @@ class CarState(CarStateBase):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
-      }
+    }
