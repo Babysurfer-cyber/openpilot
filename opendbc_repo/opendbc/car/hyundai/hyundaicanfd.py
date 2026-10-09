@@ -906,13 +906,13 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
             # [왼쪽 방향] (비상깜빡이가 아닐 때만)
             #if is_only_left_blinker and danger_left:
                 #alc_msg = 1  
-            if is_only_left_blinker and nudge_left and left_solid:
+            if is_only_left_blinker and left_solid:
                 alc_msg = 10 
                 
             # [오른쪽 방향] (비상깜빡이가 아닐 때만)
             #elif is_only_right_blinker and danger_right:
                 #alc_msg = 1  
-            elif is_only_right_blinker and nudge_right and right_solid:
+            elif is_only_right_blinker and right_solid:
                 alc_msg = 10 
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
