@@ -316,7 +316,7 @@ class DesireHelper:
         # 현대차 깜빡이 원터치(딸깍) / 고정(제끼기) 구분 로직 추가
         lever = getattr(carstate, "blinkerLever", 0)
         if driver_enabled:
-          new_type = "lane_change"
+          new_type = "lane_change" if lever == 1
           lever_undecided = (lever == 1)
       else:
         new_type = "none"
