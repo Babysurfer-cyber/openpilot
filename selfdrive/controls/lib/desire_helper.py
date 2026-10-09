@@ -287,8 +287,6 @@ class DesireHelper:
       self.next_lane_change = False
 
     # ───────────────────────── FSM ─────────────────────────
-    lever_undecided = False
-
     if not lateral_active or self.lane_change_timer > LANE_CHANGE_TIME_MAX:
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
@@ -312,12 +310,6 @@ class DesireHelper:
           atc_type=self.atc_type,
           old_type=self.maneuver_type,
         )
-
-        # 현대차 깜빡이 원터치(딸깍) / 고정(제끼기) 구분 로직 추가
-        lever = getattr(carstate, "blinkerLever", 0)
-        if driver_enabled:
-          new_type = "lane_change"
-          lever_undecided = (lever == 1)
       else:
         new_type = "none"
 
@@ -397,7 +389,7 @@ class DesireHelper:
               start_gate = (side.lane_change_available_geom and self.lane_change_delay == 0) or \
                            side.lane_line_info_edge_detect or solid_line_blocked or block_released_auto or atc_line_release
 
-              if start_gate and not lever_undecided:
+              if start_gate:
                 if solid_line_blocked:
                   if atc_line_release or (torque_applied and not (bsd_active and block_lanechange_bsd)):
                     self.lane_change_state = LaneChangeState.laneChangeStarting
