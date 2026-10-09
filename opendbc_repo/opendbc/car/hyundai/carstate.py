@@ -153,17 +153,13 @@ class CarState(CarStateBase):
     self.rf_distance = 0
     self.lr_distance = 0
     self.rr_distance = 0
-    #self.lf_lateral = 0
-    #self.rf_lateral = 0
 
     fingerprints_str = Params().get("FingerPrints")
     fingerprints = ast.literal_eval(fingerprints_str)
-    #print("fingerprints =", fingerprints)
     ecu_disabled = False
     if self.CP.openpilotLongitudinalControl and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC):
       ecu_disabled = True
 
-    
     self.HAS_LFA_BUTTON = True if 913 in fingerprints[0] else False
     self.CRUISE_BUTTON_ALT = True if 1007 in fingerprints[0] else False
 
@@ -263,10 +259,8 @@ class CarState(CarStateBase):
         elif self.controls_ready_count == 123:        
           add_and_cache(self.cp, "HDA_INFO_4A3", "hda_info_4a3")
           
-          # ▼▼▼ [추가] 4B9, 4BE 방지턱 메시지 허용 ▼▼▼
           add_and_cache(self.cp, "NEW_MSG_4B9", "navi_segment_4b9")
           add_and_cache(self.cp, "NEW_MSG_4BE", "navi_profile_4be")
-          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
           
           add_and_cache(self.cp, "STEER_TOUCH_2AF", "steer_touch_2af")
         elif self.controls_ready_count == 124:
@@ -290,7 +284,6 @@ class CarState(CarStateBase):
     """BLINKER_STALKS 메시지에서 툭(Tap) 쳤는지 제쳤는지(Latched) 판별"""
     if hasattr(self, 'blinker_stalks') and self.blinker_stalks is not None:
       stalks = self.blinker_stalks
-      # 값을 안전하게 가져옵니다.
       left_stalk = bool(stalks.get("LEFT_BLINKER", 0))
       right_stalk = bool(stalks.get("RIGHT_BLINKER", 0))
       
@@ -300,8 +293,14 @@ class CarState(CarStateBase):
         self.right_blinker_stalk_count = (self.right_blinker_stalk_count + 1) % 256
       self.left_stalk_prev, self.right_stalk_prev = left_stalk, right_stalk
       
+      # 💡 [핵심 수정] TAP 신호가 없는 차량의 경우 무조건 2로 오인되어 강제 취소되는 버그 방지
+      has_tap = "LEFT_BLINKER_TAP" in stalks or "RIGHT_BLINKER_TAP" in stalks
       tap = stalks.get("LEFT_BLINKER_TAP", 0) or stalks.get("RIGHT_BLINKER_TAP", 0)
-      ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+      
+      if has_tap:
+        ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+      else:
+        ret.blinkerLever = 1 if (left_stalk or right_stalk) else 0
     else:
       ret.blinkerLever = 0
 
@@ -343,22 +342,17 @@ class CarState(CarStateBase):
       self.cluster_speed = cp.vl["CLU15"]["CF_Clu_VehicleSpeed"]
       self.cluster_speed_counter = 0
 
-      # Mimic how dash converts to imperial.
-      # Sorento is the only platform where CF_Clu_VehicleSpeed is already imperial when not is_metric
-      # TODO: CGW_USM1->CF_Gway_DrLockSoundRValue may describe this
       if not self.is_metric and self.CP.carFingerprint not in (CAR.KIA_SORENTO,):
         self.cluster_speed = math.floor(self.cluster_speed * CV.KPH_TO_MPH + CV.KPH_TO_MPH)
-
-    #ret.vEgoCluster = self.cluster_speed * speed_conv
 
     ret.steeringAngleDeg = cp.vl["SAS11"]["SAS_Angle"]
     ret.steeringRateDeg = cp.vl["SAS11"]["SAS_Speed"]
     ret.yawRate = cp.vl["ESP12"]["YAW_RATE"]
-    # 기존 코드
-    ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(
-      50, cp.vl["CGW1"]["CF_Gway_TurnSigLh"], cp.vl["CGW1"]["CF_Gway_TurnSigRh"])
+    
+    # 💡 [요청 사항 반영] 구형 로직에 있던 깜빡이 딜레이(50 프레임) 제거하고 즉시 반영되도록 수정
+    ret.leftBlinker = cp.vl["CGW1"]["CF_Gway_TurnSigLh"] != 0
+    ret.rightBlinker = cp.vl["CGW1"]["CF_Gway_TurnSigRh"] != 0
       
-    # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
     self._update_blinker_stalks(cp, ret)
     ret.steeringTorque = cp.vl["MDPS12"]["CR_Mdps_StrColTq"]
     ret.steeringTorqueEps = cp.vl["MDPS12"]["CR_Mdps_OutTq"]
@@ -367,8 +361,7 @@ class CarState(CarStateBase):
 
     # cruise state
     if self.CP.openpilotLongitudinalControl:
-      # These are not used for engage/disengage since openpilot keeps track of state using the buttons
-      ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK #cp.vl["TCS13"]["ACCEnable"] == 0
+      ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK 
       ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
@@ -376,20 +369,18 @@ class CarState(CarStateBase):
       self.main_enabled = ret.cruiseState.available = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
       ret.cruiseState.enabled = cp_cruise.vl["SCC12"]["ACCMode"] != 0
       ret.cruiseState.standstill = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 4.
-      ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.  # Shows 'Cruise Control' on dash
+      ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.
       ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
-
       ret.pcmCruiseGap = cp_cruise.vl["SCC11"]["TauGapSet"]
 
-    # TODO: Find brake pressure
     ret.brake = 0
     if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
-      ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2  # 2 includes regen braking by user on HEV/EV
-      ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2  # 0 OFF, 1 ERROR, 2 ACTIVE, 3 READY
+      ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2
+      ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2 
       ret.parkingBrake = cp.vl["TCS13"]["PBRAKE_ACT"] == 1
       ret.espDisabled = cp.vl["TCS11"]["TCS_PAS"] == 1
       ret.espActive = cp.vl["TCS11"]["ABS_ACT"] == 1
-      ret.accFaulted = cp.vl["TCS13"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
+      ret.accFaulted = cp.vl["TCS13"]["ACCEnable"] != 0
       ret.brakeLights = bool(cp.vl["TCS13"]["BrakeLight"] or ret.brakePressed)
 
     if self.CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV | HyundaiFlags.FCEV):
@@ -404,8 +395,6 @@ class CarState(CarStateBase):
       ret.gas = cp.vl["EMS12"]["PV_AV_CAN"] / 100.
       ret.gasPressed = bool(cp.vl["EMS16"]["CF_Ems_AclAct"])
 
-    # Gear Selection via Cluster - For those Kia/Hyundai which are not fully discovered, we can use the Cluster Indicator for Gear Selection,
-    # as this seems to be standard over all cars, but is not the preferred method.
     if self.CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV):
       gear = cp.vl["ELECT_GEAR"]["Elect_Gear_Shifter"]
       ret.gearStep = cp.vl["ELECT_GEAR"]["Elect_Gear_Step"]
@@ -424,10 +413,9 @@ class CarState(CarStateBase):
     else:
       gear = cp.vl["ELECT_GEAR"]["Elect_Gear_Shifter"]
       gear_disp = cp.vl["ELECT_GEAR"]
-
       gear_shifter = GearShifter.unknown
 
-      if gear == 1546:  # Thank you for Neokii  # fix PolorBear 22.06.05
+      if gear == 1546:
         gear_shifter = GearShifter.drive
       elif gear == 2314:
         gear_shifter = GearShifter.neutral
@@ -445,7 +433,7 @@ class CarState(CarStateBase):
       aeb_src = "FCA11" if self.CP.flags & HyundaiFlags.USE_FCA.value else "SCC12"
       aeb_sig = "FCA_CmdAct" if self.CP.flags & HyundaiFlags.USE_FCA.value else "AEB_CmdAct"
       aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
-      scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1  # sometimes only SCC system shows an FCW
+      scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1 
       aeb_braking = cp_cruise.vl[aeb_src]["CF_VSM_DecCmdAct"] != 0 or cp_cruise.vl[aeb_src][aeb_sig] != 0
       ret.stockFcw = (aeb_warning or scc_warning) and not aeb_braking
       ret.stockAeb = aeb_warning and aeb_braking
@@ -454,25 +442,21 @@ class CarState(CarStateBase):
       ret.leftBlindspot = cp.vl["LCA11"]["CF_Lca_IndLeft"] != 0
       ret.rightBlindspot = cp.vl["LCA11"]["CF_Lca_IndRight"] != 0
 
-    self.steer_state = cp.vl["MDPS12"]["CF_Mdps_ToiActive"]  # 0 NOT ACTIVE, 1 ACTIVE
+    self.steer_state = cp.vl["MDPS12"]["CF_Mdps_ToiActive"] 
     prev_cruise_buttons = self.cruise_buttons[-1]
-    #self.cruise_buttons.extend(cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"])
-    #carrot {{
-    #if self.CRUISE_BUTTON_ALT and cp.vl["CRUISE_BUTTON_ALT"]["SET_ME_1"] == 1:
-    #  self.cruise_buttons_alt = True
 
     cruise_button = [Buttons.NONE]
     if self.cruise_buttons_alt:
       lfa_button = cp.vl["CRUISE_BUTTON_LFA"]["CruiseSwLfa"]
       cruise_button = [Buttons.LFA_BUTTON] if lfa_button > 0 else [cp.vl["CRUISE_BUTTON_ALT"]["CruiseSwState"]]
-    elif self.HAS_LFA_BUTTON and cp.vl["BCM_PO_11"]["LFA_Pressed"] == 1:  # for K5
+    elif self.HAS_LFA_BUTTON and cp.vl["BCM_PO_11"]["LFA_Pressed"] == 1:
       cruise_button = [Buttons.LFA_BUTTON]
     else:
       cruise_button = cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"]
     self.cruise_buttons.extend(cruise_button)
-    # }} carrot
+
     prev_main_buttons = self.main_buttons[-1]
-    #self.cruise_buttons.extend(cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"])
+
     if self.cruise_buttons_alt:
       self.main_buttons.extend(cp.vl_all["CRUISE_BUTTON_ALT"]["CruiseSwMain"])
     else:
@@ -481,7 +465,6 @@ class CarState(CarStateBase):
 
     ret.buttonEvents = [*create_button_events(self.cruise_buttons[-1], prev_cruise_buttons, BUTTONS_DICT),
                         *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise})]
-
 
     if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
       tpms_unit = cp.vl["TPMS11"]["UNIT"] * 0.725 if int(cp.vl["TPMS11"]["UNIT"]) > 0 else 1.
@@ -516,7 +499,6 @@ class CarState(CarStateBase):
 
     return ret
 
-  # ▼▼▼ [추가] 순정 내비 방지턱 데이터 파싱 및 RAM 디스크 저장 (카메라 무시) ▼▼▼
   def _clear_vehicle_navi_events(self):
     self.vehicleNaviEvents = []
 
@@ -548,7 +530,6 @@ class CarState(CarStateBase):
     if val == 6 and 0 < offset <= VEHICLE_NAVI_MAX_EVENT_DISTANCE:
       return "bump", 0, 6
 
-    # ▼▼▼ 카메라 및 국도 제한속도 구역 디코딩 복구 ▼▼▼
     kind = val & 0xF
     speed_code = val >> 4
     if speed_code > 0:
@@ -594,7 +575,6 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents = [e for e in self.vehicleNaviEvents if e["target"] >= self.totalDistance - VEHICLE_NAVI_PASSED_EVENT_DISTANCE]
     bumps = [e for e in self.vehicleNaviEvents if e["type"] == "bump" and e["target"] > self.totalDistance]
     
-    # ▼▼▼ 카메라와 일반구역 데이터 추출 복구 ▼▼▼
     cameras = [e for e in self.vehicleNaviEvents if e["type"] == "camera" and e["target"] > self.totalDistance]
     zones = [e for e in self.vehicleNaviEvents if e["type"] == "speed_limit_zone"]
     
@@ -602,13 +582,11 @@ class CarState(CarStateBase):
     cam_dist = 0.0
     cam_limit = 0.0
     
-    # ▼▼▼ [추가] 4BE 카메라 속도별 거리 제한 필터링 ▼▼▼
     valid_cameras = []
     for c in cameras:
       c_dist = c["target"] - self.totalDistance
       c_limit = c["speed"]
       
-      # 80 미만은 300m 이하일 때, 80 이상은 600m 이하일 때만 유효한 카메라로 인정!
       if c_limit < 80 and c_dist <= 50:
         valid_cameras.append(c)
       elif c_limit >= 80 and c_dist <= 100:
@@ -618,10 +596,8 @@ class CarState(CarStateBase):
       cam_dist = valid_cameras[0]["target"] - self.totalDistance
       cam_limit = valid_cameras[0]["speed"]
     elif zones:
-      # 유효한 카메라가 없거나 너무 멀리 있으면 일반 제한속도(zone)를 따름
       cam_dist = 0.0
       cam_limit = zones[-1]["speed"]
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
       
     try:
       with open("/dev/shm/speed_bump_dist", "w") as f:
@@ -630,12 +606,10 @@ class CarState(CarStateBase):
       pass
 
     return cam_limit, cam_dist
-  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   def update_speed_limit(self, ret, speed_limit_cam):
     self.totalDistance += ret.vEgo * DT_CTRL
     
-    # [수정] 엑셀(gasPressed)을 밟아도 카메라 거리를 0으로 날리지 않도록 조건 제거!
     if ret.speedLimit > 0 and speed_limit_cam:
       if self.speedLimitDistance <= self.totalDistance:
         self.speedLimitDistance = self.totalDistance + ret.speedLimit * 6
@@ -663,7 +637,6 @@ class CarState(CarStateBase):
       ret.gasPressed = bool(cp.vl[self.accelerator_msg_canfd]["ACCELERATOR_PEDAL_PRESSED"]) if not self.use_accelerator else False if self.accelerator is None else bool(self.accelerator["ACCELERATOR_PEDAL_PRESSED"])
 
     ret.brakePressed = cp.vl["TCS"]["DriverBraking"] == 1
-    #print(cp.vl["TCS"], cp.vl_all["TCS"]["DriverBraking"][-10:])
 
     if self.doors_seatbelts is not None:
       ret.doorOpen = self.doors_seatbelts["DRIVER_DOOR"] == 1
@@ -679,7 +652,6 @@ class CarState(CarStateBase):
       ret.tpms.rl = tpms_unit * cp.vl["TPMS"]["PRESSURE_RL"]
       ret.tpms.rr = tpms_unit * cp.vl["TPMS"]["PRESSURE_RR"]
 
-    # TODO: figure out positions
     ret.wheelSpeeds = self.get_wheel_speeds(
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_1"],
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_2"],
@@ -694,9 +666,6 @@ class CarState(CarStateBase):
 
     ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]
 
-    # steering angle deg값이 이상함. mdps값이 더 신뢰가 가는듯.. torque steering 차량도 확인해야함.
-    #ret.steeringAngleDeg = cp.vl["STEERING_SENSORS"]["STEERING_ANGLE"] * -1
-    #ret.steeringAngleDeg = cp.vl["MDPS"]["STEERING_ANGLE"] * -1
     if self.CP.flags & HyundaiFlags.ANGLE_CONTROL:
       ret.steeringAngleDeg = cp.vl["MDPS"]["STEERING_ANGLE_2"] * -1
     else:
@@ -706,47 +675,40 @@ class CarState(CarStateBase):
     ret.steeringTorqueEps = cp.vl["MDPS"]["STEERING_OUT_TORQUE"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
-    #ret.steerFaultTemporary = False
 
-    # 기존 코드 (CAN FD용 정상 코드)
     if self.blinkers is not None:
       ret.leftBlinker = bool(self.blinkers["LEFT_LAMP"] or self.blinkers["LEFT_LAMP_ALT"])
       ret.rightBlinker = bool(self.blinkers["RIGHT_LAMP"] or self.blinkers["RIGHT_LAMP_ALT"])
     else:
       ret.leftBlinker, ret.rightBlinker = False, False
       
-    # ▼▼▼ [추가] 툭 쳤는지 제쳤는지 확인 ▼▼▼
     self._update_blinker_stalks(cp, ret)
 
     if self.CP.enableBsm:
       if self.cp_bsm is None:
         if 442 in cp.seen_addresses:
           self.cp_bsm = cp
-          print("######## BSM in ECAN")
         elif 442 in cp_cam.seen_addresses:
           self.cp_bsm = cp_cam
-          print("######## BSM in CAM")
       else:
         bsm_info = self.cp_bsm.vl["BLINDSPOTS_REAR_CORNERS"]
         ret.leftBlindspot = (bsm_info["FL_INDICATOR"] + bsm_info["INDICATOR_LEFT_TWO"] + bsm_info["INDICATOR_LEFT_FOUR"]) > 0
         ret.rightBlindspot = (bsm_info["FR_INDICATOR"] + bsm_info["INDICATOR_RIGHT_TWO"] + bsm_info["INDICATOR_RIGHT_FOUR"]) > 0
 
-    # cruise state
     if self.cruise_buttons_alt2 is not None:
       cruise_button = self.cruise_buttons_alt2["CRUISE_BUTTONS"]
     else:
       cruise_button = cp.vl[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"]
     if cruise_button in [Buttons.RES_ACCEL, Buttons.SET_DECEL] and self.CP.openpilotLongitudinalControl:
       self.main_enabled = True
-    # CAN FD cars enable on main button press, set available if no TCS faults preventing engagement
-    ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK #cp.vl["TCS"]["ACCEnable"] == 0
+      
+    ret.cruiseState.available = self.main_enabled and self.controls_ready_count >= READY_COUNT_OK 
     if self.CP.flags & HyundaiFlags.CAMERA_SCC.value:
       self.MainMode_ACC = cp_cam.vl["SCC_CONTROL"]["MainMode_ACC"] == 1
       self.ACCMode = cp_cam.vl["SCC_CONTROL"]["ACCMode"]
       self.LFA_ICON = cp_cam.vl["LFAHDA_CLUSTER"]["HDA_LFA_SymSta"]
       
     if self.CP.openpilotLongitudinalControl:
-      # These are not used for engage/disengage since openpilot keeps track of state using the buttons
       ret.cruiseState.enabled = cp.vl["TCS"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
       if self.MainMode_ACC or self.main_enabled:
@@ -754,7 +716,7 @@ class CarState(CarStateBase):
     else:
       cp_cruise_info = cp_cam if self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC else cp
       ret.cruiseState.enabled = cp_cruise_info.vl["SCC_CONTROL"]["ACCMode"] in (1, 2)
-      if cp_cruise_info.vl["SCC_CONTROL"]["MainMode_ACC"] == 1: # carrot
+      if cp_cruise_info.vl["SCC_CONTROL"]["MainMode_ACC"] == 1: 
         ret.cruiseState.available = self.main_enabled = True
         ret.pcmCruiseGap = int(np.clip(cp_cruise_info.vl["SCC_CONTROL"]["DISTANCE_SETTING"], 1, 4))
       ret.cruiseState.standstill = cp_cruise_info.vl["SCC_CONTROL"]["InfoDisplay"] >= 4
@@ -793,19 +755,17 @@ class CarState(CarStateBase):
         speedLimit *= CV.MPH_TO_KPH
       ret.speedLimit = speedLimit if speedLimit < 255 else 0
       
-      # ▼▼▼ [추가된 핵심 로직] 4BE가 섞이기 전에 순수 4A3 신호만 밖으로 빼냅니다! ▼▼▼
       ret.navSpeedLimit = ret.speedLimit
-      ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))  # 💡 에러 방지 안전장치!
-      ret.navLinkClass = int(self.hda_info_4a3.get("LinkClass", 0)) # 💡 IC/JC 판별용 링크 클래스 추가!
-      ret.navTollExist = int(self.hda_info_4a3.get("TollExist", 0)) # 💡 [추가] 톨게이트 판별용 추가!
-      ret.navFrwinfo = int(self.hda_info_4a3.get("Frwinfo", 0))     # 💡 [추가] Frwinfo 신호 전달!
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      ret.mapSource = int(self.hda_info_4a3.get("MapSource", 0))  
+      ret.navLinkClass = int(self.hda_info_4a3.get("LinkClass", 0)) 
+      ret.navTollExist = int(self.hda_info_4a3.get("TollExist", 0)) 
+      ret.navFrwinfo = int(self.hda_info_4a3.get("Frwinfo", 0))     
 
-      if int(self.hda_info_4a3.get("MapSource", 0)) == 2:         # 💡 에러 방지 안전장치!
+      if int(self.hda_info_4a3.get("MapSource", 0)) == 2:         
         speed_limit_cam = True
 
       if self.time_zone == "UTC":
-        country_code = int(self.hda_info_4a3.get("CountryCode", 0)) # 💡 에러 방지 안전장치!
+        country_code = int(self.hda_info_4a3.get("CountryCode", 0)) 
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
@@ -818,7 +778,7 @@ class CarState(CarStateBase):
     if lane_info is not None:
       left_lane_prob = lane_info["LEFT_LANE_PROB"]
       right_lane_prob = lane_info["RIGHT_LANE_PROB"]
-      left_lane_type = lane_info["LEFT_LANE_TYPE"] # 0: dashed, 1: solid, 2: undecided, 3: road edge, 4: DLM Inner Solid, 5: DLM InnerDashed, 6:DLM Inner Undecided, 7: Botts Dots, 8: Barrier
+      left_lane_type = lane_info["LEFT_LANE_TYPE"] 
       right_lane_type = lane_info["RIGHT_LANE_TYPE"]
       left_lane_color = lane_info["LEFT_LANE_COLOR"]
       right_lane_color = lane_info["RIGHT_LANE_COLOR"]
@@ -827,13 +787,8 @@ class CarState(CarStateBase):
       ret.leftLaneLine = left_lane_info
       ret.rightLaneLine = right_lane_info
 
-    # Manual Speed Limit Assist is a feature that replaces non-adaptive cruise control on EV CAN FD platforms.
-    # It limits the vehicle speed, overridable by pressing the accelerator past a certain point.
-    # The car will brake, but does not respect positive acceleration commands in this mode
-    # TODO: find this message on ICE & HYBRID cars + cruise control signals (if exists)
     if self.CP.flags & HyundaiFlags.EV:
       if self.manual_speed_limit_assist is not None:
-        #ret.cruiseState.nonAdaptive = cp.vl["MANUAL_SPEED_LIMIT_ASSIST"]["MSLA_ENABLED"] == 1
         ret.cruiseState.nonAdaptive = self.manual_speed_limit_assist["MSLA_ENABLED"] == 1
 
     if self.LOCAL_TIME and self.time_zone != "UTC":
@@ -843,12 +798,9 @@ class CarState(CarStateBase):
         dt_local = datetime(y, m, d, H, M, S, tzinfo=self.time_zone)
         ret.datetime = int(dt_local.timestamp() * 1000)
       except:
-        #print(f"Error parsing local time: {y}-{m}-{d} {H}:{M}:{S} in {self.time_zone}")
         pass
 
     prev_cruise_buttons = self.cruise_buttons[-1]
-    #self.cruise_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"])
-    #carrot {{
 
     if self.cruise_buttons_alt2 is not None:
       if int(self.cruise_buttons_alt2.get("LFA_BTN", 0)) == 1:
@@ -862,38 +814,25 @@ class CarState(CarStateBase):
       cruise_button = cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"]
 
     self.cruise_buttons.extend(cruise_button)
-    # }} carrot
-
-
-    #if self.cruise_btns_msg_canfd in cp.vl:
-    #  self.cruise_buttons_msg = copy.copy(cp.vl[self.cruise_btns_msg_canfd])
-    """
-    if self.cruise_btns_msg_canfd in cp.vl: #carrot
-      if not cp.vl[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"]:
-        pass
-        #print("empty cruise btns...")
-      else:
-        self.cruise_buttons_msg = copy.copy(cp.vl[self.cruise_btns_msg_canfd])
-     """
+    
     prev_main_buttons = self.main_buttons[-1]
-    #self.cruise_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["CRUISE_BUTTONS"])
+    
     if self.cruise_buttons_alt2 is not None:
       self.main_buttons.extend([1 if int(self.cruise_buttons_alt2.get("CRUISE_BUTTONS", 0)) == 8 else 0])
     else:
       self.main_buttons.extend(cp.vl_all[self.cruise_btns_msg_canfd]["ADAPTIVE_CRUISE_MAIN_BTN"])
-    if self.main_buttons[-1] != prev_main_buttons and not self.main_buttons[-1]: # and self.CP.openpilotLongitudinalControl: #carrot
+    if self.main_buttons[-1] != prev_main_buttons and not self.main_buttons[-1]: 
       self.main_enabled = not self.main_enabled
-      print("main_enabled = {}".format(self.main_enabled))
+      
     self.buttons_counter = cp.vl[self.cruise_btns_msg_canfd]["COUNTER"]
-    ret.accFaulted = cp.vl["TCS"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
+    ret.accFaulted = cp.vl["TCS"]["ACCEnable"] != 0  
 
-    speed_conv = CV.KPH_TO_MS # if self.is_metric else CV.MPH_TO_MS
+    speed_conv = CV.KPH_TO_MS 
     cluSpeed = cp.vl["CRUISE_BUTTONS_ALT"]["CLU_SPEED"]
-    ret.vEgoCluster = cluSpeed  * speed_conv # MPH단위에서도 KPH로 나오는듯..
+    ret.vEgoCluster = cluSpeed  * speed_conv 
     vEgoClu, aEgoClu = self.update_clu_speed_kf(ret.vEgoCluster)
     ret.vCluRatio = (ret.vEgo / vEgoClu) if (vEgoClu > 3. and ret.vEgo > 3.) else 1.0
 
-    # ▼▼▼ [수정] 토글 상태 갱신 및 4A3/4BE 우선순위 로직 실행 ▼▼▼
     self.frame_for_params += 1
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
@@ -902,7 +841,6 @@ class CarState(CarStateBase):
         
     nav_toll_exist = getattr(ret, 'navTollExist', 0)
     
-    # ▼▼▼ [수정] 4A3 기본 속도가 있더라도, 전방에 진짜 카메라/방지턱 거리(cam_dist > 0)가 들어오면 무조건 통과시킵니다! ▼▼▼
     if cam_limit > 0 and (cam_dist > 0 or nav_toll_exist != 0 or ret.speedLimit == 0):
       ret.speedLimit = cam_limit
       if cam_dist > 0:
@@ -910,7 +848,6 @@ class CarState(CarStateBase):
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
         speed_limit_cam = False
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
 
@@ -929,11 +866,8 @@ class CarState(CarStateBase):
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
-    # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
     msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan)]
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
-      # TODO: this can be removed once we add dynamic support to vl_all
       msgs += [
         ("CRUISE_BUTTONS", 50)
       ]
