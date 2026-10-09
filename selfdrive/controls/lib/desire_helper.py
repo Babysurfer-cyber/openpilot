@@ -38,7 +38,7 @@ class DesireHelper:
     self.left = SideState("left")
     self.right = SideState("right")
 
-    # blinker/ATC state (원본 변수들 유지)
+    # blinker/ATC state
     self.blinker_ignore = False
     self.driver_blinker_state = BLINKER_NONE
     self.carrot_blinker_state = BLINKER_NONE
@@ -69,6 +69,14 @@ class DesireHelper:
     # externally readable flags
     self.lane_change_available_left = False
     self.lane_change_available_right = False
+
+    # ▼▼▼ [추가] 레버 원터치 판단용 변수 ▼▼▼
+    self.prev_left_stalk_count = 0
+    self.prev_right_stalk_count = 0
+    self.stalk_press_timer = 2.0  # 초기값은 동작 시간(0.15초)을 넘겨서 세팅
+    self.stalk_max_level = 0
+    self.one_touch_triggered = False
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   # ─────────────────────────────────────────────
   # params/model
@@ -110,7 +118,9 @@ class DesireHelper:
     changed = st != self.driver_blinker_state
     self.driver_blinker_state = st
 
-    enabled = st in (BLINKER_LEFT, BLINKER_RIGHT)
+    # ▼▼▼ [수정] 원터치(tap) 확정 상태일 때만 OP 차선 변경(enabled) 허용 ▼▼▼
+    enabled = (st in (BLINKER_LEFT, BLINKER_RIGHT)) and self.one_touch_triggered
+
     if self.laneChangeNeedTorque < 0:
       enabled = False
     return st, changed, enabled
@@ -219,6 +229,41 @@ class DesireHelper:
     self.frame += 1
     self._update_params_periodic()
     self._make_model_turn_speed(modeldata)
+
+    # ▼▼▼ [추가] 깜빡이 레버 물리 상태(Debounce) 추적 로직 ▼▼▼
+    left_stalk_changed = carstate.leftBlinkerStalkCount != self.prev_left_stalk_count
+    right_stalk_changed = carstate.rightBlinkerStalkCount != self.prev_right_stalk_count
+
+    # 새로운 레버 조작(Count 변화)이 감지되면 타이머 및 상태 초기화
+    if left_stalk_changed or right_stalk_changed:
+      self.prev_left_stalk_count = carstate.leftBlinkerStalkCount
+      self.prev_right_stalk_count = carstate.rightBlinkerStalkCount
+      self.stalk_press_timer = 0.0
+      self.stalk_max_level = 0
+      self.one_touch_triggered = False
+
+    # 레버가 도달한 최대 깊이(1: 원터치, 2: 완전 체결) 갱신
+    if carstate.blinkerLever > self.stalk_max_level:
+      self.stalk_max_level = carstate.blinkerLever
+
+    if self.stalk_press_timer < 2.0:
+      self.stalk_press_timer += DT_MDL
+
+    # 원터치 확정 로직 (0.15초 안에 완전 체결이 되지 않고 1까지만 갔다면 원터치)
+    if self.stalk_max_level == 1 and self.stalk_press_timer >= 0.15:
+      self.one_touch_triggered = True
+    elif carstate.blinkerLever == 0 and self.stalk_max_level == 1 and self.stalk_press_timer > 0:
+      # 0.15초 전에 레버가 다시 0으로 튕겨 올라왔어도 원터치로 확정
+      self.one_touch_triggered = True
+
+    # 완전 체결(2)이 감지되었다면 원터치 동작은 무조건 취소 (메뉴얼 조향용)
+    if self.stalk_max_level == 2:
+      self.one_touch_triggered = False
+
+    # 깜빡이 램프가 모두 꺼지면 상태 초기화
+    if carstate.leftBlinker == 0 and carstate.rightBlinker == 0:
+      self.one_touch_triggered = False
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # counts
     self.carrot_lane_change_count = max(0, self.carrot_lane_change_count - 1)
@@ -370,18 +415,11 @@ class DesireHelper:
             atc_geometry_release = atc_lane_change_only and auto_lane_change_trigger
             atc_line_release = (atc_driver_confirm or atc_geometry_release) and side_clear_without_line
 
-            # 차선이 일정시간 이상 안보이면 auto 허용(원본 유지)
-            #if (not side.lane_available) or (side.lane_exist_count.counter < int(2.0 / DT_MDL)):
-            #  self.auto_lane_change_enable = True
-
             if not desire_enabled or below_lane_change_speed:
               self.lane_change_state = LaneChangeState.off
               self.lane_change_direction = LaneChangeDirection.none
             else:
               # 차선변경 시작 조건:
-              # - side.lane_change_available는 BSD+object 포함(요구사항)
-              # - 하지만 BSD 중에도 torque override 허용해야 하므로, BSD 분기를 별도로 둠(원본 동작 유지)
-              # LaneLineCheck=2: 실선에서도 토크 override 허용
               solid_line_blocked = (self.laneLineCheck >= 2) and (not side.lane_change_available_geom) and \
                                    (side.lane_available or side.edge_available)
               block_released = side.lane_change_available_released
