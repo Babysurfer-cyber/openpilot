@@ -119,6 +119,7 @@ class DesireHelper:
     atc_type = carrotMan.atcType
     atc_blinker_state = BLINKER_NONE
 
+    # 유지 카운트는 DesireHelper에서 관리
     if self.carrot_lane_change_count > 0:
       atc_blinker_state = self.carrot_blinker_state
     elif carrotMan.carrotCmdIndex != self.carrot_cmd_index_last and carrotMan.carrotCmd == "LANECHANGE":
@@ -138,18 +139,21 @@ class DesireHelper:
     else:
       self.atc_active = 0
 
+    # 충돌 시 ATC 무효
     if driver_blinker_state != BLINKER_NONE and atc_blinker_state != BLINKER_NONE and driver_blinker_state != atc_blinker_state:
       atc_blinker_state = BLINKER_NONE
       self.atc_active = 2
 
     atc_desire_enabled = atc_blinker_state in (BLINKER_LEFT, BLINKER_RIGHT)
 
+    # blinker_ignore
     if driver_blinker_state == BLINKER_NONE:
       self.blinker_ignore = False
     if self.blinker_ignore:
       atc_blinker_state = BLINKER_NONE
       atc_desire_enabled = False
 
+    # 타입 변경 1프레임 무시
     if self.atc_type != atc_type:
       atc_desire_enabled = False
     self.atc_type = atc_type
@@ -160,12 +164,15 @@ class DesireHelper:
   # per-side processing (핵심: 좌/우 모두 매 프레임 계산)
   # ─────────────────────────────────────────────
   def _process_sides(self, carstate, modeldata, radarState):
+    # geometry (좌/우)
+    # left: outer laneLines[0], current laneLines[1], edge[0], cur_prob laneLineProbs[1]
     self.left.update_lane_geometry(
       modeldata.laneLines[0], modeldata.laneLineProbs[0],
       modeldata.laneLines[1],
       modeldata.roadEdges[0],
       cur_prob=modeldata.laneLineProbs[1],
     )
+    # right: outer laneLines[3], current laneLines[2], edge[1], cur_prob laneLineProbs[2]
     self.right.update_lane_geometry(
       modeldata.laneLines[3], modeldata.laneLineProbs[3],
       modeldata.laneLines[2],
@@ -173,15 +180,19 @@ class DesireHelper:
       cur_prob=modeldata.laneLineProbs[2],
     )
 
+    # lane line info (HUD용 raw는 기존대로 leftLaneLine/rightLaneLine)
     self.left.update_lane_line_info(carstate.leftLaneLine)
     self.right.update_lane_line_info(carstate.rightLaneLine)
 
+    # BSD 설정
     ignore_bsd = (self.laneChangeBsd < 0)
 
+    # obstacles
     v_ego = carstate.vEgo
     self.left.update_obstacles(v_ego, radarState.leadLeft, carstate.leftBlindspot, ignore_bsd, bsd_hold_sec=0.2)
     self.right.update_obstacles(v_ego, radarState.leadRight, carstate.rightBlindspot, ignore_bsd, bsd_hold_sec=0.2)
 
+    # compute available (include BSD+object)
     if self.laneLineCheck >= 1:
       left_line_ok = self.left.lane_line_info_mod in (0, 5)
       right_line_ok = self.right.lane_line_info_mod in (0, 5)
@@ -194,6 +205,7 @@ class DesireHelper:
     self.left.update_triggers()
     self.right.update_triggers()
 
+    # externally readable
     self.lane_change_available_left = self.left.lane_change_available
     self.lane_change_available_right = self.right.lane_change_available
 
@@ -208,21 +220,27 @@ class DesireHelper:
     self._update_params_periodic()
     self._make_model_turn_speed(modeldata)
 
+    # counts
     self.carrot_lane_change_count = max(0, self.carrot_lane_change_count - 1)
     self.lane_change_delay = max(0.0, self.lane_change_delay - DT_MDL)
 
     v_ego = carstate.vEgo
     below_lane_change_speed = v_ego < LANE_CHANGE_SPEED_MIN
 
+    # per-side compute (좌/우 모두)
     self._process_sides(carstate, modeldata, radarState)
+
+    # desire state from model
     self._check_desire_state(modeldata, carstate, self.maneuver_type)
 
+    # blinkers
     driver_st, driver_changed, driver_enabled = self._update_driver_blinker(carstate)
     atc_st, atc_enabled = self._update_atc_blinker(carrotMan, driver_st)
 
     desire_enabled = driver_enabled or atc_enabled
     blinker_state = driver_st if driver_enabled else atc_st
 
+    # 선택된 side (FSM은 이 side만 참고)
     side = self._get_selected_side(blinker_state) if blinker_state in (BLINKER_LEFT, BLINKER_RIGHT) else None
     atc_lane_change_requested = (
       atc_enabled and
@@ -234,17 +252,22 @@ class DesireHelper:
       self.atc_type in ("fork left", "atc left")
     )
     atc_lane_change_only = atc_lane_change_requested and not driver_enabled
+    # Do not treat a blocked->available retry as permission to cross solid/unknown lines.
+    # Geometry-based ATC at the last lane still works when the lane/road edge opens up.
     atc_lane_change_retry_line_blocked = (
       atc_lane_change_only and
       side is not None and
       side.lane_line_info_mod not in (0, 5)
     )
 
+    # auto lane change trigger (기존 로직 유지하되 side 기반)
     auto_lane_change_trigger = False
     if desire_enabled and side is not None:
+      # carrot_lane_change_count>0이면 강제 허용
       if self.carrot_lane_change_count > 0:
         auto_lane_change_trigger = side.lane_change_available
       else:
+        # 기존 조건: edge_available + (trigger or appeared) + not side_object_detected
         auto_lane_change_trigger = (
           self.auto_lane_change_enable and
           (not atc_lane_change_manual_only) and
@@ -253,7 +276,12 @@ class DesireHelper:
           (not side.side_object_detected) and
           (side.bsd_hold_counter == 0)
         )
-      self.desireLog = (f"{side.name}:ALC={self.auto_lane_change_enable}, ")
+      self.desireLog = (
+        f"{side.name}:ALC={self.auto_lane_change_enable}, "
+        #f"L={side.lane_available},E={side.edge_available}, "
+        #f"T={side.lane_available_trigger},A={side.lane_appeared}, "
+        #f"OBJ={side.side_object_detected},BSD={side.bsd_hold_counter>0}"
+      )
     else:
       self.auto_lane_change_enable = False
       self.next_lane_change = False
@@ -272,6 +300,7 @@ class DesireHelper:
       self.maneuver_type = "none"
 
     else:
+      # classify maneuver type using selected side
       if desire_enabled and side is not None:
         new_type = classify_maneuver_type(
           blinker_state=blinker_state,
@@ -298,7 +327,7 @@ class DesireHelper:
         self.lane_change_state = LaneChangeState.off
         if self.turn_disable_count > 0:
           self.turn_direction = TurnDirection.none
-          self.lane_change_direction = TurnDirection.none
+          self.lane_change_direction = LaneChangeDirection.none
         else:
           self.turn_direction = TurnDirection.turnLeft if blinker_state == BLINKER_LEFT else TurnDirection.turnRight
           self.lane_change_direction = self.turn_direction
@@ -313,6 +342,8 @@ class DesireHelper:
             self.lane_change_ll_prob = 1.0
             self.lane_change_delay = self.laneChangeDelay
 
+            # 맨 끝 차선이 아니면, ATC 자동 차선변경 비활성
+            # (원본 유지: 차선 존재하거나 geom 가능하면 auto off, 아니면 on)
             lane_exist_counter_side = side.lane_exist_count.counter
             lane_change_available_geom = side.lane_change_available_geom
             self.auto_lane_change_enable = False if (lane_exist_counter_side > 0 or lane_change_available_geom) else True
@@ -325,9 +356,11 @@ class DesireHelper:
           else:
             self.lane_change_direction = LaneChangeDirection.left if blinker_state == BLINKER_LEFT else LaneChangeDirection.right
 
+            # torque direction cond
             torque_cond = (carstate.steeringTorque > 0) if blinker_state == BLINKER_LEFT else (carstate.steeringTorque < 0)
             torque_applied = carstate.steeringPressed and torque_cond
 
+            # BSD config
             ignore_bsd = (self.laneChangeBsd < 0)
             block_lanechange_bsd = (self.laneChangeBsd == 1)
             bsd_active = (side.bsd_hold_counter > 0) and (not ignore_bsd)
@@ -337,10 +370,18 @@ class DesireHelper:
             atc_geometry_release = atc_lane_change_only and auto_lane_change_trigger
             atc_line_release = (atc_driver_confirm or atc_geometry_release) and side_clear_without_line
 
+            # 차선이 일정시간 이상 안보이면 auto 허용(원본 유지)
+            #if (not side.lane_available) or (side.lane_exist_count.counter < int(2.0 / DT_MDL)):
+            #  self.auto_lane_change_enable = True
+
             if not desire_enabled or below_lane_change_speed:
               self.lane_change_state = LaneChangeState.off
               self.lane_change_direction = LaneChangeDirection.none
             else:
+              # 차선변경 시작 조건:
+              # - side.lane_change_available는 BSD+object 포함(요구사항)
+              # - 하지만 BSD 중에도 torque override 허용해야 하므로, BSD 분기를 별도로 둠(원본 동작 유지)
+              # LaneLineCheck=2: 실선에서도 토크 override 허용
               solid_line_blocked = (self.laneLineCheck >= 2) and (not side.lane_change_available_geom) and \
                                    (side.lane_available or side.edge_available)
               block_released = side.lane_change_available_released
@@ -359,12 +400,15 @@ class DesireHelper:
                   if torque_applied:
                     self.lane_change_state = LaneChangeState.laneChangeStarting
                 elif driver_enabled:
+                  # driver blinker면 바로 시작(원본 유지)
+                  # 단, object/bzd 막힘은 side.lane_change_available에서 걸림
                   if side.lane_change_available or atc_line_release:
                     self.lane_change_state = LaneChangeState.laneChangeStarting
                 else:
                   if torque_applied or ((not atc_lane_change_manual_only) and (
                     auto_lane_change_trigger or side.lane_line_info_edge_detect or block_released_auto
                   )):
+                    # 여기서는 시작 직전 안전성 체크
                     if side.lane_change_available or atc_line_release:
                       self.lane_change_state = LaneChangeState.laneChangeStarting
 
@@ -383,40 +427,24 @@ class DesireHelper:
             else:
               self.lane_change_state = LaneChangeState.off
     
+    # timer
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
       self.lane_change_timer = 0.0
     else:
       self.lane_change_timer += DT_MDL
 
+    # commit last per-side
     self.left.commit_last()
     self.right.commit_last()
 
     self.prev_desire_enabled = desire_enabled
 
-    # ──────────────────────────────────────────────────────────
-    # [설명] 차선변경 취소 조건 통합 판별 (반대 토크 / 레버 2 / BSD 검출)
-    # ──────────────────────────────────────────────────────────
-    
-    # 1. 반대 방향으로 스티어링 토크를 주어 취소하는 기존 조건
+    # 반대 방향 토크로 cancel (기존 유지)
     steering_pressed_cancel = carstate.steeringPressed and (
       (carstate.steeringTorque < 0 and blinker_state == BLINKER_LEFT) or
       (carstate.steeringTorque > 0 and blinker_state == BLINKER_RIGHT)
     )
-    
-    # 2. 깜빡이 레버를 끝까지 제낀 상태(2)로 전환했을 때의 취소 조건
-    blinker_lever_cancel = getattr(carstate, "blinkerLever", 0) == 2
-
-    # 3. 전측방(carstate blindspot) 또는 후측방(BSD hold counter / side object) 감지 시 취소 조건
-    bsd_cancel = False
-    if blinker_state == BLINKER_LEFT:
-      bsd_cancel = carstate.leftBlindspot or (side is not None and (side.bsd_hold_counter > 0 or side.side_object_detected))
-    elif blinker_state == BLINKER_RIGHT:
-      bsd_cancel = carstate.rightBlindspot or (side is not None and (side.bsd_hold_counter > 0 or side.side_object_detected))
-
-    # 위 3가지 중 하나라도 해당되면 즉시 취소 요청(cancel_requested) 발생
-    cancel_requested = steering_pressed_cancel or blinker_lever_cancel or bsd_cancel
-
-    if cancel_requested and self.lane_change_state != LaneChangeState.off:
+    if steering_pressed_cancel and self.lane_change_state != LaneChangeState.off:
       self.lane_change_direction = LaneChangeDirection.none
       self.lane_change_state = LaneChangeState.off
       self.blinker_ignore = True
@@ -428,6 +456,7 @@ class DesireHelper:
     else:
       self.desire = DESIRES[self.lane_change_direction][self.lane_change_state]
 
+    # keep pulse
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.laneChangeStarting):
       self.keep_pulse_timer = 0.0
     elif self.lane_change_state == LaneChangeState.preLaneChange:
