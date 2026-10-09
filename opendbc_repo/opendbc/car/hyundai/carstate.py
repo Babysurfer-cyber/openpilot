@@ -284,10 +284,13 @@ class CarState(CarStateBase):
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
-
   
   def _update_blinker_stalks(self, cp, ret):
     """BLINKER_STALKS 메시지에서 툭(Tap) 쳤는지 제쳤는지(Latched) 판별"""
+    # 0.3초(30프레임) 딜레이를 위한 타이머 변수 초기화 (클래스 인스턴스에 없으면 생성)
+    if not hasattr(self, 'tap_timer'):
+      self.tap_timer = 0
+
     if hasattr(self, 'blinker_stalks') and self.blinker_stalks is not None:
       stalks = self.blinker_stalks
       # 값을 안전하게 가져옵니다.
@@ -301,13 +304,28 @@ class CarState(CarStateBase):
       self.left_stalk_prev, self.right_stalk_prev = left_stalk, right_stalk
       
       tap = stalks.get("LEFT_BLINKER_TAP", 0) or stalks.get("RIGHT_BLINKER_TAP", 0)
-      ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+      
+      # ▼▼▼ 0.3초 딜레이 로직 적용 ▼▼▼
+      if left_stalk or right_stalk:
+        self.tap_timer = 0
+        ret.blinkerLever = 2
+      elif tap:
+        self.tap_timer += 1
+        if self.tap_timer > 30:  # 30프레임(0.3초) 유지 시 탭으로 인정
+          ret.blinkerLever = 1
+        else:
+          ret.blinkerLever = 0   # 0.3초 미만이면 보류
+      else:
+        self.tap_timer = 0
+        ret.blinkerLever = 0
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     else:
+      self.tap_timer = 0
       ret.blinkerLever = 0
 
     ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
     ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
-                  
     
   def update(self, can_parsers) -> structs.CarState:
     self.monitor_fingerprint(can_parsers, self.CP.flags & HyundaiFlags.CANFD)
