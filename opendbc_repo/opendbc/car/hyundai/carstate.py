@@ -126,6 +126,10 @@ class CarState(CarStateBase):
     self.manual_speed_limit_assist = None
     self.accelerator = None
     self.blinkers = None
+    self.blinkers_alt = None  # 추가
+    self.blinker_stalks = None  # 추가
+    self.left_stalk_prev = self.right_stalk_prev = False  # 추가
+    self.left_blinker_stalk_count = self.right_blinker_stalk_count = 0  # 추가
     self.doors_seatbelts = None
     self.cruise_buttons_alt2 = None
 
@@ -273,13 +277,12 @@ class CarState(CarStateBase):
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
+          add_and_cache(self.cp, "BLINKERS_ALT", "blinkers_alt")  # 추가
+          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks", ignore_counter=True)  # 추가
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
-         
-          
-          
-        
+               
     
   def update(self, can_parsers) -> structs.CarState:
     self.monitor_fingerprint(can_parsers, self.CP.flags & HyundaiFlags.CANFD)
@@ -483,7 +486,7 @@ class CarState(CarStateBase):
       self.main_enabled = not self.main_enabled
 
     return ret
-
+  
   # ▼▼▼ [추가] 순정 내비 방지턱 데이터 파싱 및 RAM 디스크 저장 (카메라 무시) ▼▼▼
   def _clear_vehicle_navi_events(self):
     self.vehicleNaviEvents = []
@@ -538,6 +541,23 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents.sort(key=lambda event: event["target"])
     self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
 
+  
+  def _update_blinker_stalks(self, ret):
+    """Turn-signal lever (BLINKER_STALKS): presses (rising edges) into carState.*BlinkerStalkCount, position into blinkerLever."""
+    if self.blinker_stalks is not None:
+      left_stalk, right_stalk = bool(self.blinker_stalks["LEFT_BLINKER"]), bool(self.blinker_stalks["RIGHT_BLINKER"])
+      if left_stalk and not self.left_stalk_prev:
+        self.left_blinker_stalk_count = (self.left_blinker_stalk_count + 1) % 256
+      if right_stalk and not self.right_stalk_prev:
+        self.right_blinker_stalk_count = (self.right_blinker_stalk_count + 1) % 256
+      self.left_stalk_prev, self.right_stalk_prev = left_stalk, right_stalk
+      # *_TAP is set only in the one-touch detent; a latch passes through it for ~0.1 s
+      tap = self.blinker_stalks["LEFT_BLINKER_TAP"] or self.blinker_stalks["RIGHT_BLINKER_TAP"]
+      ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+    ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
+    ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
+
+  
   def _update_vehicle_navi_events(self, cp):
     if not getattr(self, 'vehicleNaviCanControl', False):
       return 0.0, 0.0
@@ -676,8 +696,12 @@ class CarState(CarStateBase):
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
     #ret.steerFaultTemporary = False
 
-    if self.blinkers is not None:
-      blinkers_info = self.blinkers
+    # ▼▼▼ 레버 상태 업데이트 함수 호출 추가 ▼▼▼
+    self._update_blinker_stalks(ret)
+
+    # ▼▼▼ 기존 램프 처리 로직을 BLINKERS_ALT도 지원하도록 보강 ▼▼▼
+    blinkers_info = self.blinkers if self.blinkers is not None else self.blinkers_alt if self.blinkers_alt is not None else None
+    if blinkers_info is not None:
       left_blinker_lamp = blinkers_info["LEFT_LAMP"] or blinkers_info["LEFT_LAMP_ALT"]
       right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
       ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, left_blinker_lamp, right_blinker_lamp)
