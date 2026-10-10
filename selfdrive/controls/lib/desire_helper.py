@@ -249,11 +249,11 @@ class DesireHelper:
     if self.stalk_press_timer < 2.0:
       self.stalk_press_timer += DT_MDL
 
-    # 원터치 확정 로직 (0.15초 안에 완전 체결이 되지 않고 1까지만 갔다면 원터치)
-    if self.stalk_max_level == 1 and self.stalk_press_timer >= 0.15:
+    # 원터치 확정 로직 (0.3초 안에 완전 체결이 되지 않고 1까지만 갔다면 원터치)
+    if self.stalk_max_level == 1 and self.stalk_press_timer >= 0.3:
       self.one_touch_triggered = True
     elif carstate.blinkerLever == 0 and self.stalk_max_level == 1 and self.stalk_press_timer > 0:
-      # 0.15초 전에 레버가 다시 0으로 튕겨 올라왔어도 원터치로 확정
+      # 0.3초 전에 레버가 다시 0으로 튕겨 올라왔어도 원터치로 확정
       self.one_touch_triggered = True
 
     # 완전 체결(2)이 감지되었다면 원터치 동작은 무조건 취소 (메뉴얼 조향용)
