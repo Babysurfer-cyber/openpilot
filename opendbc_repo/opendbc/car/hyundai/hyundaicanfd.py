@@ -900,19 +900,26 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         is_only_left_blinker = CS.out.leftBlinker and not CS.out.rightBlinker
         is_only_right_blinker = CS.out.rightBlinker and not CS.out.leftBlinker
         
-        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
-        # 💡 [추가] blinkerLever가 2(완전 체결)일 때는 차선 변경 의도가 아니므로 경고(10)를 띄우지 않음
-        if v_ego_kph >= 30.0 and not is_changing_lane and getattr(CS.out, 'blinkerLever', 0) != 2:
+        # ==========================================================
+        # ▼ [딜레이 타이머 추가] 레버가 1단계를 거쳐 2단계(체결)로 가는 
+        # 찰나의 순간(0.3초)을 기다려준 뒤 최종 판단!
+        # ==========================================================
+        if not hasattr(create_ccnc_messages, '_blinker_timer'):
+            create_ccnc_messages._blinker_timer = 0
             
-            # [왼쪽 방향] (비상깜빡이가 아닐 때만)
-            #if is_only_left_blinker and danger_left:
-                #alc_msg = 1  
+        if is_only_left_blinker or is_only_right_blinker:
+            # frame % 5 == 0 블럭 안에 있으므로, 한 번 돌 때마다 5프레임씩(0.05초) 추가
+            create_ccnc_messages._blinker_timer += 5 
+        else:
+            create_ccnc_messages._blinker_timer = 0
+            
+        # 💡 [핵심] 0.3초(30프레임) 이상 깜빡이가 켜져 있었고 & 최종적으로 완전 체결(2)이 아닐 때만 허용
+        blinker_valid = (create_ccnc_messages._blinker_timer >= 30) and (getattr(CS.out, 'blinkerLever', 0) != 2)
+        
+        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
+        if v_ego_kph >= 30.0 and not is_changing_lane and blinker_valid:
             if is_only_left_blinker and left_solid:
                 alc_msg = 10 
-                
-            # [오른쪽 방향] (비상깜빡이가 아닐 때만)
-            #elif is_only_right_blinker and danger_right:
-                #alc_msg = 1  
             elif is_only_right_blinker and right_solid:
                 alc_msg = 10 
 
@@ -922,9 +929,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # 💡 [수정] 비상깜빡이(양쪽 점등) 시에는 BSD 위험 경고(HDA_MODE2=2) 제외!
-        # 💡 [추가] blinkerLever가 2(완전 체결)일 때도 BSD 빨간 박스 팝업(HDA_MODE2=2) 제외!
-        bsd_warning_active = getattr(CS.out, 'blinkerLever', 0) != 2 and (
+        # 💡 [수정] BSD 위험 경고(HDA_MODE2=2)에도 동일하게 0.3초 타이머 + 체결 관문 적용!
+        bsd_warning_active = blinker_valid and (
                              (is_only_left_blinker and danger_left) or 
                              (is_only_right_blinker and danger_right)
                              )
