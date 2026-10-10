@@ -778,12 +778,72 @@ class CarState(CarStateBase):
       ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
       corner = True
     if corner:
-      left_block = True if 0 < ret.leftLongDist < 3.0 or 0 < self.lr_distance < 5.0 else False
-      right_block = True if 0 < ret.rightLongDist < 3.0 or 0 < self.rr_distance < 5.0 else False
-      if left_block:
+      # ▼▼▼ [수정] 측방 차량 속도 계산을 통한 BSD 사각지대(블라인드 스팟) 완벽 방어 ▼▼▼
+      if not hasattr(self, 'bs_timer'):
+        self.corner_hist = {"LF": deque(maxlen=15), "RF": deque(maxlen=15), "LR": deque(maxlen=15), "RR": deque(maxlen=15)}
+        self.bs_timer = {"L": 0, "R": 0}
+        self.last_approach_time = {"L": 0.0, "R": 0.0}
+      
+      def calc_speed_and_time(hist, current_dist):
+        if current_dist > 0.1:
+          hist.append(current_dist)
+          if len(hist) >= 5:
+            # v = (현재 거리 - 과거 거리) / 시간. 
+            # 차가 다가오고 있다면 거리가 좁혀지므로 v는 음수(-)가 됨
+            v = (hist[-1] - hist[0]) / (len(hist) * DT_CTRL)
+            if v < -0.5:
+              # 사각지대 구간(약 4.5m)을 해당 속도로 통과하는 데 걸리는 시간 예상 (최대 3초)
+              return min(4.5 / abs(v), 3.0) 
+            elif abs(v) <= 0.5:
+              # 속도 차이 없이 나란히 달리고 있다면 기본 2.5초 유지
+              return 2.5
+        else:
+          hist.clear()
+        return 0.0
+
+      # 1. 4개의 코너 레이더 각각의 접근 속도를 계산하여 사각지대 예상 통과 시간 산출
+      time_lf = calc_speed_and_time(self.corner_hist["LF"], ret.leftLongDist)
+      time_rf = calc_speed_and_time(self.corner_hist["RF"], ret.rightLongDist)
+      time_lr = calc_speed_and_time(self.corner_hist["LR"], self.lr_distance)
+      time_rr = calc_speed_and_time(self.corner_hist["RR"], self.rr_distance)
+
+      # 2. 현재 레이더 시야에 차량이 존재하는지 확인
+      left_front_seen = 0 < ret.leftLongDist < 3.0
+      left_rear_seen = 0 < self.lr_distance < 5.0
+      right_front_seen = 0 < ret.rightLongDist < 3.0
+      right_rear_seen = 0 < self.rr_distance < 5.0
+
+      # --- 3. 좌측 사각지대(BSD) 로직 ---
+      if left_front_seen or left_rear_seen:
+        # 차가 레이더에 보일 때는 끄트머리에서 사라질 때를 대비해 통과 시간을 계속 저장해둠
+        self.last_approach_time["L"] = max(time_lf, time_lr, 0.5) 
+        self.bs_timer["L"] = 0
         ret.leftBlindspot = True
-      if right_block:
+      else:
+        # 차가 레이더에서 막 사라진 순간 (사각지대 진입) -> 저장해둔 시간만큼 타이머 장전!
+        if self.last_approach_time["L"] > 0:
+          self.bs_timer["L"] = int(self.last_approach_time["L"] / DT_CTRL)
+          self.last_approach_time["L"] = 0.0 
+          
+        # 예상 시간이 끝날 때까지 가상으로 BSD 점등을 꽉 쥐고 유지함 (차선변경 방어)
+        if self.bs_timer["L"] > 0:
+          self.bs_timer["L"] -= 1
+          ret.leftBlindspot = True
+
+      # --- 4. 우측 사각지대(BSD) 로직 ---
+      if right_front_seen or right_rear_seen:
+        self.last_approach_time["R"] = max(time_rf, time_rr, 0.5)
+        self.bs_timer["R"] = 0
         ret.rightBlindspot = True
+      else:
+        if self.last_approach_time["R"] > 0:
+          self.bs_timer["R"] = int(self.last_approach_time["R"] / DT_CTRL)
+          self.last_approach_time["R"] = 0.0
+          
+        if self.bs_timer["R"] > 0:
+          self.bs_timer["R"] -= 1
+          ret.rightBlindspot = True
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
