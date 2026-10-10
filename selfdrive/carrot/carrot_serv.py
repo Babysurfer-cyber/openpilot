@@ -1265,7 +1265,7 @@ class CarrotServ:
         elapsed_time = current_time - self.ramp_start_time
         if elapsed_time <= 5.0:
           current_target_v = self.ramp_start_v_ego - (1.5 * elapsed_time)
-          ramp_target_speed_kph = max(40.0, current_target_v * 3.6)
+          ramp_target_speed_kph = max(60.0, current_target_v * 3.6)
           self.szPosRoadName = f"RAMP 감속중 ({int(ramp_target_speed_kph)}km/h)"
         else:
           self.ramp_decel_active = False
