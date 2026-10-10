@@ -1082,13 +1082,16 @@ class CarrotServ:
               if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv or is_engaging_serv:
                 
                 # 💡 '변경 직전의 속도(auto_active_target)'를 기준으로 오프셋 계산
+                # [버그픽스] 무조건 +10km/h를 강제하던 하드코딩을 제거하고, 현재 설정된 오프셋 역산
+                current_offset = max(0.0, self.auto_active_target - self.auto_prev_limit_serv) if self.auto_prev_limit_serv > 0 else 0.0
+                
                 if target_raw_limit < self.auto_active_target:
                   raw_offset = (self.auto_active_target - target_raw_limit) / 2.0
                 else:
-                  raw_offset = 10.0
+                  raw_offset = current_offset
                   
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-                offset = max(10.0, calculated_offset)
+                offset = max(current_offset, calculated_offset)
                 expected_target = target_raw_limit + offset
 
                 # 💡 [버그 픽스] 계산된 속도가 '기억하던 예전 속도'와 진짜로 다를 때만 소리 울림!
