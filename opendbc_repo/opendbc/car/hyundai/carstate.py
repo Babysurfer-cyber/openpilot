@@ -706,6 +706,16 @@ class CarState(CarStateBase):
       right_blinker_lamp = blinkers_info["RIGHT_LAMP"] or blinkers_info["RIGHT_LAMP_ALT"]
       ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, left_blinker_lamp, right_blinker_lamp)
 
+    # ▼▼▼ [추가] cruise.py와 동기화하기 위한 우측 깜빡이 20초(2000프레임) 유지 타이머 ▼▼▼
+    if not hasattr(self, 'right_blinker_timer'):
+      self.right_blinker_timer = 0
+      
+    if ret.rightBlinker and not ret.leftBlinker:
+      self.right_blinker_timer = 2000
+    else:
+      self.right_blinker_timer = max(0, self.right_blinker_timer - 1)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     if self.CP.enableBsm:
       if self.cp_bsm is None:
         if 442 in cp.seen_addresses:
@@ -886,19 +896,22 @@ class CarState(CarStateBase):
     if self.frame_for_params % 100 == 0:
       self.vehicleNaviCanControl = Params().get_bool("VehicleNaviCanControl")
 
+    # 기존 코드
     cam_limit, cam_dist = self._update_vehicle_navi_events(cp)
-        
     nav_toll_exist = getattr(ret, 'navTollExist', 0)
     
-    # ▼▼▼ [수정] 4A3 기본 속도가 있더라도, 전방에 진짜 카메라/방지턱 거리(cam_dist > 0)가 들어오면 무조건 통과시킵니다! ▼▼▼
-    if cam_limit > 0 and (cam_dist > 0 or nav_toll_exist != 0 or ret.speedLimit == 0):
+    # ▼▼▼ [추가] 링크 클래스 확인 ▼▼▼
+    nav_link_class = getattr(ret, 'navLinkClass', 0)
+    is_ic_jc = (nav_link_class in [2, 3])
+
+    # ▼▼▼ [수정] 카메라, 톨게이트, 4A3없음 + 우측깜빡이(20초) 또는 IC/JC 진입 시 4BE를 통과시킵니다! ▼▼▼
+    if cam_limit > 0 and (cam_dist > 0 or nav_toll_exist != 0 or ret.speedLimit == 0 or self.right_blinker_timer > 0 or is_ic_jc):
       ret.speedLimit = cam_limit
       if cam_dist > 0:
         speed_limit_cam = True
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
         speed_limit_cam = False
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     self.update_speed_limit(ret, speed_limit_cam)
 
