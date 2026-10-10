@@ -901,20 +901,28 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         is_only_right_blinker = CS.out.rightBlinker and not CS.out.leftBlinker
         
         # ==========================================================
-        # ▼ [딜레이 타이머 추가] 레버가 1단계를 거쳐 2단계(체결)로 가는 
-        # 찰나의 순간(0.3초)을 기다려준 뒤 최종 판단!
+        # ▼ [딜레이 타이머 & 체결 이력 기억] 레버가 1단계를 거쳐 2단계로 가는 
+        # 찰나의 순간(0.3초)을 기다리고, 2단계 도달 이력을 깜빡이가 꺼질 때까지 기억함!
         # ==========================================================
         if not hasattr(create_ccnc_messages, '_blinker_timer'):
             create_ccnc_messages._blinker_timer = 0
+            create_ccnc_messages._lever_max_level = 0
+            
+        current_lever = getattr(CS.out, 'blinkerLever', 0)
             
         if is_only_left_blinker or is_only_right_blinker:
             # frame % 5 == 0 블럭 안에 있으므로, 한 번 돌 때마다 5프레임씩(0.05초) 추가
             create_ccnc_messages._blinker_timer += 5 
+            # 깜빡이가 켜져 있는 동안 레버가 도달한 가장 깊은 위치(max_level)를 기록
+            if current_lever > create_ccnc_messages._lever_max_level:
+                create_ccnc_messages._lever_max_level = current_lever
         else:
+            # 깜빡이가 완전히 꺼지면 타이머와 레버 최대 깊이 기록 초기화
             create_ccnc_messages._blinker_timer = 0
+            create_ccnc_messages._lever_max_level = 0
             
-        # 💡 [핵심] 0.3초(30프레임) 이상 깜빡이가 켜져 있었고 & 최종적으로 완전 체결(2)이 아닐 때만 허용
-        blinker_valid = (create_ccnc_messages._blinker_timer >= 30) and (getattr(CS.out, 'blinkerLever', 0) != 2)
+        # 💡 [핵심] 0.3초(30프레임) 이상 켜져 있었고 & 이번 깜빡임 주기에서 '단 한 번도 2(체결)에 도달한 적이 없을 때(max == 1)'만 인정!
+        blinker_valid = (create_ccnc_messages._blinker_timer >= 30) and (create_ccnc_messages._lever_max_level == 1)
         
         # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
         if v_ego_kph >= 30.0 and not is_changing_lane and blinker_valid:
