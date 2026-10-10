@@ -118,8 +118,8 @@ class DesireHelper:
     changed = st != self.driver_blinker_state
     self.driver_blinker_state = st
 
-    # ▼▼▼ [수정] 완전히 체결된 상태(2)는 제외하고, 오직 '원터치'일 때만 차선변경(조향 개입) 허용 ▼▼▼
-    enabled = (st in (BLINKER_LEFT, BLINKER_RIGHT)) and self.one_touch_triggered
+    # ▼▼▼ 원상 복구: 턴 유도를 위해 체결(2) 신호도 일단 통과시켜 줍니다 ▼▼▼
+    enabled = (st in (BLINKER_LEFT, BLINKER_RIGHT)) and (self.one_touch_triggered or carstate.blinkerLever == 2)
 
     if self.laneChangeNeedTorque < 0:
       enabled = False
@@ -383,16 +383,18 @@ class DesireHelper:
 
         if self.lane_change_state == LaneChangeState.off:
           if desire_enabled and not self.prev_desire_enabled and not below_lane_change_speed and side is not None:
-            self.lane_change_state = LaneChangeState.preLaneChange
-            self.lane_change_ll_prob = 1.0
-            self.lane_change_delay = self.laneChangeDelay
-
-            # 맨 끝 차선이 아니면, ATC 자동 차선변경 비활성
-            # (원본 유지: 차선 존재하거나 geom 가능하면 auto off, 아니면 on)
-            lane_exist_counter_side = side.lane_exist_count.counter
-            lane_change_available_geom = side.lane_change_available_geom
-            self.auto_lane_change_enable = False if (lane_exist_counter_side > 0 or lane_change_available_geom) else True
-            self.next_lane_change = False
+            # ▼▼▼ [수정] 원터치 조작이거나, 자동차선변경(ATC)일 때만 차선변경 로직 진입 허용 ▼▼▼
+            if self.one_touch_triggered or atc_enabled or self.carrot_lane_change_count > 0:
+              self.lane_change_state = LaneChangeState.preLaneChange
+              self.lane_change_ll_prob = 1.0
+              self.lane_change_delay = self.laneChangeDelay
+  
+              # 맨 끝 차선이 아니면, ATC 자동 차선변경 비활성
+              # (원본 유지: 차선 존재하거나 geom 가능하면 auto off, 아니면 on)
+              lane_exist_counter_side = side.lane_exist_count.counter
+              lane_change_available_geom = side.lane_change_available_geom
+              self.auto_lane_change_enable = False if (lane_exist_counter_side > 0 or lane_change_available_geom) else True
+              self.next_lane_change = False
 
         elif self.lane_change_state == LaneChangeState.preLaneChange:
           if side is None:
