@@ -118,8 +118,8 @@ class DesireHelper:
     changed = st != self.driver_blinker_state
     self.driver_blinker_state = st
 
-    # ▼▼▼ [수정] 원터치 확정(차선변경)이거나, 완전히 체결(Turn)되었을 때 OP 개입(enabled) 허용 ▼▼▼
-    enabled = (st in (BLINKER_LEFT, BLINKER_RIGHT)) and (self.one_touch_triggered or carstate.blinkerLever == 2)
+    # ▼▼▼ [수정] 완전히 체결된 상태(2)는 제외하고, 오직 '원터치'일 때만 차선변경(조향 개입) 허용 ▼▼▼
+    enabled = (st in (BLINKER_LEFT, BLINKER_RIGHT)) and self.one_touch_triggered
 
     if self.laneChangeNeedTorque < 0:
       enabled = False
