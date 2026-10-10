@@ -961,9 +961,14 @@ class CarrotServ:
     # =========================================================
 
     ### 과속카메라, 사고방지턱
+    
+    if not hasattr(self, 'hda_section_camera_active'):
+      self.hda_section_camera_active = False
+      
+    map_source = getattr(CS, 'mapSource', 0) if CS is not None else 0
 
     if (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0:
-
+      # (외부 앱을 안 쓰시지만 구조 유지를 위해 남겨둡니다)
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
       sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
@@ -971,23 +976,38 @@ class CarrotServ:
       if self.xSpdType == 4 or (self.xSpdType in [100, 101] and self.xSpdDist <= 0):
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
-    elif CS is not None and CS.speedLimit > 0 and CS.speedLimitDistance > 0:
-      sdi_speed = min(sdi_speed,
-                      self.calculate_current_speed(CS.speedLimitDistance,
-                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
-                                                   self.autoNaviSpeedCtrlEnd,
-                                                   self.autoNaviSpeedDecelRate))
-      #self.active_carrot = 6
+        
+    # ▼▼▼ [수정: 순정 내비 4A3 단독 - mapSource=2(카메라) 인사이트 완벽 반영] ▼▼▼
+    elif CS is not None and CS.speedLimit > 0 and (CS.speedLimitDistance > 0 or map_source == 2):
+      calc_speed = 250
+      if CS.speedLimitDistance > 0:
+        calc_speed = self.calculate_current_speed(CS.speedLimitDistance,
+                                                  CS.speedLimit * self.autoNaviSpeedSafetyFactor,
+                                                  self.autoNaviSpeedCtrlEnd,
+                                                  self.autoNaviSpeedDecelRate)
+      
+      # 💡 [핵심] 구간단속 끊김 완벽 방어
+      if map_source == 2:
+        # 1) 카메라 앞 50m 이내로 접근했거나 통과 중(거리 0)일 때
+        # 2) 구간단속 내부에 진입하여 끝단 거리가 멀게(1500m 이상) 뜰 때
+        # 3) 이미 구간단속 상태로 진입하여 유지 중일 때
+        if CS.speedLimitDistance <= 50 or CS.speedLimitDistance > 1500 or self.hda_section_camera_active:
+          self.hda_section_camera_active = True
+          calc_speed = min(calc_speed, CS.speedLimit * self.autoNaviSpeedSafetyFactor)
+      else:
+        self.hda_section_camera_active = False
+
+      sdi_speed = min(sdi_speed, calc_speed)
       hda_active = True
       
-      # =========================================================
-      # ▼ [추가] 순정 내비 카메라 감지 시 화면 깜빡임 연동 스위치!
-      # =========================================================
       self.xSpdLimit = CS.speedLimit
-      self.xSpdDist = CS.speedLimitDistance
-      self.xSpdType = 1  # 1: 고정식 과속카메라 (UI에서 CAM으로 인식하게 만듦)
-      self.active_carrot = max(self.active_carrot, 2)  # 강제로 UI를 깨움
-      # =========================================================
+      self.xSpdDist = max(0, CS.speedLimitDistance) # 거리가 0 밑으로 떨어지는 것 방지
+      self.xSpdType = 4 if self.hda_section_camera_active else 1 # 계기판에 구간단속(4)으로 표출
+      self.active_carrot = max(self.active_carrot, 2)
+      
+    else:
+      self.hda_section_camera_active = False
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     #print(f"sdi_speed: {sdi_speed}, hda_active: {hda_active}, xSpdType: {self.xSpdType}, xSpdDist: {self.xSpdDist}, active_carrot: {self.active_carrot}, v_ego_kph: {v_ego_kph}, nRoadLimitSpeed: {self.nRoadLimitSpeed}")
     ### TBT 속도제어
