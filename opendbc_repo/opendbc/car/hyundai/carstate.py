@@ -815,9 +815,9 @@ class CarState(CarStateBase):
       front_dist_limit = float(np.interp(v_ego_kph, [30.0, 70.0], [3.0, 7.0]))
       
       left_front_seen = 0 < ret.leftLongDist < front_dist_limit
-      left_rear_seen = 0 < self.lr_distance < 5.0
+      left_rear_seen = 0 < self.lr_distance < 3.0
       right_front_seen = 0 < ret.rightLongDist < front_dist_limit
-      right_rear_seen = 0 < self.rr_distance < 5.0
+      right_rear_seen = 0 < self.rr_distance < 3.0
 
       # --- 3. 좌측 사각지대(BSD) 로직 ---
       if left_front_seen or left_rear_seen:
