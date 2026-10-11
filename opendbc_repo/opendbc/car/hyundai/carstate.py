@@ -807,10 +807,16 @@ class CarState(CarStateBase):
       time_lr = calc_speed_and_time(self.corner_hist["LR"], self.lr_distance)
       time_rr = calc_speed_and_time(self.corner_hist["RR"], self.rr_distance)
 
-      # 2. 현재 레이더 시야에 차량이 존재하는지 확인
-      left_front_seen = 0 < ret.leftLongDist < 3.0
+      # 2. 현재 레이더 시야에 차량이 존재하는지 확인 (전측방 감지 거리 가변 적용)
+      # 내 차의 현재 속도(km/h) 계산
+      v_ego_kph = ret.vEgo * CV.MS_TO_KPH
+      
+      # np.interp를 이용해 30km/h 이하일 땐 3m, 70km/h 이상일 땐 7m로 선형 보간 (그 사이는 부드럽게 조절됨)
+      front_dist_limit = float(np.interp(v_ego_kph, [30.0, 70.0], [3.0, 7.0]))
+      
+      left_front_seen = 0 < ret.leftLongDist < front_dist_limit
       left_rear_seen = 0 < self.lr_distance < 5.0
-      right_front_seen = 0 < ret.rightLongDist < 3.0
+      right_front_seen = 0 < ret.rightLongDist < front_dist_limit
       right_rear_seen = 0 < self.rr_distance < 5.0
 
       # --- 3. 좌측 사각지대(BSD) 로직 ---
