@@ -902,6 +902,8 @@ class RadarD:
     # 3. 방어 구역 판별
     if raw_lat <= (lane_edge - 0.3):
       v_lat_threshold = 0.1  
+    elif raw_lat <= (lane_edge - 0.1):  
+      v_lat_threshold = 0.001
     elif raw_lat <= (lane_edge + 0.1):  
       v_lat_threshold = -0.05
     elif raw_lat <= (lane_edge + 0.3):  
@@ -909,6 +911,10 @@ class RadarD:
     else:              
       v_lat_threshold = -0.5
 
+    # [수정] 5m 이내 초근접 & 내 차 속도 시속 30km(약 8.33m/s) 이하일 때만 강력한 방어 적용
+    if cur_long < 5.0 and CS.vEgo < 8.33 and raw_lat <= (lane_edge + 0.1):  
+      v_lat_threshold = max(v_lat_threshold, 0.001)
+    
     is_cutting_in = v_lat_corrected < v_lat_threshold
 
     # 반환값 4개: (끼어들기 여부, 상대 속도, 보정된 횡속도, 계산된 가속도)
@@ -1068,3 +1074,4 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
+ 
