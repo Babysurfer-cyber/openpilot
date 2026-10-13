@@ -293,6 +293,7 @@ class VCruiseCarrot:
       carrot_man = sm['carrotMan']
       self.nRoadLimitSpeed = carrot_man.nRoadLimitSpeed
       self.desiredSpeed = carrot_man.desiredSpeed
+      self.desiredSource = carrot_man.desiredSource   # <--- 이 줄을 반드시 추가해야 합니다!
       self.carrot_cmd_index = carrot_man.carrotCmdIndex
       self.carrot_cmd = carrot_man.carrotCmd
       self.carrot_arg = carrot_man.carrotArg
@@ -690,15 +691,14 @@ class VCruiseCarrot:
       else:
         self.stationary_lead_timer = 0
         
-      # 3. 감속 목표 속도 도달 후 1초 유지
+      # 3. 오직 'VTRUN' (비전 곡률 감속) 목표 속도 도달 시 즉시 복귀 (1초 대기 없음)
       if not restore_triggered:
-        if self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
-          self.target_speed_reach_timer += 1
-          if self.target_speed_reach_timer >= 100:  # 1초
-            restore_triggered = True
-            restore_reason = f"Target Speed {self.desiredSpeed} Reached"
-        else:
-          self.target_speed_reach_timer = 0
+        current_source = getattr(self, 'desiredSource', '')
+        is_vturn_decel = (current_source == "VTRUN")
+        
+        if is_vturn_decel and self.desiredSpeed < 200 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
+          restore_triggered = True
+          restore_reason = f"VTRUN Speed {self.desiredSpeed} Reached"
 
       # 🚀 복귀 트리거 발동
       if restore_triggered:
