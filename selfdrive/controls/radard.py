@@ -822,7 +822,7 @@ class RadarD:
 
   def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
     # 1. 값이 없거나 너무 멀면 대기 (초기화)
-    if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 30.0: 
+    if raw_lat <= 0.01 or raw_lat > max_lat_dist or cur_long > 45.0: 
       self._corner_missing_cnt[side] += 1
       if self._corner_missing_cnt[side] > 5:  
         self._corner_hist[side].clear()
@@ -922,7 +922,7 @@ class RadarD:
     raw_right_lat = CS.rightLatDist
 
     nav_link_class = getattr(CS, 'navLinkClass', 0)
-    base_max_long = 50.0 if nav_link_class == 1 else 30.0
+    base_max_long = 45.0 if nav_link_class == 1 else 30.0
 
     if lead_dict['status'] and lead_dict['dRel'] > 0:
       dynamic_max_long = min(base_max_long, lead_dict['dRel'])
@@ -943,7 +943,7 @@ class RadarD:
         
       idx = 1 if is_left else 2
       if md.laneLineProbs[idx] > 0.5 and len(md.laneLines[idx].y) > 0:
-        calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
+        calc_dist = min(float(target_long), 45.0) if target_long > 0.0 else 0.0
         
         lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
         lane_edge = lane_y + 0.95               
