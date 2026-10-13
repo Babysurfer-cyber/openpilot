@@ -922,7 +922,7 @@ class RadarD:
     raw_right_lat = CS.rightLatDist
 
     nav_link_class = getattr(CS, 'navLinkClass', 0)
-    base_max_long = 25.0 if nav_link_class == 1 else 20.0
+    base_max_long = 50.0 if nav_link_class == 1 else 30.0
 
     if lead_dict['status'] and lead_dict['dRel'] > 0:
       dynamic_max_long = min(base_max_long, lead_dict['dRel'])
