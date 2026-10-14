@@ -13,18 +13,34 @@ def classify_maneuver_type(blinker_state: int,
 
   v_kph = carstate.vEgo * CV.MS_TO_KPH
   accel = carstate.aEgo
-                             
+
   # 고속도로/IC/JC 구분용
   nav_link_class = getattr(carstate, 'navLinkClass', 0)
-
+                            
   score_turn = 0
   
   # ▼▼▼ [수정] 완전 체결(blinkerLever == 2)일 때만 Turn 점수 부여 ▼▼▼
-  if v_kph <= 60.0 and carstate.blinkerLever == 2 and nav_link_class not in [1, 2, 3]:
-    score_turn += 2
+  if v_kph <= 40.0 and carstate.blinkerLever == 2:
+    score_turn += 1
+  elif v_kph <= 50.0 and accel < -1.0 and carstate.blinkerLever == 2:
+    score_turn += 1
 
+  # 차선 및 edge 유무에 따른 turn 판단
+  if v_kph <= 50.0 and (not side.lane_available) and (not side.edge_available) and carstate.blinkerLever == 2:
+    score_turn += 1
+
+  # 맨 끝 차선 확인
+  if v_kph <= 50.0 and side.lane_exist_count.counter < int(0.5 / DT_MDL) and carstate.blinkerLever == 2:
+    score_turn += 1
+
+  # 모델의 회전 예측
+  if turn_desire_state and carstate.blinkerLever == 2:
+    score_turn += 1
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+  if nav_link_class in [1, 2, 3]:
+    score_turn -= 2
+                             
   # ATC (내비게이션 자동 턴/차선변경)는 운전자 레버 조작과 무관하게 독립적으로 판단
   if atc_type in ("turn left", "turn right"):
     score_turn += 2
@@ -34,6 +50,7 @@ def classify_maneuver_type(blinker_state: int,
   edge_far = side.dist_to_edge_far > 4.0
 
   if score_turn >= 2:
-    return "turn"
-    
+    if edge_far:
+      return "turn"
+    return old_type
   return "lane_change"
