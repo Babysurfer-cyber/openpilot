@@ -1282,19 +1282,18 @@ class CarrotServ:
     blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
     gas_pressed = getattr(CS, 'gasPressed', False) if CS is not None else False
     
-    # 💡 [핵심] 깜빡이를 끄거나 1단계로 내리면 '취소 기억'을 초기화
+    # 💡 [핵심 1] 깜빡이를 끄거나 1단계로 내리면 '취소 기억'을 초기화
     if blinker_lever != 2:
       self.manual_turn_canceled = False
       
-    # 💡 [핵심] 깜빡이 2단계 중에 엑셀을 밟으면 이 턴에서는 영구 취소(블랙리스트) 처리
-    if blinker_lever == 2 and gas_pressed:
+    # 💡 [핵심 2] 엑셀을 밟거나, Vturn 감속이 70 이하로 개입할 정도(코너 진입)면 영구 취소!
+    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 70.0):
       self.manual_turn_canceled = True
 
-    # 조건: 고속도로 아님 & 2단 & 속도 60이하 & vturn 100이상 & 영구취소 안됨!
+    # 조건: 고속도로 아님 & 2단 & 속도 70이하 & 영구취소 안됨!
     turn_cond_met = (nav_link_class not in [1, 2, 3]) and \
                     (blinker_lever == 2) and \
-                    (v_ego_kph <= 60.0) and \
-                    (vturn_speed >= 100.0) and \
+                    (v_ego_kph <= 70.0) and \
                     (not getattr(self, 'manual_turn_canceled', False))
 
     # 1. 조건이 맞는 순간의 '시간'과 '현재 속도'를 금고에 백업
@@ -1302,6 +1301,7 @@ class CarrotServ:
       self.manual_turn_decel_active = True
       self.manual_turn_start_time = current_time
       self.manual_turn_start_v_ego = v_ego
+      
     # 2. 깜빡이를 끄거나 속도를 올려 조건이 깨지면 즉시 감속 해제
     elif not turn_cond_met:
       self.manual_turn_decel_active = False
