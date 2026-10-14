@@ -197,9 +197,14 @@ class CarrotServ:
     self.ramp_start_v_ego = 0.0
     self.prev_nav_link_class = 0
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    
+    # ▼▼▼ [추가] 사용자 정의 TURN 감속 관련 초기 변수 ▼▼▼
+    self.manual_turn_decel_active = False
+    self.manual_turn_start_time = 0.0
+    self.manual_turn_start_v_ego = 0.0
+    self.manual_turn_canceled = False    # ◀◀◀ 이 줄 하나만 미리 추가 (초기화)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    # 默认语言，稍后在 update_params 中从 Params 读取覆盖，
-    # 规则：main_ko -> 韩语；main_zh-CHS -> 中文；其他 -> 英文
     self.lang = "en"
 
     self.update_params()
@@ -1271,13 +1276,56 @@ class CarrotServ:
           self.ramp_decel_active = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+    # =========================================================
+    # ▼▼▼ [추가] 수동 턴(Turn) 감속 0.5m/s^2 로직 (UI "turn" 표시) ▼▼▼
+    # =========================================================
+    blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
+    gas_pressed = getattr(CS, 'gasPressed', False) if CS is not None else False
+    
+    # 💡 [핵심] 깜빡이를 끄거나 1단계로 내리면 '취소 기억'을 초기화
+    if blinker_lever != 2:
+      self.manual_turn_canceled = False
+      
+    # 💡 [핵심] 깜빡이 2단계 중에 엑셀을 밟으면 이 턴에서는 영구 취소(블랙리스트) 처리
+    if blinker_lever == 2 and gas_pressed:
+      self.manual_turn_canceled = True
+
+    # 조건: 고속도로 아님 & 2단 & 속도 60이하 & vturn 100이상 & 영구취소 안됨!
+    turn_cond_met = (nav_link_class not in [1, 2, 3]) and \
+                    (blinker_lever == 2) and \
+                    (v_ego_kph <= 60.0) and \
+                    (vturn_speed >= 100.0) and \
+                    (not getattr(self, 'manual_turn_canceled', False))
+
+    # 1. 조건이 맞는 순간의 '시간'과 '현재 속도'를 금고에 백업
+    if turn_cond_met and not getattr(self, 'manual_turn_decel_active', False):
+      self.manual_turn_decel_active = True
+      self.manual_turn_start_time = current_time
+      self.manual_turn_start_v_ego = v_ego
+    # 2. 깜빡이를 끄거나 속도를 올려 조건이 깨지면 즉시 감속 해제
+    elif not turn_cond_met:
+      self.manual_turn_decel_active = False
+
+    # 3. 0.5m/s^2 물리 감속 계산
+    manual_turn_target_speed_kph = 255.0
+    if getattr(self, 'manual_turn_decel_active', False):
+      elapsed_time = current_time - self.manual_turn_start_time
+      
+      # v = v0 - a*t 공식 적용 (0.5m/s^2 감속)
+      current_target_v = self.manual_turn_start_v_ego - (0.5 * elapsed_time)
+      
+      # 감속이 무한정 0이 되지 않도록 하한선을 30km/h로 설정
+      manual_turn_target_speed_kph = max(30.0, current_target_v * 3.6)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     speed_n_sources = [
       (atc_desired, "atc"),
       (atc_desired_next, "atc2"),
       (sdi_speed, "HDA" if hda_active else "bump" if final_xSpdType == 22 else "section" if final_xSpdType == 4 else "police" if final_xSpdType == 100 else "waze" if final_xSpdType == 101 else "CAM"),
       (vehicle_bump_speed, "bump"),
       (limit_speed, "road"),
-      (ramp_target_speed_kph, "RAMP"),  # 💡 [추가] RAMP 감속 속도 경쟁 합류!
+      (ramp_target_speed_kph, "RAMP"),  
+      (manual_turn_target_speed_kph, "turn"), # 💡 [추가] 턴 감속을 배열에 넣고 UI 텍스트 "turn" 지정
     ]
 
     if self.turnSpeedControlMode in [1,2]:
