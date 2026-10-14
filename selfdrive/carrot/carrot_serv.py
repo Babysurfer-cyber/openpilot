@@ -1287,13 +1287,13 @@ class CarrotServ:
       self.manual_turn_canceled = False
       
     # 💡 [핵심 2] 엑셀을 밟거나, Vturn 감속이 70 이하로 개입할 정도(코너 진입)면 영구 취소!
-    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 70.0):
+    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 80.0):
       self.manual_turn_canceled = True
 
     # 조건: 고속도로 아님 & 2단 & 속도 70이하 & 영구취소 안됨!
     turn_cond_met = (nav_link_class not in [1, 2, 3]) and \
                     (blinker_lever == 2) and \
-                    (v_ego_kph <= 70.0) and \
+                    (v_ego_kph <= 80.0) and \
                     (not getattr(self, 'manual_turn_canceled', False))
 
     # 1. 조건이 맞는 순간의 '시간'과 '현재 속도'를 금고에 백업
