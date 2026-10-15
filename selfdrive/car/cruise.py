@@ -500,6 +500,15 @@ class VCruiseCarrot:
     
     self.button_type_pressed = button_type  # ▼▼▼ [핵심 추가] 오토모드 오프셋 조절을 위해 눌린 버튼 기억 ▼▼▼
 
+    # ▼▼▼ [추가] CAN-FD 오류로 인한 크루즈 해제 시 +버튼 자동 입력 ▼▼▼
+    if self.enabled_last and not CC.enabled and getattr(self, '_lat_enabled', False):
+      # 브레이크, 엑셀, 캔슬 버튼 조작이 없고 && '메인 크루즈 시스템이 켜져 있는(대기) 상태'일 때만 작동!
+      if not CS.brakePressed and not CS.gasPressed and not getattr(self, '_cruise_cancel_state', False) and CS.cruiseState.available:
+        button_type = ButtonType.accelCruise
+        long_pressed = False
+        self._add_log("Auto Re-enable (+ button) on CAN-FD Fault")
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
       if getattr(self, 'carrot_cruise_active', False):
