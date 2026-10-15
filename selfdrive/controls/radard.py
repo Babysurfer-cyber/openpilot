@@ -911,8 +911,8 @@ class RadarD:
     else:              
       v_lat_threshold = -0.5
 
-    # [수정] 5m 이내 초근접 & 내 차 속도 시속 30km(약 8.33m/s) 이하일 때만 강력한 방어 적용
-    if cur_long < 5.0 and CS.vEgo < 8.33 and raw_lat <= (lane_edge + 0.1):  
+    # [수정] 5m 이내 초근접 & 내 차 속도 시속 50km(약 13.9m/s) 이하일 때만 강력한 방어 적용
+    if cur_long < 5.0 and CS.vEgo < 13.9 and raw_lat <= (lane_edge + 0.1):  
       v_lat_threshold = max(v_lat_threshold, 0.001)
     
     is_cutting_in = v_lat_corrected < v_lat_threshold
