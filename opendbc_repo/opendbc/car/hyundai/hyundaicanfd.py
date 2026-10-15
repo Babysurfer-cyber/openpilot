@@ -7,6 +7,10 @@ from openpilot.common.params import Params
 from opendbc.car.common.conversions import Conversions as CV
 from cereal import log
 
+import time
+from openpilot.common.filter_simple import FirstOrderFilter
+from opendbc.car import DT_CTRL
+
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 TurnDirection = log.Desire
@@ -25,6 +29,65 @@ def hyundai_crc8(data: bytes) -> int:
         crc = (crc << 1) & 0xFF
 
   return crc ^ 0xFF
+  
+# =========================================================
+# ▼▼▼ 앞차 움직임(HUD Lead Lateral) 개선을 위한 핵심 엔진 ▼▼▼
+# =========================================================
+def clip_float(x, lo, hi):
+  return lo if x < lo else hi if x > hi else float(x)
+
+def _display_lead(radar_state):
+  if radar_state is None:
+    return None
+  leads = (getattr(radar_state, name, None) for name in ("leadOne", "leadTwo"))
+  return min((lead for lead in leads
+              if lead is not None and lead.status and lead.dRel > 0
+              and all(math.isfinite(v) for v in (lead.dRel, lead.yRel, lead.vRel))),
+             key=lambda lead: lead.dRel, default=None)
+
+def _display_lead_lateral(lead, model_v2):
+  lateral = -lead.yRel
+  position = getattr(model_v2, "position", None)
+  if position is not None:
+    x, y = position.x, position.y
+    if (len(x) >= 2 and len(x) == len(y)
+        and all(math.isfinite(v) for v in x) and all(math.isfinite(v) for v in y)
+        and all(x[i] > x[i - 1] for i in range(1, len(x)))):
+      lateral -= float(np.interp(lead.dRel, x, y))
+  return lateral
+
+class DisplayLeadLateralFilter:
+  def __init__(self):
+    self.filter = FirstOrderFilter(0.0, 0.4, DT_CTRL, initialized=False)
+    self.target = None
+    self.distance = None
+    self.last_update_time = 0
+    self.last_val = 0.0
+
+  def update(self, radar_state, model_v2=None):
+    now = time.monotonic()
+    if now - self.last_update_time < 0.005:  # 1프레임 내 중복 계산 방지
+      return self.last_val
+    self.last_update_time = now
+
+    lead = _display_lead(radar_state)
+    if lead is None:
+      self.filter.initialized = False
+      self.target = self.distance = None
+      self.last_val = 0.0
+      return 0.0
+
+    target = (getattr(lead, "radar", False), getattr(lead, "radarTrackId", -1))
+    # 타겟이 바뀌거나 거리가 5m 이상 점프(유령 현상)하면 필터 즉시 초기화
+    if target != self.target or (self.distance is not None and abs(lead.dRel - self.distance) > 5.0):
+      self.filter.initialized = False
+    self.target, self.distance = target, lead.dRel
+    
+    self.last_val = self.filter.update(_display_lead_lateral(lead, model_v2))
+    return self.last_val
+
+lead_lateral_filter = DisplayLeadLateralFilter()
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 class CanBus(CanBusBase):
   def __init__(self, CP, fingerprint=None, lka_steering=None) -> None:
@@ -371,13 +434,22 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   values["DISTANCE_SETTING"] = hud_control.leadDistanceBars # + 5
   #values["DISTANCE_SETTING"] = hud_control.leadDistanceBars  + 5
 
-  #values["ACC_ObjDist"] = 1
+  # ▼▼▼ [앞차 움직임 개선 로직 적용] ▼▼▼
+  lead = _display_lead(getattr(CS, "radarState", None))
+  if lead is not None:
+    hud_lateral = lead_lateral_filter.update(getattr(CS, "radarState", None), getattr(CS, "modelV2", None))
+    values["ACC_ObjDist"] = clip_float(lead.dRel, 0.1, 204.5)
+    values["ACC_ObjLatPos"] = clip_float(hud_lateral, -45.6, 5.5)
+    values["ACC_ObjRelSpd"] = clip_float(lead.vRel, -170.0, 239.3)
+  else:
+    values.update(ACC_ObjDist=204.6, ACC_ObjLatPos=0.0, ACC_ObjRelSpd=239.4)
+  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
   #values["ObjValid"] = 0
   #values["OBJ_STATUS"] =  2
-  #values["NSCCOper"] = 2 if enabled else 0 # 0: off, 1: Ready, 2: Act, 3: Error Indicator
-  #values["NSCCOnOff"] = 2  # 0: Default, 1: Off, 2: On, 3: Invalid
-  #values["SET_ME_3"] = 0x3  # objRelsped와 충돌
-  #values["ACC_ObjLatPos"] = - hud_control.leadDPath
+  #values["NSCCOper"] = 2 if enabled else 0
+  #values["NSCCOnOff"] = 2
+  #values["SET_ME_3"] = 0x3
   values["DriveMode"] = 0 # 0: Default, 1: Comfort Mode, 2:Normal mode, 3:Dynamic mode, reserved
 
   hud_lead_info = 0
