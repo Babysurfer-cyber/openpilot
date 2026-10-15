@@ -1303,6 +1303,7 @@ class CarrotServ:
         )
 
     # =========================================================
+    # =========================================================
     # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.5m/s^2 로직 (SideState 활용) ▼▼▼
     # =========================================================
     blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
@@ -1312,9 +1313,17 @@ class CarrotServ:
     # 💡 깜빡이를 끄거나 1단계로 내리면 '취소 기억' 초기화
     if blinker_lever != 2:
       self.manual_turn_canceled = False
+
+    # 💡 [추가] 교차로 진입(도로 경계선이 멀어짐) 판단
+    is_edge_far = False
+    if CS is not None:
+      if getattr(CS, 'leftBlinker', False):
+        is_edge_far = getattr(self.left_side, 'edge_far', False)
+      elif getattr(CS, 'rightBlinker', False):
+        is_edge_far = getattr(self.right_side, 'edge_far', False)
       
-    # 💡 엑셀을 밟거나 코너에 깊게 진입하면 영구 취소
-    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 60.0):
+    # 💡 엑셀을 밟거나, 코너에 깊게 진입하거나, '교차로 진입(edge_far)' 시 영구 취소
+    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 60.0 or is_edge_far):
       self.manual_turn_canceled = True
 
     # 💡 [핵심] SideState 맨 끝 차로 판단 + [추가] 측면 주황색 실선 한정 판단
