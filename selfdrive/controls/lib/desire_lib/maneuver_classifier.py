@@ -53,4 +53,4 @@ def classify_maneuver_type(blinker_state: int,
     if edge_far:
       return "turn"
     return old_type
-  return "lane_change"
+  return "none"
