@@ -506,6 +506,7 @@ class VCruiseCarrot:
       if not CS.brakePressed and not CS.gasPressed and not getattr(self, '_cruise_cancel_state', False) and CS.cruiseState.available:
         button_type = ButtonType.accelCruise
         long_pressed = False
+        self._cruise_control(1, -1, "Auto Re-enable on CAN-FD Fault") # 💡 핵심 추가: 차량에 실제 크루즈 ON 명령 하달
         self._add_log("Auto Re-enable (+ button) on CAN-FD Fault")
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
