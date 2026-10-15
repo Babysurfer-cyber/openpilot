@@ -1323,7 +1323,7 @@ class CarrotServ:
         is_edge_far = getattr(self.right_side, 'edge_far', False)
       
     # 💡 엑셀을 밟거나, 코너에 깊게 진입하거나, '교차로 진입(edge_far)' 시 영구 취소
-    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 60.0 or is_edge_far):
+    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 40.0 or is_edge_far):
       self.manual_turn_canceled = True
 
     # 💡 [핵심] SideState 맨 끝 차로 판단 + [추가] 측면 주황색 실선 한정 판단
@@ -1332,18 +1332,18 @@ class CarrotServ:
       left_line = getattr(CS, 'leftLaneLine', 0)
       right_line = getattr(CS, 'rightLaneLine', 0)
       
-      # 💡 20번대(주황/황색) 이면서 끝자리가 0이나 5가 아닌(실선) 경우만 색출!
-      left_orange_solid = (left_line // 10 == 2) and (left_line % 10 not in (0, 5))
-      right_orange_solid = (right_line // 10 == 2) and (right_line % 10 not in (0, 5))
+      # 💡 색상에 관계없이 끝자리가 0이나 5가 아닌 '모든 실선' 색출!
+      left_solid = (left_line % 10 not in (0, 5))
+      right_solid = (right_line % 10 not in (0, 5))
 
       if getattr(CS, 'leftBlinker', False):
         is_outermost = not self.left_side.lane_available
-        # 끝 차로이거나, 좌측이 '주황색 실선'일 경우 턴(Turn) 차로로 인정
-        is_turn_lane = is_outermost or left_orange_solid
+        # 끝 차로이거나, 좌측이 '실선'일 경우 턴(Turn) 차로로 인정
+        is_turn_lane = is_outermost or left_solid
       elif getattr(CS, 'rightBlinker', False):
         is_outermost = not self.right_side.lane_available
-        # 끝 차로이거나, 우측이 '주황색 실선'일 경우 턴(Turn) 차로로 인정
-        is_turn_lane = is_outermost or right_orange_solid
+        # 끝 차로이거나, 우측이 '실선'일 경우 턴(Turn) 차로로 인정
+        is_turn_lane = is_outermost or right_solid
 
     # 💡 속도 조건: 100km/h 이하일 때 '턴 차로(끝차로/주황색실선)'이거나 '이미 감속 중'일 때만 허용
     speed_cond_met = False
@@ -1369,7 +1369,7 @@ class CarrotServ:
     if getattr(self, 'manual_turn_decel_active', False):
       elapsed_time = current_time - self.manual_turn_start_time
       current_target_v = self.manual_turn_start_v_ego - (0.5 * elapsed_time)
-      manual_turn_target_speed_kph = max(30.0, current_target_v * 3.6)
+      manual_turn_target_speed_kph = max(25.0, current_target_v * 3.6)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     speed_n_sources = [
