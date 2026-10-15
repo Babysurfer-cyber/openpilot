@@ -230,17 +230,22 @@ class DesireHelper:
     self._update_params_periodic()
     self._make_model_turn_speed(modeldata)
 
-    # ▼▼▼ [추가] 깜빡이 레버 물리 상태(Debounce) 추적 로직 ▼▼▼
+    # ▼▼▼ [수정] 깜빡이 레버 물리 상태(Debounce) 추적 로직 ▼▼▼
     left_stalk_changed = carstate.leftBlinkerStalkCount != self.prev_left_stalk_count
     right_stalk_changed = carstate.rightBlinkerStalkCount != self.prev_right_stalk_count
 
-    # 새로운 레버 조작(Count 변화)이 감지되면 타이머 및 상태 초기화
+    # 새로운 레버 조작(Count 변화)이 감지되면 타이머 및 상태 갱신
     if left_stalk_changed or right_stalk_changed:
       self.prev_left_stalk_count = carstate.leftBlinkerStalkCount
       self.prev_right_stalk_count = carstate.rightBlinkerStalkCount
       self.stalk_press_timer = 0.0
       self.stalk_max_level = 0
-      self.one_touch_triggered = False
+      
+      # 💡 핵심: 톡 칠 때마다 즉시 다시 트리거를 살림 (연속 차선 변경 허용)
+      if self.lane_change_state != LaneChangeState.off:
+          self.one_touch_triggered = True
+      else:
+          self.one_touch_triggered = False
 
     # 레버가 도달한 최대 깊이(1: 원터치, 2: 완전 체결) 갱신
     if carstate.blinkerLever > self.stalk_max_level:
@@ -256,13 +261,16 @@ class DesireHelper:
       # 0.3초 전에 레버가 다시 0으로 튕겨 올라왔어도 원터치로 확정
       self.one_touch_triggered = True
 
-    # 완전 체결(2)이 감지되었다면 원터치 동작은 무조건 취소 (메뉴얼 조향용)
+    # 완전 체결(2)이 감지되었다면 원터치 동작은 무조건 취소 (메뉴얼 턴/수동 조향용)
     if self.stalk_max_level == 2:
       self.one_touch_triggered = False
 
-    # 깜빡이 램프가 모두 꺼지면 상태 초기화
+    # 💡 [핵심 수정] 깜빡이 램프가 모두 꺼졌을 때의 처리
+    # 차선 변경 로직이 완전히 종료(off)된 상태에서 깜빡이가 꺼져 있어야만 트리거 해제
+    # (차선 변경 도중에 깜빡이가 먼저 꺼져도, FSM이 돌아가고 있다면 트리거 유지)
     if carstate.leftBlinker == 0 and carstate.rightBlinker == 0:
-      self.one_touch_triggered = False
+      if self.lane_change_state == LaneChangeState.off:
+        self.one_touch_triggered = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # counts
