@@ -951,7 +951,8 @@ class RadarD:
         calc_dist = min(float(target_long), 30.0) if target_long > 0.0 else 0.0
         
         lane_y = float(abs(np.interp(calc_dist, list(md.laneLines[idx].x), list(md.laneLines[idx].y))))
-        lane_edge = lane_y + 0.95               
+        lane_y = min(lane_y, 2.0) # 💡 물리적 한계치 설정 (오류로 인해 너무 넓어지는 것 방지)
+        lane_edge = lane_y + 0.95
         
         has_left = md.laneLineProbs[1] > 0.5 and len(md.laneLines[1].y) > 0
         has_right = md.laneLineProbs[2] > 0.5 and len(md.laneLines[2].y) > 0
