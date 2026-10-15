@@ -20,6 +20,7 @@ from openpilot.system.hardware import PC, TICI
 from openpilot.selfdrive.navd.helpers import Coordinate
 from opendbc.car.common.conversions import Conversions as CV
 from openpilot.common.gps import get_gps_location_service
+from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 
 nav_type_mapping = {
   12: ("turn", "left", 1),
@@ -204,6 +205,12 @@ class CarrotServ:
     self.manual_turn_start_v_ego = 0.0
     self.manual_turn_canceled = False    # ◀◀◀ 이 줄 하나만 미리 추가 (초기화)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+ 
+    # ▼▼▼ [추가] 차선/차로 폭 검증용 SideState 인스턴스 ▼▼▼
+    self.left_side = SideState("left")
+    self.right_side = SideState("right")
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
     self.lang = "en"
 
@@ -1277,44 +1284,71 @@ class CarrotServ:
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # =========================================================
-    # ▼▼▼ [추가] 수동 턴(Turn) 감속 0.5m/s^2 로직 (UI "turn" 표시) ▼▼▼
+    # ▼▼▼ [추가] SideState 업데이트 (모델 데이터 기반 차선 폭/존재 지속 계산) ▼▼▼
+    # =========================================================
+    if sm.alive['modelV2']:
+      md = sm['modelV2']
+      if len(md.laneLines) == 4 and len(md.laneLineProbs) == 4 and len(md.roadEdges) >= 2:
+        self.left_side.update_lane_geometry(
+          md.laneLines[0], md.laneLineProbs[0],
+          md.laneLines[1],
+          md.roadEdges[0],
+          md.laneLineProbs[1]
+        )
+        self.right_side.update_lane_geometry(
+          md.laneLines[3], md.laneLineProbs[3],
+          md.laneLines[2],
+          md.roadEdges[1],
+          md.laneLineProbs[2]
+        )
+
+    # =========================================================
+    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.5m/s^2 로직 (SideState 활용) ▼▼▼
     # =========================================================
     blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
     gas_pressed = getattr(CS, 'gasPressed', False) if CS is not None else False
+    is_active = getattr(self, 'manual_turn_decel_active', False)
     
-    # 💡 [핵심 1] 깜빡이를 끄거나 1단계로 내리면 '취소 기억'을 초기화
+    # 💡 깜빡이를 끄거나 1단계로 내리면 '취소 기억' 초기화
     if blinker_lever != 2:
       self.manual_turn_canceled = False
       
-    # 💡 [핵심 2] 엑셀을 밟거나, Vturn 감속이 60 이하로 개입할 정도(코너 진입)면 영구 취소!
+    # 💡 엑셀을 밟거나 코너에 깊게 진입하면 영구 취소
     if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 60.0):
       self.manual_turn_canceled = True
 
-    # 조건: 고속도로 아님 & 2단 & 속도 70이하 & 영구취소 안됨!
+    # 💡 [핵심] SideState의 'lane_available' 속성으로 맨 끝 차로인지 판단!
+    is_outermost_lane = False
+    if CS is not None:
+      if getattr(CS, 'leftBlinker', False):
+        is_outermost_lane = not self.left_side.lane_available
+      elif getattr(CS, 'rightBlinker', False):
+        is_outermost_lane = not self.right_side.lane_available
+
+    # 💡 [변경] 속도 구분 제거: 100km/h 이하일 때 '맨 끝 차로'이거나 '이미 감속 중'일 때만 허용
+    speed_cond_met = False
+    if v_ego_kph <= 100.0:
+      if is_outermost_lane or is_active:
+        speed_cond_met = True
+
+    # 조건: 고속도로 아님 & 2단 & 속도/끝차로조건 충족 & 영구취소 안됨!
     turn_cond_met = (nav_link_class not in [1, 2, 3]) and \
                     (blinker_lever == 2) and \
-                    (v_ego_kph <= 60.0) and \
+                    speed_cond_met and \
                     (not getattr(self, 'manual_turn_canceled', False))
 
-    # 1. 조건이 맞는 순간의 '시간'과 '현재 속도'를 금고에 백업
-    if turn_cond_met and not getattr(self, 'manual_turn_decel_active', False):
+    if turn_cond_met and not is_active:
       self.manual_turn_decel_active = True
       self.manual_turn_start_time = current_time
       self.manual_turn_start_v_ego = v_ego
       
-    # 2. 깜빡이를 끄거나 속도를 올려 조건이 깨지면 즉시 감속 해제
     elif not turn_cond_met:
       self.manual_turn_decel_active = False
 
-    # 3. 0.5m/s^2 물리 감속 계산
     manual_turn_target_speed_kph = 255.0
     if getattr(self, 'manual_turn_decel_active', False):
       elapsed_time = current_time - self.manual_turn_start_time
-      
-      # v = v0 - a*t 공식 적용 (0.5m/s^2 감속)
       current_target_v = self.manual_turn_start_v_ego - (0.5 * elapsed_time)
-      
-      # 감속이 무한정 0이 되지 않도록 하한선을 30km/h로 설정
       manual_turn_target_speed_kph = max(30.0, current_target_v * 3.6)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
