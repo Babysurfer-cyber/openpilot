@@ -381,25 +381,36 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   values["DriveMode"] = 0 # 0: Default, 1: Comfort Mode, 2:Normal mode, 3:Dynamic mode, reserved
 
   # ==========================================================
-  # 💡 [핵심] 하이브리드 계기판 두부 아이콘 표시 로직
+  # 💡 [핵심] 하이브리드 계기판 두부 아이콘 표시 로직 (흔들림 방지 필터 적용)
   # ==========================================================
   # 순정 메시지의 거리가 유효한 값(0초과 200미만)이면 순정이 앞차를 잡고 있는 상태
   stock_dist = values.get("ACC_ObjDist", 0)
   stock_lead_detected = (0 < stock_dist < 200)
+
+  # ▼▼▼ 가로 위치 부드럽게 깎아주는 필터(LPF) 초기화 ▼▼▼
+  if not hasattr(create_acc_control_scc2, '_filt_lat_pos'):
+    create_acc_control_scc2._filt_lat_pos = 0.0
 
   hud_lead_info = 0
   if hud_control.leadVisible:
     if stock_lead_detected:
       # [1] 순정 레이더가 앞차를 잡고 있을 때: 기존처럼 순정 데이터 그대로 사용
       hud_lead_info = 1 if values["ACC_ObjRelSpd"] > 0 else 2
+      # 순정이 쥐고 있을 때는 필터값을 순정값으로 계속 갱신해둠 (나중에 비전으로 넘어갈 때 튀지 않게)
+      create_acc_control_scc2._filt_lat_pos = -values.get("ACC_ObjLatPos", 0.0)
     else:
       # [2] 순정 레이더가 놓쳤는데 비전/코너레이더는 잡고 있을 때: 콤마 데이터로 강제 덮어쓰기
       values["ACC_ObjDist"] = min(hud_control.leadDistance, 204.0)
       values["ACC_ObjRelSpd"] = hud_control.leadRelSpeed
       
       lead_d_path = getattr(hud_control, 'leadDPath', 0.0)
-      if lead_d_path != 0.0:
-        values["ACC_ObjLatPos"] = -lead_d_path
+      
+      # 💡 [핵심] 좌우 흔들림(Jittering) 방지 로직
+      # alpha 값이 작을수록 움직임이 둔탁하고 부드러워지며, 클수록 빠릿하지만 떨립니다. (0.15면 적당히 묵직함)
+      alpha = 0.15 
+      create_acc_control_scc2._filt_lat_pos = (alpha * lead_d_path) + ((1.0 - alpha) * create_acc_control_scc2._filt_lat_pos)
+      
+      values["ACC_ObjLatPos"] = -create_acc_control_scc2._filt_lat_pos
 
       hud_lead_info = 1 if hud_control.leadRelSpeed > 0 else 2
   else:
@@ -408,8 +419,9 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
     values["ACC_ObjRelSpd"] = 0
     values["ACC_ObjLatPos"] = 0
     hud_lead_info = 0
+    create_acc_control_scc2._filt_lat_pos = 0.0 # 필터값도 0으로 초기화
 
-  values["HUD_LEAD_INFO"] = hud_lead_info  #1: in-path object detected(uncontrollable), 2: controllable long, 3: controllable long & lat, ... reserved
+  values["HUD_LEAD_INFO"] = hud_lead_info
 
   values["DriverAlert"] = 0   # 1: SCC Disengaged, 2: No SCC Engage condition, 3: SCC Disenganed when the vehicle stops
 
@@ -655,7 +667,7 @@ def _apply_lane_desire(values, desire):
   elif desire == 4:  # 우차선변경
     values['LANE_CHANGING'] = 4
 
-def _apply_radar_blink(values, radar_pairs, frame, *,
+def _apply_radar_blink(values, radar_pairs, frame, CS, *, # 💡 파라미터에 CS 추가
                       disp_dist=30.0, min_dist=14.0, max_dist=30.0,
                       max_interval=100, t=1.0):
   """
@@ -666,7 +678,6 @@ def _apply_radar_blink(values, radar_pairs, frame, *,
   for det_key, dist_key in radar_pairs:
     dist = values[dist_key]
     
-    # 💡 30m 초과 시 즉시 0(미표시)으로 만들고 다음 루프로 넘어감
     if dist > max_dist:
       values[det_key] = 0
       continue
@@ -674,13 +685,16 @@ def _apply_radar_blink(values, radar_pairs, frame, *,
     if dist <= min_dist:
       continue
 
-    # 기존 깜빡임 로직 (14m ~ 30m 이하일 때만 실행됨)
     d = min(dist, disp_dist)
     interval = int((1 + (max_interval - 1) * (d / disp_dist)) * t)
     interval = _clip_int(interval, 1, max_interval)
 
     blink = (frame // interval) & 1
-    values[det_key] = 1 - blink
+    
+    # 💡 [핵심] 해당 차량이 사각지대(BSD) 쪽에 있으면 2(흰색/강조), 아니면 1(회색)
+    base_color = 2 if ('L' in det_key and CS.out.leftBlindspot) or ('R' in det_key and CS.out.rightBlindspot) else 1
+    
+    values[det_key] = base_color if blink == 0 else 0
     values[dist_key] = min_dist
 
 def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
@@ -691,36 +705,24 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
   if lane_line:
     md = getattr(CS, 'MD', None)
     
-    # 💡 [신뢰도 조건 수정] 좌(1), 우(2) 차선 중 '하나라도(or)' 인식 확률 50% 이상이면 신뢰!
     lane_reliable = (md is not None and 
                      len(md.laneLineProbs) > 2 and 
                      (md.laneLineProbs[1] > 0.5 or md.laneLineProbs[2] > 0.5) and 
                      len(md.position.x) > 20 and len(md.position.y) > 20)
 
     if lane_reliable:
-      # 💡 1. 전방 40m 기준 경로(Path) 예측
       y_40m = float(np.interp(40.0, list(md.position.x), list(md.position.y)))
-      
-      # 💡 2. 방향 반전(-) 및 스케일링 조정(2.0)
-      # 모델이 인식한 Y값 부호를 뒤집기 위해 마이너스(-)를 곱해줍니다.
-      # 40m 거리는 30m보다 Y값(쏠림)이 훨씬 크므로, 계수를 4.5에서 2.0으로 낮춰 비율을 맞춥니다.
       target_curve = -y_40m * 6.0
     else:
-      # 차선이 양쪽 다 지워졌을 때(둘 다 50% 미만): 조향각 폴백 (이 값은 부호가 잘 맞으므로 그대로 유지)
       target_curve = CS.out.steeringAngleDeg / 1.4
 
-    # -------------------------------------------------------------------------
-    # 💡 [완충 장치 (Low-Pass Filter)] 차선이 바르르 떨리지 않게 부드럽게 렌더링
-    # -------------------------------------------------------------------------
     if not hasattr(_make_ccnc_values, '_filt_curve'):
       _make_ccnc_values._filt_curve = target_curve
 
-    # 차선 변경(desire) 여부와 상관없이 항상 곡률 업데이트
     alpha = 0.4 
     _make_ccnc_values._filt_curve = (alpha * target_curve) + ((1.0 - alpha) * _make_ccnc_values._filt_curve)
 
     curvature = int(round(_make_ccnc_values._filt_curve))
-    # -------------------------------------------------------------------------
 
     mag = min(abs(curvature), 15)
     curv = mag + (-1 if curvature < 0 else 0)
@@ -740,10 +742,12 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     ]
     for det_key, dist_key in radar_all:
       if values[det_key] >= 4 and values[dist_key] != 0:
-        values[det_key] = 1
+        # 💡 [핵심] 사각지대(BSD)에 들어온 차량이면 2(흰색), 아니면 1(회색) 처리
+        base_color = 2 if ('L' in det_key and CS.out.leftBlindspot) or ('R' in det_key and CS.out.rightBlindspot) else 1
+        values[det_key] = base_color
 
     if blink_pairs:
-      _apply_radar_blink(values, blink_pairs, frame, t=blink_t)
+      _apply_radar_blink(values, blink_pairs, frame, CS, t=blink_t) # 💡 CS 전달
 
 # 💡 파라미터에 corner_radar_cutin 추가
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
