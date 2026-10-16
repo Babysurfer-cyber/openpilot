@@ -896,72 +896,77 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         rx_counter = values.pop("COUNTER", None)
         
         # ==========================================================
-        # ▼ [차선 변경 불가 알림] 실선 감지(10번) & 전후측방 위험(1번) 알림 분리
+        # ▼ [차선 변경 불가 알림] 실선 감지(10번) & BSD 장애물 감지(1번)
         # ==========================================================
         alc_msg = 0
         v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
         
-        # 1. 운전자 핸들 조작(토크) 감지
-        nudge_left = CS.out.leftBlinker and CS.out.steeringPressed and CS.out.steeringTorque > 0
-        nudge_right = CS.out.rightBlinker and CS.out.steeringPressed and CS.out.steeringTorque < 0
-        is_changing_lane = lane_changing in [3, 4]
+        # 1. 차선 변경 시작 여부 판단 (오픈파일럿 제어 or 모델 예측)
+        is_changing_lane = (desire in (3, 4)) or (lane_changing in (3, 4))
         
-        # 2. 유저님이 발견하신 완벽한 패턴! (계기판 주황색 라인 연동 로직)
-        left_solid = False
-        right_solid = False
-
+        # 2. 실선 감지 (계기판 주황색 라인 연동)
         left_raw = getattr(CS.out, 'leftLaneLine', 0)
         right_raw = getattr(CS.out, 'rightLaneLine', 0)
 
         if lane_line_check >= 1:
-            # 옵션 ON: 끝자리가 0이나 5가 아니면 실선으로 간주 (흰색/주황색 모두 커버!)
             left_solid = (left_raw % 10) not in (0, 5)
             right_solid = (right_raw % 10) not in (0, 5)
         else:
-            # 옵션 OFF: 기존처럼 값이 20 이상이면 황색 실선/경계석으로 간주
             left_solid = left_raw >= 20
             right_solid = right_raw >= 20
 
-        # 3. 전측방/후측방 종합 위험 판단
+        # 3. 전측방/후측방 종합 위험 판단 (BSD 감지)
         danger_left = CS.out.leftBlindspot or left_lane_warning
         danger_right = CS.out.rightBlindspot or right_lane_warning
         
-        # ▼▼ [추가] 순수하게 한쪽 깜빡이만 켰는지 판별 (비상깜빡이 제외용) ▼▼
         is_only_left_blinker = CS.out.leftBlinker and not CS.out.rightBlinker
         is_only_right_blinker = CS.out.rightBlinker and not CS.out.leftBlinker
         
         # ==========================================================
-        # ▼ [딜레이 타이머 & 체결 이력 기억] 레버가 1단계를 거쳐 2단계로 가는 
-        # 찰나의 순간(0.3초)을 기다리고, 2단계 도달 이력을 깜빡이가 꺼질 때까지 기억함!
+        # ▼ [깜빡이 세션 관리] (핵심 수정)
+        # 차선 변경이 한 번이라도 시작되면, 깜빡이가 꺼질 때까지 경고를 영구 차단!
         # ==========================================================
         if not hasattr(create_ccnc_messages, '_blinker_timer'):
             create_ccnc_messages._blinker_timer = 0
             create_ccnc_messages._lever_max_level = 0
+            create_ccnc_messages._lane_changed_this_session = False
             
         current_lever = getattr(CS.out, 'blinkerLever', 0)
             
         if is_only_left_blinker or is_only_right_blinker:
-            # frame % 5 == 0 블럭 안에 있으므로, 한 번 돌 때마다 5프레임씩(0.05초) 추가
-            create_ccnc_messages._blinker_timer += 5 
-            # 깜빡이가 켜져 있는 동안 레버가 도달한 가장 깊은 위치(max_level)를 기록
-            if current_lever > create_ccnc_messages._lever_max_level:
-                create_ccnc_messages._lever_max_level = current_lever
+            if is_changing_lane:
+                # 💡 차선 변경이 시작됨 -> 이번 깜빡이 세션에서는 경고 완전 차단 기록
+                create_ccnc_messages._lane_changed_this_session = True
+                create_ccnc_messages._blinker_timer = 0
+            elif not create_ccnc_messages._lane_changed_this_session:
+                # 💡 차선 변경 시작 전일 때만 타이머 증가
+                create_ccnc_messages._blinker_timer += 5 
+                if current_lever > create_ccnc_messages._lever_max_level:
+                    create_ccnc_messages._lever_max_level = current_lever
         else:
-            # 깜빡이가 완전히 꺼지면 타이머와 레버 최대 깊이 기록 초기화
+            # 💡 깜빡이가 꺼지면 다음 차선 변경을 위해 모든 상태 초기화
             create_ccnc_messages._blinker_timer = 0
             create_ccnc_messages._lever_max_level = 0
+            create_ccnc_messages._lane_changed_this_session = False
             
-        # 💡 [핵심] 0.3초(30프레임) 이상 켜져 있었고 & 이번 깜빡임 주기에서 '단 한 번도 2(체결)에 도달한 적이 없을 때(max == 1)'만 인정!
-        blinker_valid = (create_ccnc_messages._blinker_timer >= 30) and (create_ccnc_messages._lever_max_level == 1)
+        # 💡 타이머가 30프레임(0.3초) 이상이고, 1단계(살짝 누름)이며, 
+        # "아직 차선 변경을 안 했을 때"만 경고가 유효함!
+        blinker_valid = (create_ccnc_messages._blinker_timer >= 30) and \
+                        (create_ccnc_messages._lever_max_level == 1) and \
+                        not create_ccnc_messages._lane_changed_this_session
         
-        # 4. 팝업 및 경고 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
-        # 💡 차선 변경이 이미 시작되었으면(is_changing_lane == True), 
-        # 실선 팝업(alc_msg)과 BSD 경고색(HDA_MODE2=2)을 띄우지 않습니다.
-        if v_ego_kph >= 25.0 and not is_changing_lane and blinker_valid:
-            if is_only_left_blinker and left_solid:
-                alc_msg = 10 
-            elif is_only_right_blinker and right_solid:
-                alc_msg = 10 
+        # 4. 팝업 및 경고 조건 판단 (25km/h 이상, 조건 충족 시에만)
+        if v_ego_kph >= 25.0 and blinker_valid:
+            if is_only_left_blinker:
+                if danger_left:
+                    alc_msg = 1   # BSD/장애물 감지
+                elif left_solid:
+                    alc_msg = 10  # 실선 감지
+            elif is_only_right_blinker:
+                if danger_right:
+                    alc_msg = 1   # BSD/장애물 감지
+                elif right_solid:
+                    alc_msg = 10  # 실선 감지
 
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
@@ -969,8 +974,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # 💡 [수정] BSD 위험 경고(HDA_MODE2=2)에도 차선 변경 중에는 띄우지 않도록(is_changing_lane 차단) 추가!
-        bsd_warning_active = blinker_valid and not is_changing_lane and (
+        # BSD 위험 경고(HDA_MODE2=3) 역시 차선 변경 전 경고 유효 상태에서만 띄움
+        bsd_warning_active = blinker_valid and (
                              (is_only_left_blinker and danger_left) or 
                              (is_only_right_blinker and danger_right)
                              )
