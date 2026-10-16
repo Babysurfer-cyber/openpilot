@@ -927,7 +927,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         # 4. 팝업 및 경고 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
         # 💡 차선 변경이 이미 시작되었으면(is_changing_lane == True), 
         # 실선 팝업(alc_msg)과 BSD 경고색(HDA_MODE2=2)을 띄우지 않습니다.
-        if v_ego_kph >= 30.0 and not is_changing_lane and blinker_valid:
+        if v_ego_kph >= 25.0 and not is_changing_lane and blinker_valid:
             if is_only_left_blinker and left_solid:
                 alc_msg = 10 
             elif is_only_right_blinker and right_solid:
