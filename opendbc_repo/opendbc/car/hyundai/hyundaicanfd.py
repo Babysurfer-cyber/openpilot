@@ -667,7 +667,7 @@ def _apply_lane_desire(values, desire):
   elif desire == 4:  # 우차선변경
     values['LANE_CHANGING'] = 4
 
-def _apply_radar_blink(values, radar_pairs, frame, CS, *, # 💡 파라미터에 CS 추가
+def _apply_radar_blink(values, radar_pairs, frame, CS, *,
                       disp_dist=30.0, min_dist=14.0, max_dist=30.0,
                       max_interval=100, t=1.0):
   """
@@ -691,10 +691,8 @@ def _apply_radar_blink(values, radar_pairs, frame, CS, *, # 💡 파라미터에
 
     blink = (frame // interval) & 1
     
-    # 💡 [핵심] 해당 차량이 사각지대(BSD) 쪽에 있으면 2(흰색/강조), 아니면 1(회색)
-    base_color = 2 if ('L' in det_key and CS.out.leftBlindspot) or ('R' in det_key and CS.out.rightBlindspot) else 1
-    
-    values[det_key] = base_color if blink == 0 else 0
+    # 원래의 안정적인 0 / 1 깜빡임 패턴으로 완벽 원복
+    values[det_key] = 1 - blink
     values[dist_key] = min_dist
 
 def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
@@ -742,12 +740,11 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     ]
     for det_key, dist_key in radar_all:
       if values[det_key] >= 4 and values[dist_key] != 0:
-        # 💡 [핵심] 사각지대(BSD)에 들어온 차량이면 2(흰색), 아니면 1(회색) 처리
-        base_color = 2 if ('L' in det_key and CS.out.leftBlindspot) or ('R' in det_key and CS.out.rightBlindspot) else 1
-        values[det_key] = base_color
+        # 기존의 고정값 1 할당으로 원복 (ccNC 계기판 오류 방지)
+        values[det_key] = 1
 
     if blink_pairs:
-      _apply_radar_blink(values, blink_pairs, frame, CS, t=blink_t) # 💡 CS 전달
+      _apply_radar_blink(values, blink_pairs, frame, CS, t=blink_t)
 
 # 💡 파라미터에 corner_radar_cutin 추가
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
