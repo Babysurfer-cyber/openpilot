@@ -380,9 +380,35 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   #values["ACC_ObjLatPos"] = - hud_control.leadDPath
   values["DriveMode"] = 0 # 0: Default, 1: Comfort Mode, 2:Normal mode, 3:Dynamic mode, reserved
 
+  # ==========================================================
+  # 💡 [핵심] 하이브리드 계기판 두부 아이콘 표시 로직
+  # ==========================================================
+  # 순정 메시지의 거리가 유효한 값(0초과 200미만)이면 순정이 앞차를 잡고 있는 상태
+  stock_dist = values.get("ACC_ObjDist", 0)
+  stock_lead_detected = (0 < stock_dist < 200)
+
   hud_lead_info = 0
   if hud_control.leadVisible:
-    hud_lead_info = 1 if values["ACC_ObjRelSpd"] > 0 else 2
+    if stock_lead_detected:
+      # [1] 순정 레이더가 앞차를 잡고 있을 때: 기존처럼 순정 데이터 그대로 사용
+      hud_lead_info = 1 if values["ACC_ObjRelSpd"] > 0 else 2
+    else:
+      # [2] 순정 레이더가 놓쳤는데 비전/코너레이더는 잡고 있을 때: 콤마 데이터로 강제 덮어쓰기
+      values["ACC_ObjDist"] = min(hud_control.leadDistance, 204.0)
+      values["ACC_ObjRelSpd"] = hud_control.leadRelSpeed
+      
+      lead_d_path = getattr(hud_control, 'leadDPath', 0.0)
+      if lead_d_path != 0.0:
+        values["ACC_ObjLatPos"] = -lead_d_path
+
+      hud_lead_info = 1 if hud_control.leadRelSpeed > 0 else 2
+  else:
+    # [3] 둘 다 놓쳤을 때: 혹시 모를 유령 두부 방지를 위해 값 초기화
+    values["ACC_ObjDist"] = 0
+    values["ACC_ObjRelSpd"] = 0
+    values["ACC_ObjLatPos"] = 0
+    hud_lead_info = 0
+
   values["HUD_LEAD_INFO"] = hud_lead_info  #1: in-path object detected(uncontrollable), 2: controllable long, 3: controllable long & lat, ... reserved
 
   values["DriverAlert"] = 0   # 1: SCC Disengaged, 2: No SCC Engage condition, 3: SCC Disenganed when the vehicle stops
