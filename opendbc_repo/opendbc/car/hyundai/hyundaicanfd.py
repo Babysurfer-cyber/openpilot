@@ -924,7 +924,9 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         # 💡 [핵심] 0.3초(30프레임) 이상 켜져 있었고 & 이번 깜빡임 주기에서 '단 한 번도 2(체결)에 도달한 적이 없을 때(max == 1)'만 인정!
         blinker_valid = (create_ccnc_messages._blinker_timer >= 30) and (create_ccnc_messages._lever_max_level == 1)
         
-        # 4. 팝업 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
+        # 4. 팝업 및 경고 조건 판단 (30km/h 이상, 차선 변경 중이 아닐 때)
+        # 💡 차선 변경이 이미 시작되었으면(is_changing_lane == True), 
+        # 실선 팝업(alc_msg)과 BSD 경고색(HDA_MODE2=2)을 띄우지 않습니다.
         if v_ego_kph >= 30.0 and not is_changing_lane and blinker_valid:
             if is_only_left_blinker and left_solid:
                 alc_msg = 10 
@@ -937,8 +939,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # 💡 [수정] BSD 위험 경고(HDA_MODE2=2)에도 동일하게 0.3초 타이머 + 체결 관문 적용!
-        bsd_warning_active = blinker_valid and (
+        # 💡 [수정] BSD 위험 경고(HDA_MODE2=2)에도 차선 변경 중에는 띄우지 않도록(is_changing_lane 차단) 추가!
+        bsd_warning_active = blinker_valid and not is_changing_lane and (
                              (is_only_left_blinker and danger_left) or 
                              (is_only_right_blinker and danger_right)
                              )
@@ -946,7 +948,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         if corner_radar_cutin:
           values['HDA_MODE2'] = 4
         elif bsd_warning_active:
-          values['HDA_MODE2'] = 2
+          values['HDA_MODE2'] = 3
         else:
           values['HDA_MODE2'] = 1
 
