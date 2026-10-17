@@ -1090,12 +1090,13 @@ class VCruiseCarrot:
     elif self._brake_pressed_count > 0:
       self._pause_auto_speed_up = True
 
-    # ▼▼▼ [추가 2] 당근크루즈 중 타력주행(코스팅) 완벽 유지 ▼▼▼
-    # (가속 페달 등 복귀 로직은 _update_cruise_buttons 함수로 통합됨)
+    # ▼▼▼ [수정 2] 당근크루즈 중 타력주행 유지 및 확실한 감속 보장 ▼▼▼
     if getattr(self, 'carrot_cruise_active', False):
-      # 엑셀을 뗄 때: 완벽한 타력 주행(엑셀 0, 브레이크 0) 유도!
-      # 목표 속도를 현재 속도보다 항상 2km/h 낮게 밀어내어 시스템 가속을 완벽히 차단합니다.
-      v_cruise_kph = max(self._cruise_speed_min, min(v_cruise_kph, self.v_ego_kph_set - 2)) 
+      # 1. 엑셀을 밟지 않을 때 강제 가속 방지 (타력 주행)
+      # 💡 목표 속도(v_cruise_kph)가 현재 속도보다 높으면 안 됨 (가속 차단)
+      # 2. 확실한 제동 보장
+      # 💡 앞차를 보고 모델이 요구하는 감속 속도(v_cruise_kph)가 현재 속도보다 낮으면 그 값을 그대로 허용!
+      v_cruise_kph = min(v_cruise_kph, self.v_ego_kph_set) 
       self._pause_auto_speed_up = True                     
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
