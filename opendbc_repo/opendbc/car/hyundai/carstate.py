@@ -800,8 +800,8 @@ class CarState(CarStateBase):
               return 2.5
               
             elif v > 0.5:
-              # [멀어지는 차] 내가 앞차를 추월해서 뒤로 밀려나는 중
-              return min(4.5 / abs(v), 2.0)
+              # 💡 [내가 추월하는 차] 추월 속도에 비례해 타이머 산출 (최소 1초 보장)
+              return max(min(4.5 / abs(v), 2.0), 1.0), False
               
         else:
           hist.clear()
