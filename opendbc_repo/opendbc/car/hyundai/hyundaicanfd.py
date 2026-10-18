@@ -933,7 +933,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
 
-        # BSD 위험 경고(HDA_MODE2=3) 역시 차선 변경 전 경고 유효 상태에서만 띄움
+        # BSD 위험 경고(HDA_MODE2=2) 역시 차선 변경 전 경고 유효 상태에서만 띄움
         bsd_warning_active = blinker_valid and (
                              (is_only_left_blinker and danger_left) or 
                              (is_only_right_blinker and danger_right)
@@ -942,7 +942,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         if corner_radar_cutin:
           values['HDA_MODE2'] = 4
         elif bsd_warning_active:
-          values['HDA_MODE2'] = 3
+          values['HDA_MODE2'] = 2
         else:
           values['HDA_MODE2'] = 1
 
