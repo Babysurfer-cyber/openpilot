@@ -816,14 +816,14 @@ class CarState(CarStateBase):
       # 2. 상대 속도를 기반으로 전측방 감지 거리(front_dist_limit) 리니어 계산
       def get_dynamic_front_limit(v_front):
           if v_front < -0.5:
-              # 다가오는 차: v가 -0.5부터 -10.0(초당 약 36km/h 차이) 사이일 때 5m에서 10m까지 리니어하게 증가
+              # 다가오는 차: v가 -0.5부터 -5.0(초당 약 18km/h 차이) 사이일 때 5m에서 10m까지 리니어하게 증가
               # 속도 차이가 -10.0 이상으로 크면 최대 10.0m로 제한
-              return float(np.interp(v_front, [-10.0, -0.5], [10.0, 5.0]))
+              return float(np.interp(v_front, [-5.0, -0.5], [10.0, 5.0]))
               
           elif v_front > 0.5:
-              # 멀어지는 차(내가 추월): v가 0.5부터 10.0 사이일 때 5m에서 2m까지 리니어하게 감소
+              # 멀어지는 차(내가 추월): v가 0.5부터 5.0 사이일 때 5m에서 2m까지 리니어하게 감소
               # 속도 차이가 10.0 이상으로 커지면 최소 2.0m 유지
-              return float(np.interp(v_front, [0.5, 10.0], [5.0, 2.0]))
+              return float(np.interp(v_front, [0.5, 5.0], [5.0, 2.0]))
               
           else:
               # 나란히 가는 차 (abs(v) <= 0.5)
