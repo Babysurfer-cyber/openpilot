@@ -778,90 +778,115 @@ class CarState(CarStateBase):
       ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
       corner = True
     if corner:
-      # ▼▼▼ [수정] 상대 속도 기반 타이머 + 안전거리 돌파 즉시 해제 하이브리드 BSD 방어 ▼▼▼
+      # ▼▼▼ [수정] 상대 속도 기반 동적 감지 거리(2m~10m 리니어) + 엣지 케이스 방어 BSD 로직 ▼▼▼
       if not hasattr(self, 'bs_timer'):
         self.corner_hist = {"LF": deque(maxlen=15), "RF": deque(maxlen=15), "LR": deque(maxlen=15), "RR": deque(maxlen=15)}
         self.bs_timer = {"L": 0, "R": 0}
         self.last_approach_time = {"L": 0.0, "R": 0.0}
+        self.hold_blindspot = {"L": False, "R": False}
+        self.front_dist_limit = {"L": 5.0, "R": 5.0} # 초기값 5m 설정
       
       def calc_speed_and_time(hist, current_dist):
+        v = 0.0
         if current_dist > 0.1:
           hist.append(current_dist)
           if len(hist) >= 5:
             # v = (현재 거리 - 과거 거리) / 시간
+            # 음수(-) : 거리가 좁혀짐 (다가옴)
+            # 양수(+) : 거리가 멀어짐 (내가 추월)
             v = (hist[-1] - hist[0]) / (len(hist) * DT_CTRL)
             
             if v < -0.5:
-              # [다가오는 차] 내 뒤에서 다가오거나 내가 후진할 때
-              return min(4.5 / abs(v), 3.0) 
-            
+              return v, min(4.5 / abs(v), 3.0), False 
             elif abs(v) <= 0.5:
-              # [나란히 가는 차] 속도 차이가 거의 없음
-              return 2.5
-              
+              return v, 2.5, True 
             elif v > 0.5:
-              # 💡 [내가 추월하는 차] 추월 속도에 비례해 타이머 산출 (최소 1초 보장)
-              return max(min(4.5 / abs(v), 2.0), 1.0), False
+              return v, max(min(4.5 / abs(v), 2.0), 1.0), False
               
         else:
           hist.clear()
-        return 0.0
+        return v, 0.0, False
 
-      # 1. 4개의 코너 레이더 각각의 접근 속도를 계산하여 사각지대 예상 통과 시간 산출
-      time_lf = calc_speed_and_time(self.corner_hist["LF"], ret.leftLongDist)
-      time_rf = calc_speed_and_time(self.corner_hist["RF"], ret.rightLongDist)
-      time_lr = calc_speed_and_time(self.corner_hist["LR"], self.lr_distance)
-      time_rr = calc_speed_and_time(self.corner_hist["RR"], self.rr_distance)
+      # 1. 속도(v), 통과 시간, 홀드 상태 산출
+      v_lf, time_lf, hold_lf = calc_speed_and_time(self.corner_hist["LF"], ret.leftLongDist)
+      v_rf, time_rf, hold_rf = calc_speed_and_time(self.corner_hist["RF"], ret.rightLongDist)
+      v_lr, time_lr, hold_lr = calc_speed_and_time(self.corner_hist["LR"], self.lr_distance)
+      v_rr, time_rr, hold_rr = calc_speed_and_time(self.corner_hist["RR"], self.rr_distance)
 
-      # 내 차 속도에 따른 전방 감지 거리 가변 조절 (30km/h: 3m ~ 70km/h: 7m)
-      v_ego_kph = ret.vEgo * CV.MS_TO_KPH
-      front_dist_limit = float(np.interp(v_ego_kph, [30.0, 70.0], [3.0, 7.0]))
+      # 2. 상대 속도를 기반으로 전측방 감지 거리(front_dist_limit) 리니어 계산
+      def get_dynamic_front_limit(v_front):
+          if v_front < -0.5:
+              # 다가오는 차: v가 -0.5부터 -10.0(초당 약 36km/h 차이) 사이일 때 5m에서 10m까지 리니어하게 증가
+              # 속도 차이가 -10.0 이상으로 크면 최대 10.0m로 제한
+              return float(np.interp(v_front, [-10.0, -0.5], [10.0, 5.0]))
+              
+          elif v_front > 0.5:
+              # 멀어지는 차(내가 추월): v가 0.5부터 10.0 사이일 때 5m에서 2m까지 리니어하게 감소
+              # 속도 차이가 10.0 이상으로 커지면 최소 2.0m 유지
+              return float(np.interp(v_front, [0.5, 10.0], [5.0, 2.0]))
+              
+          else:
+              # 나란히 가는 차 (abs(v) <= 0.5)
+              return 5.0
+
+      # 좌우 전측방 센서가 살아있을 때만 limit 값을 갱신하여 사각지대 맹점 진입 시 직전 한계치 유지
+      if ret.leftLongDist > 0:
+          self.front_dist_limit["L"] = get_dynamic_front_limit(v_lf)
+      if ret.rightLongDist > 0:
+          self.front_dist_limit["R"] = get_dynamic_front_limit(v_rf)
+
+      # 후측방 안전 한계 거리 (3m 고정)
       rear_dist_limit = 3.0
 
-      # 레이더 시야에 차량이 존재하는지 확인
-      left_front_seen = 0 < ret.leftLongDist < front_dist_limit
+      # 레이더 시야 내 존재 여부 판별
+      left_front_seen = 0 < ret.leftLongDist < self.front_dist_limit["L"]
       left_rear_seen = 0 < self.lr_distance < rear_dist_limit
-      right_front_seen = 0 < ret.rightLongDist < front_dist_limit
+      right_front_seen = 0 < ret.rightLongDist < self.front_dist_limit["R"]
       right_rear_seen = 0 < self.rr_distance < rear_dist_limit
 
-      # --- 2. 좌측 사각지대(BSD) 로직 ---
+      # --- 3. 좌측 사각지대(BSD) 로직 ---
       if left_front_seen or left_rear_seen:
-        # 차가 레이더에 보일 때는 타이머 장전을 위해 남은 시간 계속 갱신
         self.last_approach_time["L"] = max(time_lf, time_lr, 0.5) 
+        self.hold_blindspot["L"] = hold_lf or hold_lr 
         self.bs_timer["L"] = 0
         ret.leftBlindspot = True
       else:
-        # 💡 [핵심] 차가 레이더에서 사라진 상태인데, 다른 위치에서 설정 거리 밖으로 명확하게 밀려난 것이 잡히면 즉시 타이머 파기
-        if ret.leftLongDist >= front_dist_limit or self.lr_distance >= rear_dist_limit:
+        # 안전거리 명확히 돌파 시 완전 해제
+        if ret.leftLongDist >= self.front_dist_limit["L"] or self.lr_distance >= rear_dist_limit:
           self.bs_timer["L"] = 0
           self.last_approach_time["L"] = 0.0
+          self.hold_blindspot["L"] = False
         
-        # 차가 완전히 안 보이는 상황(거리 0)으로 넘어갔을 때만 타이머를 가동
+        # 차가 맹점(거리 0)에 들어갈 때 타이머 가동
         elif self.last_approach_time["L"] > 0:
           self.bs_timer["L"] = int(self.last_approach_time["L"] / DT_CTRL)
           self.last_approach_time["L"] = 0.0 
           
-        # 타이머가 남아있으면 BSD 유지
-        if self.bs_timer["L"] > 0:
-          self.bs_timer["L"] -= 1
+        # 타이머 차감 및 홀드 유지
+        if self.bs_timer["L"] > 0 or self.hold_blindspot["L"]:
+          if not self.hold_blindspot["L"]:
+             self.bs_timer["L"] -= 1
           ret.leftBlindspot = True
 
-      # --- 3. 우측 사각지대(BSD) 로직 ---
+      # --- 4. 우측 사각지대(BSD) 로직 ---
       if right_front_seen or right_rear_seen:
         self.last_approach_time["R"] = max(time_rf, time_rr, 0.5)
+        self.hold_blindspot["R"] = hold_rf or hold_rr
         self.bs_timer["R"] = 0
         ret.rightBlindspot = True
       else:
-        if ret.rightLongDist >= front_dist_limit or self.rr_distance >= rear_dist_limit:
+        if ret.rightLongDist >= self.front_dist_limit["R"] or self.rr_distance >= rear_dist_limit:
           self.bs_timer["R"] = 0
           self.last_approach_time["R"] = 0.0
+          self.hold_blindspot["R"] = False
           
         elif self.last_approach_time["R"] > 0:
           self.bs_timer["R"] = int(self.last_approach_time["R"] / DT_CTRL)
           self.last_approach_time["R"] = 0.0
           
-        if self.bs_timer["R"] > 0:
-          self.bs_timer["R"] -= 1
+        if self.bs_timer["R"] > 0 or self.hold_blindspot["R"]:
+          if not self.hold_blindspot["R"]:
+             self.bs_timer["R"] -= 1
           ret.rightBlindspot = True
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
