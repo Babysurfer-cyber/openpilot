@@ -1303,8 +1303,7 @@ class CarrotServ:
         )
 
     # =========================================================
-    # =========================================================
-    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.5m/s^2 로직 (SideState 활용) ▼▼▼
+    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.5m/s^2 로직 (차선 조건 제거, 시속 70 이하 한정) ▼▼▼
     # =========================================================
     blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
     gas_pressed = getattr(CS, 'gasPressed', False) if CS is not None else False
@@ -1326,32 +1325,12 @@ class CarrotServ:
     if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 40.0 or is_edge_far):
       self.manual_turn_canceled = True
 
-    # 💡 [핵심] SideState 맨 끝 차로 판단 + [추가] 측면 주황색 실선 한정 판단
-    is_turn_lane = False
-    if CS is not None:
-      left_line = getattr(CS, 'leftLaneLine', 0)
-      right_line = getattr(CS, 'rightLaneLine', 0)
-      
-      # 💡 색상에 관계없이 끝자리가 0이나 5가 아닌 '모든 실선' 색출!
-      left_solid = (left_line % 10 not in (0, 5))
-      right_solid = (right_line % 10 not in (0, 5))
-
-      if getattr(CS, 'leftBlinker', False):
-        is_outermost = not self.left_side.lane_available
-        # 끝 차로이거나, 좌측이 '실선'일 경우 턴(Turn) 차로로 인정
-        is_turn_lane = is_outermost or left_solid
-      elif getattr(CS, 'rightBlinker', False):
-        is_outermost = not self.right_side.lane_available
-        # 끝 차로이거나, 우측이 '실선'일 경우 턴(Turn) 차로로 인정
-        is_turn_lane = is_outermost or right_solid
-
-    # 💡 속도 조건: 100km/h 이하일 때 '턴 차로(끝차로/주황색실선)'이거나 '이미 감속 중'일 때만 허용
+    # 💡 속도 조건: 70km/h 이하일 때만 허용
     speed_cond_met = False
-    if v_ego_kph <= 100.0:
-      if is_turn_lane or is_active:
-        speed_cond_met = True
+    if v_ego_kph <= 70.0:
+      speed_cond_met = True
 
-    # 조건: 고속도로 아님 & 2단 & 속도/끝차로조건 충족 & 영구취소 안됨!
+    # 조건: 고속도로 아님 & 2단 & 속도조건 충족 & 영구취소 안됨!
     turn_cond_met = (nav_link_class not in [1, 2, 3]) and \
                     (blinker_lever == 2) and \
                     speed_cond_met and \
