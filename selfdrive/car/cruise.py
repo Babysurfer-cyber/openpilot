@@ -736,73 +736,47 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [궁극의 오토모드 5번] 90km/h 분리 + 실시간 오프셋 + 10초 타이머
+    # ▼ [궁극의 오토모드 5번] 90 분리 + 오작동 제로 + 딜레이 제로
     # ==============================================================
     try:
       if self.frame % 10 == 0:
         self.current_driving_mode = self.params.get_int("MyDrivingMode")
 
       if getattr(self, 'current_driving_mode', 3) == 5:
-        # 1. 상태 변수 초기화
         if not hasattr(self, 'auto_prev_limit'): self.auto_prev_limit = 0
-        if not hasattr(self, 'auto_is_pending'): self.auto_is_pending = False
         if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
-        if not hasattr(self, 'auto_speed_offset'): self.auto_speed_offset = 10.0 # ▼ 추가: 사용자 오프셋 (기본 10)
+        if not hasattr(self, 'auto_speed_offset'): self.auto_speed_offset = 10.0
 
-        # 2. 우측 깜빡이 20초(2000프레임) 유지 타이머 (비상깜빡이 제외)
         left_blinker = getattr(CS, 'leftBlinker', False)
         right_blinker = getattr(CS, 'rightBlinker', False)
 
-        # 좌측이 꺼져있고 우측만 켜져 있을 때(순수 우측 깜빡이)만 타이머 작동
         if right_blinker and not left_blinker:
-          self.auto_blinker_timer = 2000  # 💡 10초(1000) -> 20초(2000)로 연장
+          self.auto_blinker_timer = 2000
         else:
           self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
           
-        # (임시) 깜빡이가 켜져 있거나 20초 이내인지 확인
-        is_blinker_on_or_pending = getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0
+        # 3. 통신망에서 데이터 추출
+        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 4BE
+        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 4A3
 
-        # 3. 통신망에서 추출
-        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
-        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
-        map_source = getattr(CS, 'mapSource', 0)              
-
-        # ▼▼▼ [추가] CS(capnp)에서 구조체 변수 바로 읽어오기 ▼▼▼
         nav_link_class = getattr(CS, 'navLinkClass', 0)
-        is_ic_jc = (nav_link_class in [2, 3])  # 2: IC, 3: JC
+        is_ic_jc = (nav_link_class in [2, 3])
         
-        # 💡 [핵심] 우측 깜빡이 4BE 수용 예외 조건은 링크 클래스가 1(고속도로 본선)일 때만 발동!
-        is_blinker_valid = is_blinker_on_or_pending and (nav_link_class == 1)
+        # 💡 연산자 우선순위(괄호) 명확히 지정: 우측깜빡이는 고속도로 본선(1)일 때만 유효!
+        is_blinker_valid = (getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0) and (nav_link_class == 1)
         
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
-        
-        # 💡 [수정] 톨게이트 감속/복귀는 고속도로 본선(LinkClass == 1)일 때만 작동하도록 조건 추가!
         is_tollgate = (nav_toll_exist == 1 and nav_link_class == 1)  
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-        # 💡 10초(1000프레임) 타이머 장착!
-        if not hasattr(self, 'auto_cam_timer'): self.auto_cam_timer = 0
-        if map_source == 2:
-          self.auto_cam_timer += 1
-        else:
-          self.auto_cam_timer = 0
-          
-        is_camera_pending = (map_source == 2 and self.auto_cam_timer < 1000)
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 및 10초 펜딩 조건 (원상 복구: 톨게이트 구간도 정상적으로 제한속도 수용)
-        # 💡 [핵심] 톨게이트 안에서는 속도가 90 이상이더라도 무조건 4BE(mixed) 카메라/제한속도를 사용합니다.
+        # 4. 90km/h 분리 (회원님 설계대로 완벽 작동)
         if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
-          else:
-            is_camera_pending = False
         else:
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
-          else:
-            is_camera_pending = False
 
         # ==============================================================
         # ▼ [최종] 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
@@ -816,7 +790,6 @@ class VCruiseCarrot:
           if v_cruise_kph != self.expected_tollgate_speed:
             self.tollgate_speed_changed = True
 
-        # 2. 톨게이트 최초 진입 시 (-20% 감속)
         if is_tollgate and not self.prev_is_tollgate:
           self.v_cruise_before_tollgate = v_cruise_kph
           self.tollgate_speed_changed = False
@@ -828,14 +801,12 @@ class VCruiseCarrot:
           self.expected_tollgate_speed = v_cruise_kph   
           
           self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
-          # 💡 [안내음 동기화] 톨게이트 진입 감속 완료 시점!
           try:
             with open("/dev/shm/carrot_prompt_text", "w") as f:
               f.write(f"톨게이트 진입: {int(v_cruise_kph)}km/h 🔔")
           except Exception:
             pass
           
-        # 3. 톨게이트 통과 후 (원래 속도로 복귀)
         elif not is_tollgate and self.prev_is_tollgate:
           if not self.tollgate_speed_changed and self.v_cruise_before_tollgate > 0:
             if v_cruise_kph < self.v_cruise_before_tollgate:
@@ -846,9 +817,10 @@ class VCruiseCarrot:
           self.expected_tollgate_speed = 0
 
         self.prev_is_tollgate = is_tollgate
-        # ==============================================================
 
-        # 5. 수동 조작 방어
+        # ==============================================================
+        # ▼ 5. 최종 속도 즉시 적용 (타이머 없음, 보류 방어막 없음)
+        # ==============================================================
         if not hasattr(self, 'auto_engage_timer'): self.auto_engage_timer = 0
         if CC.enabled and not getattr(self, 'enabled_last', False):
           self.auto_engage_timer = 150  
@@ -863,39 +835,32 @@ class VCruiseCarrot:
             new_offset = button_kph - target_raw_limit
             self.auto_speed_offset = float(max(0.0, min(10.0, new_offset)))
             self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
-          self.auto_is_pending = False
-          self.auto_cam_timer = 1000  
         else:
-          if target_raw_limit > 0:
-            if is_camera_pending:
-              self.auto_is_pending = True
-            else:
-              if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
-                if target_raw_limit < v_cruise_kph:
-                  raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
-                else:
-                  raw_offset = self.auto_speed_offset
-
-                calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-                offset = max(self.auto_speed_offset, calculated_offset)
-
-                expected_target = target_raw_limit + offset
-                
-                # 💡 [안내음 동기화] 실제 속도가 진짜로 변경되는 바로 그 순간!
-                if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
-                  try:
-                    with open("/dev/shm/carrot_prompt_text", "w") as f:
-                      f.write(f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔")
-                  except Exception:
-                    pass
-
-                v_cruise_kph = expected_target
-                self.auto_prev_limit = target_raw_limit
-                self.auto_is_pending = False
-          else:
-            self.auto_prev_limit = 0
-            self.auto_is_pending = False
+          # 💡 [핵심] 오작동(0이나 10 같은 통신 지연 에러값)은 철저히 무시! (30 이상만 통과)
+          if target_raw_limit >= 30:
             
+            # 💡 [딜레이 제로] 정상 속도이고 값이 이전과 달라졌다면, 조건 없이 즉시 업데이트!
+            if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging:
+              if target_raw_limit < v_cruise_kph:
+                raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
+              else:
+                raw_offset = getattr(self, 'auto_speed_offset', 10.0)
+
+              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+              offset = max(getattr(self, 'auto_speed_offset', 10.0), calculated_offset)
+
+              expected_target = target_raw_limit + offset
+              
+              if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
+                try:
+                  with open("/dev/shm/carrot_prompt_text", "w") as f:
+                    f.write(f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔")
+                except Exception:
+                  pass
+
+              v_cruise_kph = expected_target
+              self.auto_prev_limit = target_raw_limit
+              
     except Exception as e:
       self._add_log(f"Auto Mode Error: {e}")
     # ==============================================================
@@ -903,6 +868,7 @@ class VCruiseCarrot:
     # 🚨 기존 시스템 호출 유지
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return self._auto_speed_up(v_cruise_kph)
+
 
   ## desiredSpeed :
   #   leadCar_distance, leadCar_speed, leadCar_accel,
