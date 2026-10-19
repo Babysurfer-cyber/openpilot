@@ -775,8 +775,9 @@ class VCruiseCarrot:
         is_blinker_valid = is_blinker_on_or_pending and (nav_link_class == 1)
         
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
-        # 💡 [수정] 기존 (nav_toll_exist != 0) 에서 정확히 1일 때만 인식하도록 변경!
-        is_tollgate = (nav_toll_exist == 1)  
+        
+        # 💡 [수정] 톨게이트 감속/복귀는 고속도로 본선(LinkClass == 1)일 때만 작동하도록 조건 추가!
+        is_tollgate = (nav_toll_exist == 1 and nav_link_class == 1)  
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         # 💡 10초(1000프레임) 타이머 장착!
