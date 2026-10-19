@@ -949,22 +949,14 @@ class CarrotServ:
     vehicle_curve_speed = 250 # ▼▼▼ [추가] 커브 속도 변수
 
     # =========================================================
-    # ▼ [수정] 5번 모드(AUTO) 속도 변경 안내음 및 텍스트 알림 로직
+    # ▼ [수정] 5번 모드(AUTO) 안내음 로직은 cruise.py로 이관 완료!
     # =========================================================
     my_driving_mode = self.params.get_int("MyDrivingMode")
 
-    if not hasattr(self, 'prev_speed_limit'):
-      self.prev_speed_limit = self.nRoadLimitSpeed
-    if not hasattr(self, 'prev_driving_mode'):
-      self.prev_driving_mode = my_driving_mode
-    if not hasattr(self, 'was_auto_cam_serv'):
-      self.was_auto_cam_serv = False
-    if not hasattr(self, 'prev_nav_limit'):
-      self.prev_nav_limit = 0  
-    if not hasattr(self, 'pending_cam_limit_serv'):
-      self.pending_cam_limit_serv = 0
+    if not hasattr(self, 'prev_speed_limit'): self.prev_speed_limit = self.nRoadLimitSpeed
+    if not hasattr(self, 'prev_driving_mode'): self.prev_driving_mode = my_driving_mode
+    if not hasattr(self, 'was_auto_cam_serv'): self.was_auto_cam_serv = False
 
-    # ▼▼▼ [기존 로직 유지] 순정 내비 + 스마트폰 앱 카메라 모두 고려 ▼▼▼
     is_car_cam = (CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0)
     is_app_cam = getattr(self, 'xSpdLimit', 0) > 0 and getattr(self, 'xSpdDist', 0) > 0
     is_cam = is_car_cam or is_app_cam
@@ -980,147 +972,15 @@ class CarrotServ:
 
     play_prompt = False
     
+    # 💡 모드가 5번으로 방금 막 바뀌었을 때만 여기서 안내음 송출
     if self.prev_driving_mode != 5 and my_driving_mode == 5:
       play_prompt = True
       self.szPosRoadName = "오토모드(5번) 활성화 🔔"
 
     if my_driving_mode == 5:
-      # 차량 순정 개입에 흔들리지 않는 '콤마(오픈파일럿) 설정 크루즈 속도'를 가져옴
-      current_target = CS.vCruiseCluster if CS is not None else 0
-      
-      if CS is not None:
-        # ==============================================================
-        # ▼ [추가] 톨게이트 최초 진입 시 -20% 감속 안내음 동기화 ▼
-        # ==============================================================
-        nav_toll_exist = getattr(CS, 'navTollExist', 0)
-        is_tollgate = (nav_toll_exist == 1)
-        
-        if not hasattr(self, 'prev_is_tollgate_serv'): 
-          self.prev_is_tollgate_serv = False
-          
-        if is_tollgate and not self.prev_is_tollgate_serv:
-          # 내부 속도(v_cruise_kph)를 전달받은 current_target을 기준으로 계산
-          reduced_speed = current_target * 0.8
-          rounded_speed = float(math.floor((reduced_speed / 5.0) + 0.5) * 5.0)
-          target_toll_speed = max(30.0, rounded_speed)
-          
-          play_prompt = True
-          self.szPosRoadName = f"톨게이트 진입: {int(target_toll_speed)}km/h 🔔"
-          
-          # 오토모드 기준 속도를 감속된 속도로 강제 동기화 (오류 방지)
-          self.auto_active_target = target_toll_speed
-          
-        self.prev_is_tollgate_serv = is_tollgate
-        # ==============================================================
-
-        # 1. 우측 깜빡이 10초 타이머 (시간 기반)
-        if getattr(CS, 'rightBlinker', False):
-          self.auto_last_blinker_time_serv = time.monotonic()
-        is_blinker_valid = getattr(CS, 'rightBlinker', False) or (time.monotonic() - getattr(self, 'auto_last_blinker_time_serv', 0.0) < 10.0)
-
-        # 2. 통신망 속도 추출
-        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      
-        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    
-        map_source = getattr(CS, 'mapSource', 0)              
-
-        # 3. 카메라 10초 타이머 로직 적용
-        if not hasattr(self, 'auto_cam_start_time_serv'): self.auto_cam_start_time_serv = 0.0
-        
-        if map_source == 2:
-          if self.auto_cam_start_time_serv == 0.0:
-            self.auto_cam_start_time_serv = time.monotonic()
-          is_camera_pending_serv = (time.monotonic() - self.auto_cam_start_time_serv < 10.0)
-        else:
-          self.auto_cam_start_time_serv = 0.0
-          is_camera_pending_serv = False
-
-        target_raw_limit = 0
-
-        # 4. 90km/h 분리
-        if current_target >= 90 and not is_blinker_valid:
-          if speed_limit_pure > 0:
-            target_raw_limit = speed_limit_pure
-          else:
-            is_camera_pending_serv = False
-        else:
-          if speed_limit_mixed > 0:
-            target_raw_limit = speed_limit_mixed
-          else:
-            is_camera_pending_serv = False
-
-        # 상태 변수 초기화
-        if not hasattr(self, 'auto_prev_limit_serv'): 
-          self.auto_prev_limit_serv = 0
-        if not hasattr(self, 'auto_is_pending_serv'): 
-          self.auto_is_pending_serv = False
-        if not hasattr(self, 'auto_active_target'): 
-          self.auto_active_target = current_target
-
-        # 5. 버튼 입력 감지
-        button_type_serv = 0
-        for b in CS.buttonEvents:
-          if b.pressed and b.type.raw in [3, 4]: 
-            button_type_serv = b.type.raw
-            break
-            
-        cc_enabled = getattr(CS.cruiseState, 'enabled', False)
-        
-        if not hasattr(self, 'auto_engage_timer_serv'): self.auto_engage_timer_serv = 0
-        if cc_enabled and not getattr(self, 'enabled_last_serv', False):
-          self.auto_engage_timer_serv = 150
-        elif self.auto_engage_timer_serv > 0:
-          self.auto_engage_timer_serv -= 1
-        self.enabled_last_serv = cc_enabled
-
-        is_engaging_serv = (not cc_enabled or self.auto_engage_timer_serv > 0) and (button_type_serv in [3, 4])
-
-        # 💡 [핵심] 대기(펜딩) 중이 아니며 제한속도 변경도 없다면, 평소 크루즈 속도를 "변경 전 기준 속도"로 암기!
-        if not self.auto_is_pending_serv and target_raw_limit == self.auto_prev_limit_serv and not is_engaging_serv:
-          self.auto_active_target = current_target
-
-        # 6. 수동 조작 방어 및 안내음 트리거
-        if button_type_serv in [3, 4] and not is_engaging_serv:
-          if target_raw_limit > 0:
-            self.auto_prev_limit_serv = target_raw_limit
-          self.auto_is_pending_serv = False
-          
-          # 수동 개입 시 10초 타이머 강제 만료
-          self.auto_cam_start_time_serv = time.monotonic() - 10.0
-        else:
-          if target_raw_limit > 0:
-            if is_camera_pending_serv:
-              self.auto_is_pending_serv = True
-            else:
-              if self.auto_is_pending_serv or target_raw_limit != self.auto_prev_limit_serv or is_engaging_serv:
-                
-                # 💡 '변경 직전의 속도(auto_active_target)'를 기준으로 오프셋 계산
-                # [버그픽스] 무조건 +10km/h를 강제하던 하드코딩을 제거하고, 현재 설정된 오프셋 역산
-                current_offset = max(0.0, self.auto_active_target - self.auto_prev_limit_serv) if self.auto_prev_limit_serv > 0 else 0.0
-                
-                if target_raw_limit < self.auto_active_target:
-                  raw_offset = (self.auto_active_target - target_raw_limit) / 2.0
-                else:
-                  raw_offset = current_offset
-                  
-                calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-                offset = max(current_offset, calculated_offset)
-                expected_target = target_raw_limit + offset
-
-                # 💡 [버그 픽스] 계산된 속도가 '기억하던 예전 속도'와 진짜로 다를 때만 소리 울림!
-                if int(round(expected_target)) != int(round(self.auto_active_target)) or is_engaging_serv:
-                  play_prompt = True
-                  self.szPosRoadName = f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔"
-
-                self.auto_prev_limit_serv = target_raw_limit
-                self.auto_is_pending_serv = False
-                self.auto_active_target = expected_target  # 다음 계산을 위해 업데이트
-          else:
-            self.auto_prev_limit_serv = 0
-            self.auto_is_pending_serv = False
-            
-      # 화면 표시용 변수
-      current_limit = self.auto_prev_limit_serv if getattr(self, 'auto_prev_limit_serv', 0) > 0 else raw_limit
-        
+      # 💡 5번 모드에서는 cruise.py가 넘겨주는 신호를 기다림
+      # UI 표기용 현재 제한속도 (cruise.py와 무관하게 즉시 갱신)
+      current_limit = raw_limit
     else:
       # 5번 모드가 아닐 때 (기존 방식 유지)
       self.was_auto_cam_serv = False
@@ -1136,6 +996,17 @@ class CarrotServ:
         
       if current_limit != self.prev_speed_limit:
         self.prev_speed_limit = current_limit
+
+    # 💡 cruise.py에서 생성한 안내음 파일이 있는지 확인하여 파일이 있으면 읽어서 표출
+    try:
+      with open("/dev/shm/carrot_prompt_text", "r") as f:
+        prompt_text = f.read().strip()
+        if prompt_text:
+          play_prompt = True
+          self.szPosRoadName = prompt_text
+          os.remove("/dev/shm/carrot_prompt_text") # 읽은 후 삭제
+    except FileNotFoundError:
+      pass
 
     if play_prompt:
       try:
