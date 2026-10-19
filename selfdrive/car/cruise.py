@@ -736,7 +736,7 @@ class VCruiseCarrot:
     # ==============================================================
 
     # ==============================================================
-    # ▼ [궁극의 오토모드 5번] 90 분리 + 오작동 제로 + 딜레이 제로
+    # ▼ [궁극의 오토모드 5번] 90 분리 + 카메라 통과 시점 완벽 동기화
     # ==============================================================
     try:
       if self.frame % 10 == 0:
@@ -758,11 +758,11 @@ class VCruiseCarrot:
         # 3. 통신망에서 데이터 추출
         speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 4BE
         speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 4A3
+        map_source = getattr(CS, 'mapSource', 0)              # 💡 카메라 플래그 (2 = 안내 중)
 
         nav_link_class = getattr(CS, 'navLinkClass', 0)
         is_ic_jc = (nav_link_class in [2, 3])
         
-        # 💡 연산자 우선순위(괄호) 명확히 지정: 우측깜빡이는 고속도로 본선(1)일 때만 유효!
         is_blinker_valid = (getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0) and (nav_link_class == 1)
         
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
@@ -770,13 +770,29 @@ class VCruiseCarrot:
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 (회원님 설계대로 완벽 작동)
+        # 4. 90km/h 분리
         if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
         else:
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
+
+        # ==============================================================
+        # ▼ [핵심] 멀리서 카메라 안내 시 즉시 감속 방지 (보류 로직) ▼
+        # ==============================================================
+        if not hasattr(self, 'camera_pending'): self.camera_pending = False
+
+        # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류(Pending) 켜기
+        # -> 크루즈 속도가 멀리서부터 뚝 떨어지는 것을 막고, 기존 속도를 유지!
+        if map_source == 2:
+            self.camera_pending = True
+            
+        # 2. 카메라 통과 후 (map_source가 2에서 0으로 바뀌었을 때!)
+        elif map_source != 2 and self.camera_pending:
+            # 찰나의 통신 딜레이(0)는 철저히 무시하고, 정상 속도가 잡히는 순간 보류 상태를 해제!
+            if target_raw_limit >= 30:
+                self.camera_pending = False
 
         # ==============================================================
         # ▼ [최종] 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
@@ -819,7 +835,7 @@ class VCruiseCarrot:
         self.prev_is_tollgate = is_tollgate
 
         # ==============================================================
-        # ▼ 5. 최종 속도 즉시 적용 (타이머 없음, 보류 방어막 없음)
+        # ▼ 5. 최종 속도 즉시 적용 (단, 카메라 통과 시점에만 동기화) ▼
         # ==============================================================
         if not hasattr(self, 'auto_engage_timer'): self.auto_engage_timer = 0
         if CC.enabled and not getattr(self, 'enabled_last', False):
@@ -835,11 +851,14 @@ class VCruiseCarrot:
             new_offset = button_kph - target_raw_limit
             self.auto_speed_offset = float(max(0.0, min(10.0, new_offset)))
             self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
+          
+          # 💡 사용자가 직접 수동 조작을 하면 카메라 보류(Pending) 방어막 즉시 강제 해제
+          self.camera_pending = False
         else:
-          # 💡 [핵심] 오작동(0이나 10 같은 통신 지연 에러값)은 철저히 무시! (30 이상만 통과)
-          if target_raw_limit >= 30:
+          # 💡 [핵심] 카메라 안내 중(보류 상태)이 아닐 때만! 크루즈 설정 속도를 변경합니다.
+          if target_raw_limit >= 30 and not getattr(self, 'camera_pending', False):
             
-            # 💡 [딜레이 제로] 정상 속도이고 값이 이전과 달라졌다면, 조건 없이 즉시 업데이트!
+            # 💡 [통과 시점 동기화] 값이 이전 도로와 달라졌다면 조건 없이 즉시 업데이트!
             if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging:
               if target_raw_limit < v_cruise_kph:
                 raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
@@ -868,7 +887,6 @@ class VCruiseCarrot:
     # 🚨 기존 시스템 호출 유지
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     return self._auto_speed_up(v_cruise_kph)
-
 
   ## desiredSpeed :
   #   leadCar_distance, leadCar_speed, leadCar_accel,
