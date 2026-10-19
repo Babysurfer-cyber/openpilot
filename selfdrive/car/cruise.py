@@ -811,8 +811,6 @@ class VCruiseCarrot:
         if not hasattr(self, 'tollgate_speed_changed'): self.tollgate_speed_changed = False
         if not hasattr(self, 'expected_tollgate_speed'): self.expected_tollgate_speed = 0
 
-        # 1. 톨게이트 구간 내부에서 속도가 변경되었는지 감지 
-        # (수동 조작 & 제한속도 변경으로 인한 오토모드 개입 모두 잡아냄)
         if is_tollgate and self.prev_is_tollgate:
           if v_cruise_kph != self.expected_tollgate_speed:
             self.tollgate_speed_changed = True
@@ -822,24 +820,26 @@ class VCruiseCarrot:
           self.v_cruise_before_tollgate = v_cruise_kph
           self.tollgate_speed_changed = False
           
-          # 20% 감속 후 5단위로 반올림
           reduced_speed = v_cruise_kph * 0.8
           rounded_speed = float(math.floor((reduced_speed / 5.0) + 0.5) * 5.0)
           
           v_cruise_kph = max(30.0, rounded_speed)
-          self.expected_tollgate_speed = v_cruise_kph   # 감속된 목표 속도 기억
+          self.expected_tollgate_speed = v_cruise_kph   
           
           self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
+          # 💡 [안내음 동기화] 톨게이트 진입 감속 완료 시점!
+          try:
+            with open("/dev/shm/carrot_prompt_text", "w") as f:
+              f.write(f"톨게이트 진입: {int(v_cruise_kph)}km/h 🔔")
+          except Exception:
+            pass
           
         # 3. 톨게이트 통과 후 (원래 속도로 복귀)
         elif not is_tollgate and self.prev_is_tollgate:
-          # 톨게이트 구간에서 오토모드나 수동 개입이 한 번도 없었을 때만 안전하게 복귀
           if not self.tollgate_speed_changed and self.v_cruise_before_tollgate > 0:
             if v_cruise_kph < self.v_cruise_before_tollgate:
               v_cruise_kph = self.v_cruise_before_tollgate
               self._add_log(f"Tollgate OUT: Restore Speed ({v_cruise_kph}km/h)")
-          
-          # 톨게이트를 빠져나왔으므로 변수 초기화
           self.v_cruise_before_tollgate = 0
           self.tollgate_speed_changed = False
           self.expected_tollgate_speed = 0
@@ -859,24 +859,17 @@ class VCruiseCarrot:
         if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
           if target_raw_limit > 0:
             self.auto_prev_limit = target_raw_limit
-            
-            # ▼▼▼ [핵심 추가] 사용자가 버튼으로 맞춘 속도를 바탕으로 오프셋 기억 (0~10 제한) ▼▼▼
             new_offset = button_kph - target_raw_limit
             self.auto_speed_offset = float(max(0.0, min(10.0, new_offset)))
             self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
-            
           self.auto_is_pending = False
-          self.auto_cam_timer = 1000  # 💡 수동 개입 시 타이머 강제 종료 (오작동 방지)
+          self.auto_cam_timer = 1000  
         else:
           if target_raw_limit > 0:
-            # 💡 10초가 안 지났으면 계속 대기
             if is_camera_pending:
               self.auto_is_pending = True
             else:
-              # 💡 10초가 지났거나, 일반 속도변경일 때 트리거 폭발!
               if self.auto_is_pending or target_raw_limit != self.auto_prev_limit or is_engaging:
-                
-                # ▼▼▼ [수정] 10.0 대신 저장된 사용자 오프셋(auto_speed_offset) 사용 ▼▼▼
                 if target_raw_limit < v_cruise_kph:
                   raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
                 else:
@@ -885,7 +878,17 @@ class VCruiseCarrot:
                 calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
                 offset = max(self.auto_speed_offset, calculated_offset)
 
-                v_cruise_kph = target_raw_limit + offset
+                expected_target = target_raw_limit + offset
+                
+                # 💡 [안내음 동기화] 실제 속도가 진짜로 변경되는 바로 그 순간!
+                if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
+                  try:
+                    with open("/dev/shm/carrot_prompt_text", "w") as f:
+                      f.write(f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔")
+                  except Exception:
+                    pass
+
+                v_cruise_kph = expected_target
                 self.auto_prev_limit = target_raw_limit
                 self.auto_is_pending = False
           else:
