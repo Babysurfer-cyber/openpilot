@@ -786,10 +786,12 @@ class VCruiseCarrot:
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리
+        # 4. 90km/h 분리 (4A3 블랭크 시 4BE 백업 추가)
         if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
+          elif speed_limit_mixed > 0:  # 💡 4A3 신호가 순간적으로 0일 때 4BE로 안전하게 백업
+            target_raw_limit = speed_limit_mixed
         else:
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
@@ -799,16 +801,16 @@ class VCruiseCarrot:
         # ==============================================================
         if not hasattr(self, 'camera_pending'): self.camera_pending = False
 
-        # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류(Pending) 켜기
-        # -> 크루즈 속도가 멀리서부터 뚝 떨어지는 것을 막고, 기존 속도를 유지!
+        # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류 켜기
         if map_source == 2:
             self.camera_pending = True
             
         # 2. 카메라 통과 후 (map_source가 2에서 0으로 바뀌었을 때!)
         elif map_source != 2 and self.camera_pending:
-            # 찰나의 통신 딜레이(0)는 철저히 무시하고, 정상 속도가 잡히는 순간 보류 상태를 해제!
-            if target_raw_limit >= 30:
-                self.camera_pending = False
+            # 💡 [치명적 버그 수정] 카메라 통과 찰나에 0이 들어오더라도 
+            # 영원히 락업(Lock-up)되는 것을 막기 위해 조건 없이 무조건 보류를 해제합니다.
+            # (해제되더라도 하단 최종 적용부의 target_raw_limit >= 30 방어막 덕분에 0으로 감속되지 않습니다.)
+            self.camera_pending = False
 
         # ==============================================================
         # ▼ [최종] 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
