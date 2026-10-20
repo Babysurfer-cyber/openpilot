@@ -500,14 +500,30 @@ class VCruiseCarrot:
     
     self.button_type_pressed = button_type  # ▼▼▼ [핵심 추가] 오토모드 오프셋 조절을 위해 눌린 버튼 기억 ▼▼▼
 
-    # ▼▼▼ [추가] CAN-FD 오류로 인한 크루즈 해제 시 +버튼 자동 입력 ▼▼▼
+    # ▼▼▼ [수정] CAN-FD 오류 시 0.5초(50프레임) 대기 후 +버튼 자동 입력 ▼▼▼
+    if not hasattr(self, 'canfd_restore_timer'):
+      self.canfd_restore_timer = 0
+
+    # 1. 크루즈가 예기치 않게 풀린 순간 감지 -> 즉시 켜지 않고 0.5초 타이머 시작
     if self.enabled_last and not CC.enabled and getattr(self, '_lat_enabled', False):
-      # 브레이크, 엑셀, 캔슬 버튼 조작이 없고 && '메인 크루즈 시스템이 켜져 있는(대기) 상태'일 때만 작동!
       if not CS.brakePressed and not CS.gasPressed and not getattr(self, '_cruise_cancel_state', False) and CS.cruiseState.available:
-        button_type = ButtonType.accelCruise
-        long_pressed = False
-        self._cruise_control(1, -1, "Auto Re-enable on CAN-FD Fault") # 💡 핵심 추가: 차량에 실제 크루즈 ON 명령 하달
-        self._add_log("Auto Re-enable (+ button) on CAN-FD Fault")
+        self.canfd_restore_timer = 50  # 100Hz 기준 50프레임 = 0.5초 대기
+        self._add_log("CAN-FD Fault: Wait 0.5s")
+
+    # 2. 타이머 차감 및 재활성화 트리거
+    if self.canfd_restore_timer > 0:
+      # 대기하는 0.5초 동안 운전자가 브레이크나 엑셀을 밟으면 자동 복구 취소
+      if CS.brakePressed or CS.gasPressed or getattr(self, '_cruise_cancel_state', False) or not CS.cruiseState.available:
+        self.canfd_restore_timer = 0
+        self._add_log("CAN-FD Restore Canceled by User")
+      else:
+        self.canfd_restore_timer -= 1
+        # 0.5초가 정확히 끝나는 순간!
+        if self.canfd_restore_timer == 0:
+          button_type = ButtonType.accelCruise  # + 버튼(RES) 가상 입력
+          long_pressed = False
+          self._cruise_control(1, -1, "Auto Re-enable on CAN-FD Fault") # 차량에 실제 크루즈 ON 명령 하달
+          self._add_log("Auto Re-enable (+ button) FIRED")
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
