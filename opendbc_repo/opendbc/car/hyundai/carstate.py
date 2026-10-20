@@ -846,34 +846,49 @@ class CarState(CarStateBase):
 
       # --- 3. 좌측 사각지대(BSD) 로직 ---
       if left_front_seen or left_rear_seen:
-        self.last_approach_time["L"] = max(time_lf, time_lr, 0.5) 
+        # 시야 내에 차가 보이면 타이머 가동을 위해 마지막으로 보였던 통과 예상 시간을 버퍼에 안전하게 장전!
+        # (순간적으로 0이 되는 글리치 방지를 위해 최소 0.5초에서 최대 계산된 시간까지 캡처)
+        time_to_pass_l = max(time_lf, time_lr)
+        if time_to_pass_l > 0.1:
+            self.last_approach_time["L"] = max(time_to_pass_l, 0.5)
+            
         self.hold_blindspot["L"] = hold_lf or hold_lr 
         self.bs_timer["L"] = 0
         ret.leftBlindspot = True
+        
       else:
-        # 안전거리 명확히 돌파 시 완전 해제
+        # 차가 시야에서 사라졌을 때의 판별 로직
+        
+        # 3-1. 아예 멀리 떨어져서 완전히 안전해진 경우 -> 즉시 올클리어!
         if ret.leftLongDist >= self.front_dist_limit["L"] or self.lr_distance >= rear_dist_limit:
           self.bs_timer["L"] = 0
           self.last_approach_time["L"] = 0.0
           self.hold_blindspot["L"] = False
-        
-        # 차가 맹점(거리 0)에 들어갈 때 타이머 가동
-        elif self.last_approach_time["L"] > 0:
-          self.bs_timer["L"] = int(self.last_approach_time["L"] / DT_CTRL)
-          self.last_approach_time["L"] = 0.0 
           
-        # 타이머 차감 및 홀드 유지
-        if self.bs_timer["L"] > 0 or self.hold_blindspot["L"]:
-          if not self.hold_blindspot["L"]:
-             self.bs_timer["L"] -= 1
+        # 3-2. 안전거리는 돌파 안 했는데, 차가 레이더에서 갑자기 사라짐 = 맹점(옆구리) 진입!
+        elif self.last_approach_time["L"] > 0:
+          # 버퍼에 장전해둔 예상 시간만큼 방어 타이머 충전 (DT_CTRL로 나누어 프레임 수로 환산)
+          self.bs_timer["L"] = int(self.last_approach_time["L"] / DT_CTRL)
+          self.last_approach_time["L"] = 0.0 # 재충전 방지 (1회성 발동)
+          
+        # 3-3. 타이머 차감 및 홀드 유지 판별
+        if self.hold_blindspot["L"]:
           ret.leftBlindspot = True
+        elif self.bs_timer["L"] > 0:
+          self.bs_timer["L"] -= 1
+          ret.leftBlindspot = True
+
 
       # --- 4. 우측 사각지대(BSD) 로직 ---
       if right_front_seen or right_rear_seen:
-        self.last_approach_time["R"] = max(time_rf, time_rr, 0.5)
+        time_to_pass_r = max(time_rf, time_rr)
+        if time_to_pass_r > 0.1:
+            self.last_approach_time["R"] = max(time_to_pass_r, 0.5)
+            
         self.hold_blindspot["R"] = hold_rf or hold_rr
         self.bs_timer["R"] = 0
         ret.rightBlindspot = True
+        
       else:
         if ret.rightLongDist >= self.front_dist_limit["R"] or self.rr_distance >= rear_dist_limit:
           self.bs_timer["R"] = 0
@@ -884,9 +899,10 @@ class CarState(CarStateBase):
           self.bs_timer["R"] = int(self.last_approach_time["R"] / DT_CTRL)
           self.last_approach_time["R"] = 0.0
           
-        if self.bs_timer["R"] > 0 or self.hold_blindspot["R"]:
-          if not self.hold_blindspot["R"]:
-             self.bs_timer["R"] -= 1
+        if self.hold_blindspot["R"]:
+          ret.rightBlindspot = True
+        elif self.bs_timer["R"] > 0:
+          self.bs_timer["R"] -= 1
           ret.rightBlindspot = True
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
