@@ -819,7 +819,10 @@ class CarState(CarStateBase):
       if seen_lf or seen_lr:
         ret.leftBlindspot = True
         v_active = v_lr if seen_lr else v_lf
-        self.last_approach_v["L"] = v_active
+        
+        # 💡 [핵심 수정] 레이더 프리징(잔상)으로 인해 속도가 순간적으로 0이 되는 것을 무시
+        if abs(v_active) > 0.5:
+            self.last_approach_v["L"] = v_active
         
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["L"] = int(hold_sec / DT_CTRL)
@@ -841,8 +844,11 @@ class CarState(CarStateBase):
       if seen_rf or seen_rr:
         ret.rightBlindspot = True
         v_active = v_rr if seen_rr else v_rf
-        self.last_approach_v["R"] = v_active
         
+        # 💡 [핵심 수정] 레이더 프리징(잔상)으로 인해 속도가 순간적으로 0이 되는 것을 무시
+        if abs(v_active) > 0.5:
+            self.last_approach_v["R"] = v_active
+            
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["R"] = int(hold_sec / DT_CTRL)
       else:
