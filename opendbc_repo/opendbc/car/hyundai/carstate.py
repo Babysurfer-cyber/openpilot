@@ -787,14 +787,9 @@ class CarState(CarStateBase):
       # 1. 5프레임간의 거리 변화를 통해 상대 속도(v) 계산
       def calc_v(hist, current_dist):
         if 0.1 < current_dist < 20.0:
-          # 💡 [핵심 해결 1] 레이더 타겟이 갑자기 바뀌며 거리가 비정상적으로 튀는 현상 방지
-          # 1프레임(0.01초) 만에 1m 이상 거리가 튀면 배경을 잡은 노이즈로 간주하고 초기화
-          if len(hist) > 0 and abs(current_dist - hist[-1]) > 1.0:
-            hist.clear()
-            
           hist.append(current_dist)
           if len(hist) >= 5:
-            # 음수(-): 다가옴(추월당함/내가추월함 모두 포함), 양수(+): 멀어짐
+            # 음수(-): 다가옴(추월당함), 양수(+): 멀어짐(내가 추월함)
             return (hist[-1] - hist[0]) / (len(hist) * DT_CTRL)
         else:
           hist.clear()
@@ -825,15 +820,14 @@ class CarState(CarStateBase):
         ret.leftBlindspot = True
         v_active = v_lr if seen_lr else v_lf
         
-        # 💡 [핵심 수정 2] 속도가 0에 가까운 프리징만 무시하고, 미세한 추월 속도(0.1 이상)도 모두 기억!
-        if abs(v_active) > 0.1:
+        # 💡 [핵심 수정] 레이더 프리징(잔상)으로 인해 속도가 순간적으로 0이 되는 것을 무시
+        if abs(v_active) > 0.5:
             self.last_approach_v["L"] = v_active
         
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["L"] = int(hold_sec / DT_CTRL)
       else:
-        # 💡 [핵심 수정 3] 천천히 추월할 때도 작동하도록 타이머 발동 기준을 -0.5에서 -0.1로 민감하게 변경!
-        if self.last_approach_v["L"] < -0.1:
+        if self.last_approach_v["L"] < -0.5:
           self.bs_timer["L"] = int(3.0 / DT_CTRL)
           self.last_approach_v["L"] = 0.0
 
@@ -851,15 +845,14 @@ class CarState(CarStateBase):
         ret.rightBlindspot = True
         v_active = v_rr if seen_rr else v_rf
         
-        # 💡 [핵심 수정 2] 우측도 동일하게 미세 추월 기억
-        if abs(v_active) > 0.1:
+        # 💡 [핵심 수정] 레이더 프리징(잔상)으로 인해 속도가 순간적으로 0이 되는 것을 무시
+        if abs(v_active) > 0.5:
             self.last_approach_v["R"] = v_active
             
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["R"] = int(hold_sec / DT_CTRL)
       else:
-        # 💡 [핵심 수정 3] 천천히 추월 시에도 타이머 가동
-        if self.last_approach_v["R"] < -0.1:
+        if self.last_approach_v["R"] < -0.5:
           self.bs_timer["R"] = int(3.0 / DT_CTRL)
           self.last_approach_v["R"] = 0.0
 
