@@ -784,37 +784,56 @@ class VCruiseCarrot:
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
         is_tollgate = (nav_toll_exist == 1 and nav_link_class == 1)  
 
+        # ==============================================================
+        # ▼ [회원님 아이디어 적용] 4A3(순정 내비) 제한속도 1초(100프레임) 기억 로직 ▼
+        # ==============================================================
+        if not hasattr(self, 'memorized_nav_limit'): self.memorized_nav_limit = 0
+        if not hasattr(self, 'nav_limit_timer'): self.nav_limit_timer = 0
+
+        if map_source == 2:
+            # 카메라 구역 안에서는 유효한 4A3 값을 계속 업데이트하며 기억
+            if speed_limit_pure > 0:
+                self.memorized_nav_limit = speed_limit_pure
+            # 타이머는 1초(100프레임)로 충전 (CAN 통신 딜레이 방어용)
+            self.nav_limit_timer = 100  
+        else:
+            # 카메라 구역을 벗어나면 타이머 차감
+            if self.nav_limit_timer > 0:
+                self.nav_limit_timer -= 1
+                
+        # 💡 핵심: map_source가 0이 되는 찰나에 4A3 값이 증발해도 1초간 부활시킴!
+        if speed_limit_pure == 0 and self.nav_limit_timer > 0:
+            speed_limit_pure = self.memorized_nav_limit
+
+        # ==============================================================
+        # ▼ 카메라 존 진입/통과 감지 ▼
+        # ==============================================================
+        is_camera_zone = (map_source == 2)
+        
+        if not hasattr(self, 'prev_camera_zone'): self.prev_camera_zone = False
+
+        # 진입 및 통과 순간 감지 트리거
+        camera_just_entered = is_camera_zone and not self.prev_camera_zone
+        camera_just_passed = not is_camera_zone and self.prev_camera_zone
+
+        self.prev_camera_zone = is_camera_zone
+
+        # ==============================================================
+        # ▼ 4. 90km/h 분리 (고속주행 시 철저히 4A3만 신뢰, 4BE 백업 금지) ▼
+        # ==============================================================
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 (고속주행 시 철저히 4A3만 신뢰, 4BE 백업 금지)
         if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
+          # 💡 통과 시점(1초) 동안 speed_limit_pure가 유지되므로 동기화가 완벽히 작동!
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
-          # 💡 [핵심] 고속 주행 시 4A3가 없다고 해서 옆 국도 정보가 섞인 4BE를 끌어쓰면
-          # 고속도로 한복판에서 30/50으로 급감속하는 대참사가 발생합니다. 따라서 elif 백업 삭제!
         else:
           # 90 미만(국도, 시내)에서는 4A3와 4BE가 혼합된 speed_limit_mixed 사용 허용
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
 
         # ==============================================================
-        # ▼ [핵심] 멀리서 카메라 안내 시 즉시 감속 방지 (보류 로직) ▼
-        # ==============================================================
-        if not hasattr(self, 'camera_pending'): self.camera_pending = False
-
-        # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류 켜기
-        if map_source == 2:
-            self.camera_pending = True
-            
-        # 2. 카메라 통과 후 (map_source가 2에서 0으로 바뀌었을 때!)
-        elif map_source != 2 and self.camera_pending:
-            # 💡 [치명적 버그 수정] 카메라 통과 찰나에 0이 들어오더라도 
-            # 영원히 락업(Lock-up)되는 것을 막기 위해 조건 없이 무조건 보류를 해제합니다.
-            # (해제되더라도 하단 최종 적용부의 target_raw_limit >= 30 방어막 덕분에 0으로 감속되지 않습니다.)
-            self.camera_pending = False
-
-        # ==============================================================
-        # ▼ [최종] 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
+        # ▼ 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
         # ==============================================================
         if not hasattr(self, 'prev_is_tollgate'): self.prev_is_tollgate = False
         if not hasattr(self, 'v_cruise_before_tollgate'): self.v_cruise_before_tollgate = 0
@@ -870,29 +889,33 @@ class VCruiseCarrot:
             new_offset = button_kph - target_raw_limit
             self.auto_speed_offset = float(max(0.0, min(10.0, new_offset)))
             self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
-          
-          # 💡 사용자가 직접 수동 조작을 하면 카메라 보류(Pending) 방어막 즉시 강제 해제
-          self.camera_pending = False
         else:
-          # 💡 [핵심] 카메라 안내 중(보류 상태)이 아닐 때만! 크루즈 설정 속도를 변경합니다.
-          if target_raw_limit >= 30 and not getattr(self, 'camera_pending', False):
+          if target_raw_limit >= 30:
             
-            # 💡 [통과 시점 동기화] 값이 이전 도로와 달라졌다면 조건 없이 즉시 업데이트!
-            if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging:
-              if target_raw_limit < v_cruise_kph:
-                raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
+            # 💡 [핵심 동기화 트리거] 제한속도 변경, 인게이지, **카메라 존 진입**, **카메라 존 통과** 시점에 무조건 동기화!
+            if (target_raw_limit != getattr(self, 'auto_prev_limit', 0) 
+                or is_engaging 
+                or camera_just_entered 
+                or camera_just_passed):
+              
+              if is_camera_zone:
+                # 💡 카메라 구역(mapSource == 2)이면 오프셋 무시! 제한속도로 칼같이 꽂아버립니다.
+                expected_target = target_raw_limit
               else:
-                raw_offset = getattr(self, 'auto_speed_offset', 10.0)
+                # 💡 평상시 또는 카메라를 통과했다면 저장해둔 오프셋을 다시 더해줍니다!
+                if target_raw_limit < v_cruise_kph and not (camera_just_entered or camera_just_passed):
+                  raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
+                else:
+                  raw_offset = getattr(self, 'auto_speed_offset', 10.0)
 
-              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-              offset = max(getattr(self, 'auto_speed_offset', 10.0), calculated_offset)
-
-              expected_target = target_raw_limit + offset
+                calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
+                offset = max(getattr(self, 'auto_speed_offset', 10.0), calculated_offset)
+                expected_target = target_raw_limit + offset
               
               if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
                 try:
                   with open("/dev/shm/carrot_prompt_text", "w") as f:
-                    f.write(f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔")
+                    f.write(f"오토 속도 변경: {int(expected_target)}km/h 🔔")
                 except Exception:
                   pass
 
