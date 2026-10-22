@@ -784,6 +784,25 @@ class VCruiseCarrot:
         nav_toll_exist = getattr(CS, 'navTollExist', 0)
         is_tollgate = (nav_toll_exist == 1 and nav_link_class == 1)  
 
+        # ==============================================================
+        # ▼ [추가] 4A3(순정 내비) 제한속도 1초(100프레임) 기억 로직 ▼
+        # ==============================================================
+        if not hasattr(self, 'memorized_nav_limit'): self.memorized_nav_limit = 0
+        if not hasattr(self, 'nav_limit_timer'): self.nav_limit_timer = 0
+
+        if map_source == 2:
+            if speed_limit_pure > 0:
+                self.memorized_nav_limit = speed_limit_pure
+            self.nav_limit_timer = 100  
+        else:
+            if self.nav_limit_timer > 0:
+                self.nav_limit_timer -= 1
+                
+        # map_source가 0이 되어도 1초간 4A3 값 부활
+        if speed_limit_pure == 0 and self.nav_limit_timer > 0:
+            speed_limit_pure = self.memorized_nav_limit
+        # ==============================================================
+
         target_raw_limit = 0
         
         # ==============================================================        
