@@ -801,7 +801,6 @@ class VCruiseCarrot:
         # ▼ [핵심] 멀리서 카메라 안내 시 즉시 감속 방지 (보류 로직) ▼
         # ==============================================================
         if not hasattr(self, 'camera_pending'): self.camera_pending = False
-        self.just_passed_camera = False  # 💡 [추가] 매 프레임 False로 초기화
 
         # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류 켜기
         if map_source == 2:
@@ -811,8 +810,8 @@ class VCruiseCarrot:
         elif map_source != 2 and self.camera_pending:
             # 💡 [치명적 버그 수정] 카메라 통과 찰나에 0이 들어오더라도 
             # 영원히 락업(Lock-up)되는 것을 막기 위해 조건 없이 무조건 보류를 해제합니다.
+            # (해제되더라도 하단 최종 적용부의 target_raw_limit >= 30 방어막 덕분에 0으로 감속되지 않습니다.)
             self.camera_pending = False
-            self.just_passed_camera = True  # 💡 [추가] 방금 카메라를 통과했음을 알리는 트리거 온!
 
         # ==============================================================
         # ▼ [최종] 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
@@ -878,8 +877,8 @@ class VCruiseCarrot:
           # 💡 [핵심] 카메라 안내 중(보류 상태)이 아닐 때만! 크루즈 설정 속도를 변경합니다.
           if target_raw_limit >= 30 and not getattr(self, 'camera_pending', False):
             
-            # 💡 [통과 시점 동기화] 값이 이전 도로와 달라졌거나, 강제 인게이지, **또는 방금 카메라를 통과했을 때!**
-            if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging or getattr(self, 'just_passed_camera', False):
+            # 💡 [통과 시점 동기화] 값이 이전 도로와 달라졌다면 조건 없이 즉시 업데이트!
+            if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging:
               if target_raw_limit < v_cruise_kph:
                 raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
               else:
