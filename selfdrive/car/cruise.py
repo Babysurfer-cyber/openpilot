@@ -786,13 +786,14 @@ class VCruiseCarrot:
 
         target_raw_limit = 0
 
-        # 4. 90km/h 분리 (4A3 블랭크 시 4BE 백업 추가)
+        # 4. 90km/h 분리 (고속주행 시 철저히 4A3만 신뢰, 4BE 백업 금지)
         if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
           if speed_limit_pure > 0:
             target_raw_limit = speed_limit_pure
-          elif speed_limit_mixed > 0:  # 💡 4A3 신호가 순간적으로 0일 때 4BE로 안전하게 백업
-            target_raw_limit = speed_limit_mixed
+          # 💡 [핵심] 고속 주행 시 4A3가 없다고 해서 옆 국도 정보가 섞인 4BE를 끌어쓰면
+          # 고속도로 한복판에서 30/50으로 급감속하는 대참사가 발생합니다. 따라서 elif 백업 삭제!
         else:
+          # 90 미만(국도, 시내)에서는 4A3와 4BE가 혼합된 speed_limit_mixed 사용 허용
           if speed_limit_mixed > 0:
             target_raw_limit = speed_limit_mixed
 
