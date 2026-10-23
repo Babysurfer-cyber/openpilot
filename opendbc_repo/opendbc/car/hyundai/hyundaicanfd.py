@@ -285,18 +285,33 @@ def create_acc_cancel(packer, CP, CAN, cruise_info_copy):
 
 def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control):
 
-
   if CS.lfahda_cluster is not None:
     values = copy.copy(CS.lfahda_cluster)
     rx_counter = values.pop("COUNTER", None)
   else:
     return []
+    # (※ 원본 코드에 return [] 뒤쪽 로직이 있는데, 들여쓰기 구조상 실행되지 않는 코드일 수 있습니다. 원본 유지합니다.)
     values = {}
     rx_counter = None
     values["LFA_OptUsmSta"] = 2
     values["HDA_OptUsmSta"] = 2
+
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  values["HDA_LFA_SymSta"] = 2 if CS.out.carrotCruise else 1 if lat_active else 0
+  
+  # ==============================================================
+  # ▼ [추가] 전방 정지 차량 판단 로직 ▼
+  # ==============================================================
+  # 1. 앞차가 보이고(leadVisible), 
+  # 2. 앞차의 속도(vLead)가 1.0m/s(약 3.6km/h) 미만일 때 정지 차량으로 간주
+  # (※ 브랜치에 따라 CS.out에 vLead 대신 vLeadKph 등을 쓸 수 있으므로 getattr로 안전하게 가져옵니다)
+  lead_v = getattr(CS.out, 'vLead', 999.0)
+  is_stationary_lead = hud_control.leadVisible and (lead_v < 1.0)
+
+  # ==============================================================
+  # ▼ [수정] 당근크루즈 중이거나, 정지 차량 앞일 때 2로 변경 ▼
+  # ==============================================================
+  values["HDA_LFA_SymSta"] = 2 if is_stationary_lead else (1 if lat_active else 0)
+  
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
 
 def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
