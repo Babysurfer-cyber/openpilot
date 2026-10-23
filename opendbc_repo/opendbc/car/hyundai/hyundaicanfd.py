@@ -299,16 +299,15 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
   values["HDA_CntrlModSta"] = 2 if long_active else 0
   
   # ==============================================================
-  # ▼ [추가] 전방 정지 차량 판단 로직 ▼
+  # ▼ [추가] 크루즈 작동 중 + 전방 정지 차량 판단 로직 ▼
   # ==============================================================
-  # 1. 앞차가 보이고(leadVisible), 
-  # 2. 앞차의 속도(vLead)가 1.0m/s(약 3.6km/h) 미만일 때 정지 차량으로 간주
-  # (※ 브랜치에 따라 CS.out에 vLead 대신 vLeadKph 등을 쓸 수 있으므로 getattr로 안전하게 가져옵니다)
   lead_v = getattr(CS.out, 'vLead', 999.0)
-  is_stationary_lead = hud_control.leadVisible and (lead_v < 1.0)
+  
+  # 💡 long_active(크루즈 켜짐) 조건을 맨 앞에 추가했습니다!
+  is_stationary_lead = long_active and hud_control.leadVisible and (lead_v < 1.0)
 
   # ==============================================================
-  # ▼ [수정] 당근크루즈 중이거나, 정지 차량 앞일 때 2로 변경 ▼
+  # ▼ [수정] 크루즈 중 정지 차량 앞일 때 2로 변경 ▼
   # ==============================================================
   values["HDA_LFA_SymSta"] = 2 if is_stationary_lead else (1 if lat_active else 0)
   
