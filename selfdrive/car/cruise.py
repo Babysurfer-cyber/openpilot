@@ -722,7 +722,7 @@ class VCruiseCarrot:
         current_source = getattr(self, 'desiredSource', '')
         is_vturn_decel = (current_source == "VTRUN")
         
-        if is_vturn_decel and self.desiredSpeed < 70 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 50:
+        if is_vturn_decel and self.desiredSpeed < 70 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
           restore_triggered = True
           restore_reason = f"VTRUN Speed {self.desiredSpeed} Reached"
 
