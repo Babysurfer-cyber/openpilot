@@ -296,6 +296,41 @@ class LongitudinalPlanner:
       output_v_target_now = min(output_v_target_mpc, output_v_target_now_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
 
+    # ==============================================================
+    # ▼ [추가] 코너 레이더: 거리 & 상대속도 비례 유동적 감속 로직 ▼
+    # ==============================================================
+    lead_one = sm['radarState'].leadOne
+    
+    if lead_one.status and getattr(lead_one, 'radar', False):
+      track_id = getattr(lead_one, 'radarTrackId', 0)
+      
+      # 1. 코너 레이더로 감지한 차량 (track_id == -1)
+      # 2. 세로 거리가 5m 이내일 때 (dRel <= 5.0)
+      if track_id == -1 and lead_one.dRel <= 5.0:
+        
+        # 3. 끼어드는 차량이 내 차보다 느리거나 같을 때 (vRel <= 0.0)
+        if lead_one.vRel <= 0.0:
+          
+          # [유동적 감속도 계산]
+          # (A) 거리에 따른 기본 제동량 (가까울수록 세게 밟음)
+          # 5m 거리일 때는 -0.5, 1m 코앞일 때는 -2.0 할당
+          a_dist = float(np.interp(lead_one.dRel, [1.0, 5.0], [-2.0, -0.5]))
+          
+          # (B) 상대속도에 따른 추가 제동량 (앞차가 나보다 많이 느릴수록 세게 밟음)
+          # 내 차와 속도가 같으면(0.0) 추가 제동 없음, 나보다 4m/s(약 14km/h) 더 느리면 -2.0 추가 할당
+          a_vrel = float(np.interp(lead_one.vRel, [-4.0, 0.0], [-2.0, 0.0]))
+          
+          # (C) 최종 강제 제동값 산출 = (A) + (B)
+          # 두 값이 합쳐져서 너무 급브레이크가 걸리지 않도록 최대 한계선을 -4.0으로 방어
+          cutin_a_target = max(-4.0, a_dist + a_vrel)
+          
+          # 모델 계산값(output_a_target)보다 우리가 계산한 유동적 감속값이 더 강할 때만 적용
+          if cutin_a_target < output_a_target:
+            output_a_target = cutin_a_target
+            # 브레이크 즉각 반응을 위해 목표 속도도 감속도에 비례해서 유동적으로 낮춤
+            output_v_target_now = max(0.0, sm['carState'].vEgo + (cutin_a_target * 1.5))
+    # ==============================================================
+
     #for idx in range(2):
     #  accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     #self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
