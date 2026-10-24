@@ -832,7 +832,7 @@ class CarState(CarStateBase):
           self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 추월당할 땐 위험하므로 3초 길게 유지
           self.last_approach_v["L"] = 0.0
         elif self.last_approach_v["L"] > 0.5:
-          self.bs_timer["L"] = int(1.5 / DT_CTRL)  # 내가 추월할 땐 B필러 맹점만 덮도록 1.5초 유지
+          self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 내가 추월할 땐 B필러 맹점만 덮도록 1.5초 유지
           self.last_approach_v["L"] = 0.0
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -862,7 +862,7 @@ class CarState(CarStateBase):
           self.bs_timer["R"] = int(3.0 / DT_CTRL)
           self.last_approach_v["R"] = 0.0
         elif self.last_approach_v["R"] > 0.5:
-          self.bs_timer["R"] = int(1.5 / DT_CTRL)  # 우측도 내가 추월할 때 1.5초 유지
+          self.bs_timer["R"] = int(3.0 / DT_CTRL)  # 우측도 내가 추월할 때 1.5초 유지
           self.last_approach_v["R"] = 0.0
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
