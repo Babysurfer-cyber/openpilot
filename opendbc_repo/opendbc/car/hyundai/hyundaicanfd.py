@@ -292,23 +292,17 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
     return []
 
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  
   # ==============================================================
-  # ▼ [수정] long_active + 전방 정지 차량 판단 로직 ▼
+  # ▼ [수정] long_active + 전방 차량 인식 판단 로직 ▼
   # ==============================================================
-  # 앞차의 절대 속도 = 내 차 속도(vEgo) + 앞차와의 상대 속도(leadRelSpeed)
-  lead_rel_speed = getattr(hud_control, 'leadRelSpeed', 0.0)
-  lead_v = CS.out.vEgo + lead_rel_speed
-
   # 1. 오픈파일럿 롱컨 제어가 활성화되어 있고 (long_active)
-  # 2. 앞차가 보이고 (leadVisible) 
-  # 3. 앞차의 속도(lead_v)가 1.0m/s(약 3.6km/h) 미만일 때 정지 차량으로 간주
-  is_stationary_lead = long_active and hud_control.leadVisible and (lead_v < 1.0)
+  # 2. 앞차가 인식된 경우 (leadVisible)
+  is_lead_detected = long_active and getattr(hud_control, 'leadVisible', False)
 
   # ==============================================================
-  # ▼ 정지 차량 앞일 때 2로 변경 ▼
+  # ▼ 크루즈 중 전방 차량 인식 시 2로 변경 ▼
   # ==============================================================
-  values["HDA_LFA_SymSta"] = 2 if is_stationary_lead else (1 if lat_active else 0)
+  values["HDA_LFA_SymSta"] = 2 if is_lead_detected else (1 if lat_active else 0)
   
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
 
