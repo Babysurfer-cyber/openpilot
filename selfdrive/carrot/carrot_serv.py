@@ -1196,9 +1196,9 @@ class CarrotServ:
     if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 40.0 or is_edge_far):
       self.manual_turn_canceled = True
 
-    # 💡 속도 조건: 70km/h 이하일 때만 허용
+    # 💡 속도 조건: 200km/h 이하일 때만 허용
     speed_cond_met = False
-    if v_ego_kph <= 70.0:
+    if v_ego_kph <= 200.0:
       speed_cond_met = True
 
     # 조건: 고속도로 아님 & 2단 & 속도조건 충족 & 영구취소 안됨!
