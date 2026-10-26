@@ -812,14 +812,14 @@ public:
             }
         }
         QPolygonF tf_vertext;
-        if (tf_distance > 0) {
+        // 👇 목표 차간거리 실선 및 숫자(t_follow) 화면 표시 비활성화
+        if (false && tf_distance > 0) {
           tf_vertext.push_back(tf_vertex_left);
           tf_vertext.push_back(tf_vertex_right);
           ui_draw_line(s, tf_vertext, nullptr, nullptr, 3.0, COLOR_WHITE);
           sprintf(str, "%.1f(%.2f)", tf_distance, t_follow);
           ui_draw_text(s, tf_vertex_right.x(), tf_vertex_right.y(), str, 25, COLOR_WHITE, BOLD);
         }
-
 
         float px[7], py[7];
         NVGcolor rcolor = isLeadSCC() ? COLOR_RED : COLOR_ORANGE;
