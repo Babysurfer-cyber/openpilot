@@ -305,16 +305,16 @@ class LongitudinalPlanner:
       track_id = getattr(lead_one, 'radarTrackId', 0)
       
       # 1. 코너 레이더로 감지한 차량 (track_id == -1)
-      # 2. 세로 거리가 5m 이내일 때 (dRel <= 5.0)
-      if track_id == -1 and lead_one.dRel <= 5.0:
+      # 2. 세로 거리가 7m 이내일 때 (dRel <= 7.0)
+      if track_id == -1 and lead_one.dRel <= 7.0:
         
         # 3. 끼어드는 차량이 내 차보다 느리거나 같을 때 (vRel <= 0.0)
         if lead_one.vRel <= 0.0:
           
           # [유동적 감속도 계산]
           # (A) 거리에 따른 기본 제동량 (가까울수록 세게 밟음)
-          # 5m 거리일 때는 -0.5, 1m 코앞일 때는 -2.0 할당
-          a_dist = float(np.interp(lead_one.dRel, [1.0, 5.0], [-2.0, -0.5]))
+          # 7m 거리일 때는 -0.5, 2m 코앞일 때는 -2.0 할당
+          a_dist = float(np.interp(lead_one.dRel, [2.0, 7.0], [-2.0, -0.5]))
           
           # (B) 상대속도에 따른 추가 제동량 (앞차가 나보다 많이 느릴수록 세게 밟음)
           # 내 차와 속도가 같으면(0.0) 추가 제동 없음, 나보다 4m/s(약 14km/h) 더 느리면 -2.0 추가 할당
