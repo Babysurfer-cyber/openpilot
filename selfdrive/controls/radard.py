@@ -1006,6 +1006,11 @@ class RadarD:
     else:
       lat_dist, long_dist, v_rel, v_lat, final_aLead = -abs_right_lat, right_long, right_vrel, right_vlat, right_alead
 
+    # =========================================================================
+    # ▼ [추가] 코너 레이더 측정 거리(내 차 중심)를 앞범퍼 기준으로 맞추기 위해 2.3m 차감
+    # =========================================================================
+    long_dist = max(0.0, long_dist - 2.3)
+
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
     # 기존의 인위적인 감속 방정식(cutin_aLead) 삭제 완료!
