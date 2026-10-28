@@ -160,6 +160,10 @@ class CarController(CarControllerBase):
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
 
+    self.bvm_reverse = Params().get_bool("CanfdBvmReverse")
+    self.bvm_frame = 0
+    self.bvm_last_val = 0
+
   def update(self, CC, CS, now_nanos):
     
     # 💡 [추가] radarState 데이터를 실시간으로 가져와서 끼어들기 여부 판별!
@@ -210,6 +214,8 @@ class CarController(CarControllerBase):
       self.canfd_debug = params.get_int("CanfdDebug")
       self.camera_scc_params = params.get_int("HyundaiCameraSCC")
       self.enable_corner_radar = params.get_int("EnableCornerRadar")
+
+      self.bvm_reverse = params.get_bool("CanfdBvmReverse")
 
     actuators = CC.actuators
     hud_control = CC.hudControl
@@ -439,6 +445,30 @@ class CarController(CarControllerBase):
     new_actuators.accel = accel
 
     self.frame += 1
+
+    # --- BVM 후진 기어 좌우 교대 표시 로직 ---
+    bvm_display = 0
+    # 14는 log.GearShifter.reverse 값입니다.
+    if self.bvm_reverse and CS.out.gearShifter == 14:
+      self.bvm_frame += 1
+      # 35프레임(0.35초)마다 좌(1)/우(2) 교대 표시
+      if (self.bvm_frame // 35) % 2 == 0:
+        bvm_display = 1
+      else:
+        bvm_display = 2
+    else:
+      self.bvm_frame = 0
+      bvm_display = 0
+
+    # BVM CAN 메시지 전송 (안전 사양에 맞춰 5Hz, 즉 20프레임 주기로 전송)
+    if self.frame % 20 == 0:
+      # BVM이 켜져 있거나, 화면을 끄기 위해 0을 한 번 보내야 할 때만 메시지 추가
+      if bvm_display != 0 or self.bvm_last_val != 0:
+        can_sends.append(hyundaicanfd.create_bvm_message(self.CAN, bvm_display))
+      self.bvm_last_val = bvm_display
+
+    new_actuators = actuators.as_builder()
+
     return new_actuators, can_sends
 
 
