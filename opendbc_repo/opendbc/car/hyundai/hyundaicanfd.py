@@ -292,29 +292,24 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
     return []
 
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  
-  # 차량 CAN 통신에서 순정 SCC의 앞차 거리값 가져오기 (값이 없으면 0)
-  scc_obj_dist = getattr(CS, 'scc11', {}).get('ACC_ObjDist', 0) or getattr(CS, 'scc_control', {}).get('ACC_ObjDist', 0)
+  # ==============================================================
+  # ▼ [수정] long_active + 전방 차량 인식 + SCC 미인식 판단 ▼
+  # ==============================================================
+  # 1. 오픈파일럿 롱컨 제어가 활성화되어 있고 (long_active)
+  # 2. 앞차가 인식된 경우 (leadVisible)
+  # 3. 추가조건: 순정 SCC 레이더는 못 잡고 비전/트랙만 잡은 경우 (leadRadar == 0)
+  is_vision_only_lead = (
+      long_active 
+      and getattr(hud_control, 'leadVisible', False) 
+      and getattr(hud_control, 'leadRadar', 1) == 0
+  )
 
   # ==============================================================
-  # ▼ 전방 차량 아이콘 표시 (2) 여부 판단 논리 ▼
+  # ▼ 비전/트랙 단독 인식 시 2로 변경 ▼
   # ==============================================================
-  # 1. 오픈파일럿이 비전/트랙으로 앞차를 확실히 인식했는가?
-  op_has_lead = getattr(hud_control, 'leadVisible', False)
-  
-  # 2. 순정 SCC가 앞차를 인식했는가? (거리 값이 0보다 크면 인식한 것)
-  scc_has_lead = scc_obj_dist > 0
-
-  # 3. 롱컨 제어 중이며, 순정 SCC가 잡았거나 오픈파일럿이 단독으로 잡은 경우 모두 아이콘 표시
-  show_lead_icon = long_active and (scc_has_lead or op_has_lead)
-
-  # ==============================================================
-  # ▼ HDA_LFA_SymSta 값 결정 ▼
-  # ==============================================================
-  values["HDA_LFA_SymSta"] = 2 if show_lead_icon else (1 if lat_active else 0)
+  values["HDA_LFA_SymSta"] = 2 if is_vision_only_lead else (1 if lat_active else 0)
   
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
-
 
 def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
   ret = []
