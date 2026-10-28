@@ -93,8 +93,32 @@ class Controls:
     lp = self.sm['liveParameters']
     x = max(lp.stiffnessFactor, 0.1)
     sr = max(lp.steerRatio, 0.1) * self.params.get_float("SteerRatioRate") / 100.0
+    
     custom_sr = self.params.get_float("CustomSR") / 10.0
-    sr = max(custom_sr if custom_sr > 1.0 else sr, 0.1)
+    custom_sr_local_high = self.params.get_float("CustomSRLocalHigh") / 10.0
+    
+    # 국도 고속용 값이 0이거나 미설정일 경우 기존 custom_sr을 그대로 사용
+    if custom_sr_local_high <= 1.0:
+      custom_sr_local_high = custom_sr
+
+    if custom_sr > 1.0:
+      v_ego_kph = CS.vEgo * CV.MS_TO_KPH
+      
+      # link_class 안전하게 가져오기 (1: 고속도로, 2: 도시고속, 3: 국도/일반고속 등)
+      link_class = getattr(CS, 'navLinkClass', getattr(self.sm['carrotMan'], 'linkClass', 0))
+      
+      if link_class in [1, 2, 3]:
+        # 고속도로(1, 2, 3)인 경우: 속도와 무관하게 무조건 기존 CustomSR 사용
+        applied_sr = custom_sr
+      else:
+        # 일반 국도/시내 도로인 경우: 60~80km/h 구간에서 선형 보간 적용
+        # (60 이하: custom_sr 유지, 80 이상: custom_sr_local_high 적용)
+        applied_sr = float(np.interp(v_ego_kph, [60.0, 80.0], [custom_sr, custom_sr_local_high]))
+        
+      sr = max(applied_sr, 0.1)
+    else:
+      sr = max(sr, 0.1)
+
     self.VM.update_params(x, sr)
 
     steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
