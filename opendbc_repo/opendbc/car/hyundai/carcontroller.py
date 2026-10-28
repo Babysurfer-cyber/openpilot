@@ -448,8 +448,8 @@ class CarController(CarControllerBase):
 
     # --- BVM 후진 기어 좌우 교대 표시 로직 ---
     bvm_display = 0
-    # 14는 log.GearShifter.reverse 값입니다.
-    if self.bvm_reverse and CS.out.gearShifter == 14:
+    # 4는 log.GearShifter.reverse 값입니다.
+    if self.bvm_reverse and CS.out.gearShifter == 4:
       self.bvm_frame += 1
       # 35프레임(0.35초)마다 좌(1)/우(2) 교대 표시
       if (self.bvm_frame // 35) % 2 == 0:
