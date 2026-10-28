@@ -451,6 +451,22 @@
     },
     {
       "group": "조향튜닝",
+      "name": "CustomSRLocalHigh",
+      "title": "CustomSR_국도(고속)x0.1(0)",
+      "descr": "고속도로 제외 고속 주행 시 조향비(60-80 구간 선형보간)\n 0: 기존 CustomSR 값과 동일하게 적용",
+      "egroup": "LAT",
+      "etitle": "CustomSR_LocalHighx0.1(0)",
+      "edescr": "Steering Ratio for Local/National roads at high speed, 0: same as CustomSR",
+      "min": 0,
+      "max": 300,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "转向",
+      "ctitle": "自定义转向比_国道(高速)x0.1(0)",
+      "cdescr": "国道/非高速公路高速行驶转向比，0:与CustomSR相同"
+    },
+    {
+      "group": "조향튜닝",
       "name": "SteerRatioRate",
       "title": "CustomSteerRatioRatex0.01(100)",
       "descr": "LiveSteerRatio 반영비율\n(CustomSR 0으로 설정해야 함)",
