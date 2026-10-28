@@ -1034,14 +1034,3 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           ret.append(packer.make_can_msg("HDA_INFO_4A3", CAN.CAM, values))
 
   return ret
-
-def create_bvm_message(CAN, bvm_value):
-  """
-  0x400 메시지를 생성하여 사각지대 카메라(BVM) 화면을 제어합니다.
-  bvm_value: 0(끔), 1(좌), 2(우)
-  """
-  data = bytearray(8)
-  data[3] = bvm_value  # 4번째 바이트에 뷰 값 설정 (인덱스 3)
-  
-  # 계기판(Cluster)은 일반적으로 ECAN에 연결되어 있음
-  return [0x400, 0, bytes(data), CAN.ECAN]
