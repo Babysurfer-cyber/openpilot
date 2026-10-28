@@ -292,23 +292,49 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
     return []
 
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  # ==============================================================
-  # ▼ [수정] long_active + 전방 차량 인식 + SCC 미인식 판단 ▼
-  # ==============================================================
-  # 1. 오픈파일럿 롱컨 제어가 활성화되어 있고 (long_active)
-  # 2. 앞차가 인식된 경우 (leadVisible)
-  # 3. 추가조건: 순정 SCC 레이더는 못 잡고 비전/트랙만 잡은 경우 (leadRadar == 0)
-  is_vision_only_lead = (
-      long_active 
-      and getattr(hud_control, 'leadVisible', False) 
-      and getattr(hud_control, 'leadRadar', 1) == 0
-  )
+
+  # -------------------------------------------------------------
+  # ▼ [수정] 타이머 상태 초기화 (3초 = 300프레임) ▼
+  # -------------------------------------------------------------
+  if not hasattr(CS, 'no_lead_frames'):
+    CS.no_lead_frames = 300  # 초기 상태: 앞차가 3초 이상 없었다고 가정
+    CS.lead_popup_frames = 0
+
+  # -------------------------------------------------------------
+  # ▼ [수정] 전방 차량 인식 3초 팝업 로직 ▼
+  # -------------------------------------------------------------
+  lead_visible = getattr(hud_control, 'leadVisible', False)
+
+  if not lead_visible:
+    # 앞차가 없을 때: 미인식 카운트 증가 (최대 1000까지)
+    if CS.no_lead_frames < 1000:
+      CS.no_lead_frames += 1
+    
+    # 앞차가 사라졌으므로 팝업 타이머도 즉시 종료
+    CS.lead_popup_frames = 0
+  else:
+    # 앞차가 있을 때: 최근 3초(300프레임) 이상 없다가 "방금 막" 생겼다면?
+    if CS.no_lead_frames >= 300:
+      CS.lead_popup_frames = 300  # 3초(300프레임) 동안 팝업 타이머 충전
+    
+    # 앞차가 인식 중이므로 미인식 카운트 리셋
+    CS.no_lead_frames = 0
+
+  # 팝업 타이머 차감 (타이머가 0보다 클 때만)
+  if CS.lead_popup_frames > 0:
+    CS.lead_popup_frames -= 1
+    is_popup_active = True
+  else:
+    is_popup_active = False
+
+  # 최종 조건: 롱컨이 활성화되어 있고, 팝업 타이머가 작동 중일 때
+  show_symsta_2 = long_active and is_popup_active
 
   # ==============================================================
-  # ▼ 비전/트랙 단독 인식 시 2로 변경 ▼
+  # ▼ HDA_LFA_SymSta 값 결정 ▼
   # ==============================================================
-  values["HDA_LFA_SymSta"] = 2 if is_vision_only_lead else (1 if lat_active else 0)
-  
+  values["HDA_LFA_SymSta"] = 2 if show_symsta_2 else (1 if lat_active else 0)
+
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
 
 def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
