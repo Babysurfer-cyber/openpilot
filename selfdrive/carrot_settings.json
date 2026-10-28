@@ -1890,6 +1890,22 @@
       "cdescr": ""
     },
     {
+      "group": "시작",
+      "name": "CanfdBvmReverse",
+      "title": "후진 시 BVM 좌우 교대 표시",
+      "descr": "후진 기어(R) 상태일 때 계기판에 사각지대(BVM) 카메라 좌우 화면을 번갈아 띄웁니다.",
+      "egroup": "START",
+      "etitle": "BVM Alternate in Reverse",
+      "edescr": "Alternates left and right BVM camera views on the cluster when in Reverse gear.",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "启动设置",
+      "ctitle": "倒车时交替显示BVM",
+      "cdescr": "在倒车(R)档位时，仪表盘交替显示左右盲区(BVM)摄像头画面。"
+    },
+    {
       "group": "차량간격",
       "name": "TFollowGap1",
       "title": "TF(1): 차량간격시간1x0.01s(110)",
