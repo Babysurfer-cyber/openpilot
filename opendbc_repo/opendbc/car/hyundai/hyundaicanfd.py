@@ -292,22 +292,7 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
     return []
 
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  # ==============================================================
-  # ▼ [수정] long_active + 전방 차량 인식 + SCC 미인식 판단 ▼
-  # ==============================================================
-  # 1. 오픈파일럿 롱컨 제어가 활성화되어 있고 (long_active)
-  # 2. 앞차가 인식된 경우 (leadVisible)
-  # 3. 추가조건: 순정 SCC 레이더는 못 잡고 비전/트랙만 잡은 경우 (leadRadar == 0)
-  is_vision_only_lead = (
-      long_active 
-      and getattr(hud_control, 'leadVisible', False) 
-      and getattr(hud_control, 'leadRadar', 1) == 0
-  )
-
-  # ==============================================================
-  # ▼ 비전/트랙 단독 인식 시 2로 변경 ▼
-  # ==============================================================
-  values["HDA_LFA_SymSta"] = 2 if is_vision_only_lead else (1 if lat_active else 0)
+  values["HDA_LFA_SymSta"] = 1 if lat_active else 0
   
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
 
