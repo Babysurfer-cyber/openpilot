@@ -449,7 +449,7 @@ class CarController(CarControllerBase):
     # --- BVM 후진 기어 좌우 교대 표시 로직 ---
     bvm_display = 0
     # 4는 log.GearShifter.reverse 값입니다.
-    if self.bvm_reverse and CS.out.gearShifter == 4:
+    if self.bvm_reverse and CS.out.gearShifter == GearShifter.reverse:
       self.bvm_frame += 1
       # 35프레임(0.35초)마다 좌(1)/우(2) 교대 표시
       if (self.bvm_frame // 35) % 2 == 0:
@@ -474,7 +474,8 @@ class CarController(CarControllerBase):
 
   def create_button_messages(self, CC: structs.CarControl, CS: CarState, use_clu11: bool):
     can_sends = []
-    if CS.out.brakePressed or CS.out.brakeHoldActive:
+    
+    CS.out.brakePressed or CS.out.brakeHoldActive:
       return can_sends
     if use_clu11:
       if CC.cruiseControl.cancel:
