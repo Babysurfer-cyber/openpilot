@@ -353,23 +353,35 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
   if lead is not None:
     values["ACC_ObjDist"] = float(np.clip(lead.dRel, 0.1, 204.5))
     
-    target_lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
+    raw_lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
     
-    # ▼▼▼ 좌우 흔들림(Jitter) 보정을 위한 EMA 필터 적용 ▼▼▼
     if not hasattr(_apply_scc_lead, '_filt_lateral'):
-      _apply_scc_lead._filt_lateral = target_lateral
+      _apply_scc_lead._filt_lateral = raw_lateral
+      
+    # ▼▼▼ 1. 스파이크 필터(튀는 값 버리기): 1프레임(0.01초)당 최대 5cm 이동만 허용 ▼▼▼
+    # (0.05m/frame = 5m/s 측면 속도. 실제 차선 변경보다 충분히 빠르지만 노이즈는 완벽 차단)
+    max_jump = 0.05
+    diff = raw_lateral - _apply_scc_lead._filt_lateral
     
-    # alpha 값 (0.0 ~ 1.0): 작을수록 묵직하고 부드러워짐(대신 반응이 살짝 느림). 
-    # 기본 0.15 추천. 여전히 흔들리면 0.05~0.10으로 낮추시면 됩니다.
-    alpha = 0.10 
+    if abs(diff) > max_jump:
+      # 노이즈가 튀면 허용치(max_jump)까지만 이동시킨 것으로 잘라냄(Clipping)
+      target_lateral = _apply_scc_lead._filt_lateral + np.clip(diff, -max_jump, max_jump)
+    else:
+      target_lateral = raw_lateral
+
+    # ▼▼▼ 2. 데드존(Deadband): 10cm 미만의 자잘한 떨림은 무시 ▼▼▼
+    if abs(target_lateral - _apply_scc_lead._filt_lateral) < 0.1:
+      target_lateral = _apply_scc_lead._filt_lateral
+    
+    # ▼▼▼ 3. EMA 필터: 튀는 값을 잡았으므로 반응성을 위해 0.05 ~ 0.1 정도로 상향 추천 ▼▼▼
+    alpha = 0.05 
     _apply_scc_lead._filt_lateral = (alpha * target_lateral) + ((1.0 - alpha) * _apply_scc_lead._filt_lateral)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     values["ACC_ObjLatPos"] = float(np.clip(_apply_scc_lead._filt_lateral, -45.6, 5.5))
     values["ACC_ObjRelSpd"] = float(np.clip(lead.vRel, -170.0, 239.3))
     values["HUD_LEAD_INFO"] = 1 if lead.vRel > 0.3 else 2
   else:
-    # 앞차가 없어지면 필터 기록 초기화
+    # 앞차가 시야에서 사라지면 필터 기록 완전 초기화
     if hasattr(_apply_scc_lead, '_filt_lateral'):
       del _apply_scc_lead._filt_lateral
 
