@@ -352,10 +352,26 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
   values.update(ACC_ObjDist=204.6, ACC_ObjLatPos=0.0, ACC_ObjRelSpd=239.4, HUD_LEAD_INFO=0)
   if lead is not None:
     values["ACC_ObjDist"] = float(np.clip(lead.dRel, 0.1, 204.5))
-    lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
-    values["ACC_ObjLatPos"] = float(np.clip(lateral, -45.6, 5.5))
+    
+    target_lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
+    
+    # ▼▼▼ 좌우 흔들림(Jitter) 보정을 위한 EMA 필터 적용 ▼▼▼
+    if not hasattr(_apply_scc_lead, '_filt_lateral'):
+      _apply_scc_lead._filt_lateral = target_lateral
+    
+    # alpha 값 (0.0 ~ 1.0): 작을수록 묵직하고 부드러워짐(대신 반응이 살짝 느림). 
+    # 기본 0.15 추천. 여전히 흔들리면 0.05~0.10으로 낮추시면 됩니다.
+    alpha = 0.15 
+    _apply_scc_lead._filt_lateral = (alpha * target_lateral) + ((1.0 - alpha) * _apply_scc_lead._filt_lateral)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    
+    values["ACC_ObjLatPos"] = float(np.clip(_apply_scc_lead._filt_lateral, -45.6, 5.5))
     values["ACC_ObjRelSpd"] = float(np.clip(lead.vRel, -170.0, 239.3))
     values["HUD_LEAD_INFO"] = 1 if lead.vRel > 0.3 else 2
+  else:
+    # 앞차가 없어지면 필터 기록 초기화
+    if hasattr(_apply_scc_lead, '_filt_lateral'):
+      del _apply_scc_lead._filt_lateral
 
 def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, gas_override, set_speed, hud_control, hyundai_jerk, CS):
   
