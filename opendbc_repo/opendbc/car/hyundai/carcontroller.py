@@ -153,8 +153,8 @@ class CarController(CarControllerBase):
     self.is_ldws_car = Params().get_bool("IsLdwsCar")
     self.enable_corner_radar = 0
 
-    # 💡 [추가] radarState 수신용 서브마스터 및 스위치 변수
-    self.sm = messaging.SubMaster(['radarState'])
+    # 💡 [수정] radarState와 modelV2를 모두 수신하도록 변경
+    self.sm = messaging.SubMaster(['radarState', 'modelV2'])
     self.corner_radar_cutin = False
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
@@ -168,6 +168,11 @@ class CarController(CarControllerBase):
       lead_one = self.sm['radarState'].leadOne
       # 완벽한 공식: 레이더가 켜져있는데 TrackId가 -1 이면 코너 레이더 개입!
       self.corner_radar_cutin = (lead_one.status and lead_one.radar and lead_one.radarTrackId == -1)
+
+    # ▼▼▼ [추가] canfd.py에서 쓰도록 CS 객체에 레이더와 비전 경로 데이터를 심어줍니다 ▼▼▼
+    CS.radarState = self.sm['radarState']
+    CS.MD = self.sm['modelV2']
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if self.frame % 50 == 0:
       params = Params()
