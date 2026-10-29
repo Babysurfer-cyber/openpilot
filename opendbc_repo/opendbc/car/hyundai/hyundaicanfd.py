@@ -365,9 +365,9 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
     
     target_lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
     
-    # ▼▼▼ [회원님 아이디어] 시각적 오차(탈선 현상)를 줄이기 위한 80% 공간 압축 (Scaling) ▼▼▼
+    # ▼▼▼ [회원님 아이디어] 시각적 오차(탈선 현상)를 줄이기 위한 n% 공간 압축 (Scaling) ▼▼▼
     # 비율을 곱해서 움직임은 부드럽게 유지하되 튀어나가는 폭을 줄임
-    target_lateral = target_lateral * 0.5 
+    target_lateral = target_lateral * 0.7 
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     if not hasattr(_apply_scc_lead, '_filt_lateral'):
