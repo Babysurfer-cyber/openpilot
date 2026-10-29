@@ -1,4 +1,5 @@
 import copy
+import math  # <--- 이 부분이 있는지 확인하고 없으면 추가
 import numpy as np
 from opendbc.car import CanBusBase
 from opendbc.car.crc import CRC16_XMODEM
@@ -327,6 +328,34 @@ def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
     ret.append(packer.make_can_msg("ADRV_0x161", CAN.ECAN, values, rx_counter=rx_counter))
   return ret
 
+def _display_lead(radar_state):
+  leads = (getattr(radar_state, name, None) for name in ("leadOne", "leadTwo"))
+  return min((lead for lead in leads
+              if lead is not None and lead.status and lead.dRel > 0
+              and all(math.isfinite(v) for v in (lead.dRel, lead.yRel, lead.vRel))),
+             key=lambda lead: lead.dRel, default=None)
+
+def _display_lead_lateral(lead, model_v2):
+  lateral = -lead.yRel
+  position = getattr(model_v2, "position", None)
+  if position is not None:
+    x, y = position.x, position.y
+    if (len(x) >= 2 and len(x) == len(y)
+        and all(math.isfinite(v) for v in x) and all(math.isfinite(v) for v in y)
+        and all(x[i] > x[i - 1] for i in range(1, len(x)))):
+      lateral -= float(np.interp(lead.dRel, x, y))
+  return lateral
+
+def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
+  lead = _display_lead(radar_state)
+  values.update(ACC_ObjDist=204.6, ACC_ObjLatPos=0.0, ACC_ObjRelSpd=239.4, HUD_LEAD_INFO=0)
+  if lead is not None:
+    values["ACC_ObjDist"] = float(min(max(lead.dRel, 0.1), 204.5))
+    lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
+    values["ACC_ObjLatPos"] = float(min(max(lateral, -45.6), 5.5))
+    values["ACC_ObjRelSpd"] = float(min(max(lead.vRel, -170.0), 239.3))
+    values["HUD_LEAD_INFO"] = 1 if lead.vRel > 0.3 else 2
+
 def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, gas_override, set_speed, hud_control, hyundai_jerk, CS):
   
   if CS.scc_control is None:
@@ -368,25 +397,15 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   values["DISTANCE_SETTING"] = hud_control.leadDistanceBars # + 5
   #values["DISTANCE_SETTING"] = hud_control.leadDistanceBars  + 5
 
-  #values["ACC_ObjDist"] = 1
-  #values["ObjValid"] = 0
-  #values["OBJ_STATUS"] =  2
-  #values["NSCCOper"] = 2 if enabled else 0 # 0: off, 1: Ready, 2: Act, 3: Error Indicator
-  #values["NSCCOnOff"] = 2  # 0: Default, 1: Off, 2: On, 3: Invalid
-  #values["SET_ME_3"] = 0x3  # objRelsped와 충돌
-  #values["ACC_ObjLatPos"] = - hud_control.leadDPath
   values["DriveMode"] = 0 # 0: Default, 1: Comfort Mode, 2:Normal mode, 3:Dynamic mode, reserved
 
-  hud_lead_info = 0
-  if hud_control.leadVisible:
-    hud_lead_info = 1 if values["ACC_ObjRelSpd"] > 0 else 2
-  values["HUD_LEAD_INFO"] = hud_lead_info  #1: in-path object detected(uncontrollable), 2: controllable long, 3: controllable long & lat, ... reserved
+  # carrot-wip의 정밀 리드 객체 적용 로직 호출 (좌우 움직임, 거리, 상대속도 그래픽)
+  _apply_scc_lead(values, getattr(CS, "radarState", None), getattr(CS, "modelV2", None))
 
   values["DriverAlert"] = 0   # 1: SCC Disengaged, 2: No SCC Engage condition, 3: SCC Disenganed when the vehicle stops
 
-  # 앞차 인식 여부에 따른 타겟 거리 설정 (실제 거리 반영 + 90m 제한)
+  # 앞차 인식 여부에 따른 타겟 거리 설정 (기존 로직 원복: 실제 거리 반영 + 90m 제한)
   if hud_control.leadVisible:
-    # 콤마가 인식한 실제 거리(leadDistance)를 넣되, min 함수를 써서 90을 넘지 않게 합니다.
     values["TARGET_DISTANCE"] = min(hud_control.leadDistance, 90.0)
   else:
     values["TARGET_DISTANCE"] = 0
