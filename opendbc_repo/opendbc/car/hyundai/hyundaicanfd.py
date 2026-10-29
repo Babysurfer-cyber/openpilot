@@ -343,6 +343,7 @@ def _display_lead_lateral(lead, model_v2):
     if (len(x) >= 2 and len(x) == len(y)
         and all(math.isfinite(v) for v in x) and all(math.isfinite(v) for v in y)
         and all(x[i] > x[i - 1] for i in range(1, len(x)))):
+      # 레이더의 yRel과 모델의 예상 경로(x, y)를 퓨전하여 정확한 곡률 보정 좌표를 구함
       lateral -= float(np.interp(lead.dRel, x, y))
   return lateral
 
@@ -350,10 +351,10 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
   lead = _display_lead(radar_state)
   values.update(ACC_ObjDist=204.6, ACC_ObjLatPos=0.0, ACC_ObjRelSpd=239.4, HUD_LEAD_INFO=0)
   if lead is not None:
-    values["ACC_ObjDist"] = float(min(max(lead.dRel, 0.1), 204.5))
+    values["ACC_ObjDist"] = float(np.clip(lead.dRel, 0.1, 204.5))
     lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
-    values["ACC_ObjLatPos"] = float(min(max(lateral, -45.6), 5.5))
-    values["ACC_ObjRelSpd"] = float(min(max(lead.vRel, -170.0), 239.3))
+    values["ACC_ObjLatPos"] = float(np.clip(lateral, -45.6, 5.5))
+    values["ACC_ObjRelSpd"] = float(np.clip(lead.vRel, -170.0, 239.3))
     values["HUD_LEAD_INFO"] = 1 if lead.vRel > 0.3 else 2
 
 def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, gas_override, set_speed, hud_control, hyundai_jerk, CS):
@@ -390,21 +391,20 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   values["aReqValue"] = a_val
   values["aReqRaw"] = a_raw
   values["VSetDis"] = set_speed
-  #values["JerkLowerLimit"] = jerk if enabled else 1
-  #values["JerkUpperLimit"] = 3.0
   values["JerkLowerLimit"] = jerk_l if enabled else 1
   values["JerkUpperLimit"] = 2.0 if stopping or CS.softHoldActive else jerk_u
-  values["DISTANCE_SETTING"] = hud_control.leadDistanceBars # + 5
-  #values["DISTANCE_SETTING"] = hud_control.leadDistanceBars  + 5
+  values["DISTANCE_SETTING"] = hud_control.leadDistanceBars 
 
   values["DriveMode"] = 0 # 0: Default, 1: Comfort Mode, 2:Normal mode, 3:Dynamic mode, reserved
 
-  # carrot-wip의 정밀 리드 객체 적용 로직 호출 (좌우 움직임, 거리, 상대속도 그래픽)
-  _apply_scc_lead(values, getattr(CS, "radarState", None), getattr(CS, "modelV2", None))
+  # ▼▼▼ Raw 레이더 & 모델 경로 데이터 퓨전 로직 호출 ▼▼▼
+  # c3-wip 구조에 맞춰 모델 데이터는 CS.MD, 레이더는 CS.radarState로 가져옵니다.
+  _apply_scc_lead(values, getattr(CS, "radarState", None), getattr(CS, "MD", None))
+  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   values["DriverAlert"] = 0   # 1: SCC Disengaged, 2: No SCC Engage condition, 3: SCC Disenganed when the vehicle stops
 
-  # 앞차 인식 여부에 따른 타겟 거리 설정 (기존 로직 원복: 실제 거리 반영 + 90m 제한)
+  # 타겟 거리는 회원님의 기존 로직(실거리 + 90m 제한) 유지
   if hud_control.leadVisible:
     values["TARGET_DISTANCE"] = min(hud_control.leadDistance, 90.0)
   else:
@@ -412,13 +412,10 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
 
   soft_hold_info = 1 if CS.softHoldActive > 1 and enabled else 0
 
-  # 이거안하면 정지중 뒤로 밀리는 현상 발생하는듯.. (신호정지중에 뒤로 밀리는 경험함.. 시험해봐야)
   if values["InfoDisplay"] != 5: #5: Front Car Departure Notice
     values["InfoDisplay"] = 4 if stopping and CS.out.aEgo > -0.3 else 0  # 1: SCC Mode, 2: Convention Cruise Mode, 3: Object disappered at low speed, 4: Available to resume acceleration control, 5: Front vehicle departure notice, 6: Reserved, 7: Invalid
 
   values["TakeOverReq"] = 0    # 1: Takeover request, 2: Not used, 3: Error indicator , 이것이 켜지면 가속을 안하는듯함.
-  #values["NEW_SIGNAL_4"] = 9 if hud_control.leadVisible else 0
-  # AccelLimitBandUpper, Lower
   values["SysFailState"] = 0    # 1: Performance degredation, 2: system temporairy unavailble, 3: SCC Service required , 눈이 묻어 레이더오류시... 2가 됨. 이때 가속을 안함...
 
   values["AccelLimitBandUpper"] = 0.0   # 이값이 1.26일때 가속을 안하는 증상이 보임.. 
