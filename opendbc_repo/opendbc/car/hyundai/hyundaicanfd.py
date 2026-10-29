@@ -351,7 +351,17 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
   lead = _display_lead(radar_state)
   values.update(ACC_ObjDist=204.6, ACC_ObjLatPos=0.0, ACC_ObjRelSpd=239.4, HUD_LEAD_INFO=0)
   if lead is not None:
-    values["ACC_ObjDist"] = float(np.clip(lead.dRel, 0.1, 204.5))
+    # ▼▼▼ 세로(앞뒤 거리) 떨림 보정을 위한 EMA 필터 적용 ▼▼▼
+    target_dist = lead.dRel
+    if not hasattr(_apply_scc_lead, '_filt_dist'):
+      _apply_scc_lead._filt_dist = target_dist
+      
+    # 거리는 반응성이 중요하므로 가로(0.05)보다 높은 0.15 ~ 0.25 사이를 추천합니다.
+    alpha_dist = 0.2
+    _apply_scc_lead._filt_dist = (alpha_dist * target_dist) + ((1.0 - alpha_dist) * _apply_scc_lead._filt_dist)
+    
+    values["ACC_ObjDist"] = float(np.clip(_apply_scc_lead._filt_dist, 0.1, 204.5))
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
     target_lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
     
@@ -372,6 +382,8 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
     # 앞차가 없어지면 필터 기록 초기화
     if hasattr(_apply_scc_lead, '_filt_lateral'):
       del _apply_scc_lead._filt_lateral
+    if hasattr(_apply_scc_lead, '_filt_dist'):
+      del _apply_scc_lead._filt_dist
 
 def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, gas_override, set_speed, hud_control, hyundai_jerk, CS):
   
