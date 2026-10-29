@@ -336,53 +336,40 @@ def _display_lead(radar_state):
              key=lambda lead: lead.dRel, default=None)
 
 def _display_lead_lateral(lead, model_v2):
-  # ▼▼▼ [하이브리드 방식] 순정 레이더가 정확히 잡았을 때는 순수 물리 값만 사용 ▼▼▼
   lateral = -lead.yRel
-  if getattr(lead, 'radar', False):
-    return lateral
-    
-  # ▼▼▼ 순정 레이더가 놓쳤을 때만(비전 모델) 카메라가 휨 정도를 예측해서 곡률 보정 ▼▼▼
-  else:
-    position = getattr(model_v2, "position", None)
-    if position is not None:
-      x, y = position.x, position.y
-      if (len(x) >= 2 and len(x) == len(y)
-          and all(math.isfinite(v) for v in x) and all(math.isfinite(v) for v in y)
-          and all(x[i] > x[i - 1] for i in range(1, len(x)))):
-        lateral -= float(np.interp(lead.dRel, x, y))
-    return lateral
+  position = getattr(model_v2, "position", None)
+  if position is not None:
+    x, y = position.x, position.y
+    if (len(x) >= 2 and len(x) == len(y)
+        and all(math.isfinite(v) for v in x) and all(math.isfinite(v) for v in y)
+        and all(x[i] > x[i - 1] for i in range(1, len(x)))):
+      # 레이더의 yRel과 모델의 예상 경로(x, y)를 퓨전하여 정확한 곡률 보정 좌표를 구함
+      lateral -= float(np.interp(lead.dRel, x, y))
+  return lateral
 
 def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
   lead = _display_lead(radar_state)
   values.update(ACC_ObjDist=204.6, ACC_ObjLatPos=0.0, ACC_ObjRelSpd=239.4, HUD_LEAD_INFO=0)
-  
   if lead is not None:
-    # 1. 세로(앞뒤 거리)는 즉각적으로 바로 반영 (필터 없음)
     values["ACC_ObjDist"] = float(np.clip(lead.dRel, 0.1, 204.5))
     
-    # 2. 가로(좌우 편차) 처리 시작
     target_lateral = _display_lead_lateral(lead, model_v2) if hud_lateral is None else hud_lateral
     
+    # ▼▼▼ 좌우 흔들림(Jitter) 보정을 위한 EMA 필터 적용 ▼▼▼
     if not hasattr(_apply_scc_lead, '_filt_lateral'):
       _apply_scc_lead._filt_lateral = target_lateral
-      
-    # ▼▼▼ [스파이크 필터 제거] 데드존(Deadband): 10cm 미만의 자잘한 떨림만 무시 ▼▼▼
-    if abs(target_lateral - _apply_scc_lead._filt_lateral) < 0.1:
-      target_lateral = _apply_scc_lead._filt_lateral
     
-    # ▼▼▼ EMA 필터: 스파이크 필터가 빠졌으므로 반응성을 위해 0.05 대신 0.1 정도로 상향 추천 ▼▼▼
-    alpha = 0.1 
+    # alpha 값 (0.0 ~ 1.0): 작을수록 묵직하고 부드러워짐(대신 반응이 살짝 느림). 
+    # 기본 0.15 추천. 여전히 흔들리면 0.05~0.10으로 낮추시면 됩니다.
+    alpha = 0.05 
     _apply_scc_lead._filt_lateral = (alpha * target_lateral) + ((1.0 - alpha) * _apply_scc_lead._filt_lateral)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
-    # 최종 필터링된 가로 위치 적용
     values["ACC_ObjLatPos"] = float(np.clip(_apply_scc_lead._filt_lateral, -45.6, 5.5))
-    
-    # 3. 상대속도 및 색상(애니메이션) 상태 처리
     values["ACC_ObjRelSpd"] = float(np.clip(lead.vRel, -170.0, 239.3))
     values["HUD_LEAD_INFO"] = 1 if lead.vRel > 0.3 else 2
-    
   else:
-    # 앞차가 시야에서 사라지면 가로 필터 기록 완전 초기화
+    # 앞차가 없어지면 필터 기록 초기화
     if hasattr(_apply_scc_lead, '_filt_lateral'):
       del _apply_scc_lead._filt_lateral
 
