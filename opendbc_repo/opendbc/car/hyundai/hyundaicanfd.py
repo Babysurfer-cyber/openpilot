@@ -293,8 +293,24 @@ def create_lfahda_cluster(packer, CS, CAN, long_active, lat_active, hud_control)
     return []
 
   values["HDA_CntrlModSta"] = 2 if long_active else 0
-  values["HDA_LFA_SymSta"] = 1 if lat_active else 0
   
+  # ▼▼▼ [수정된 부분] 1차로(좌측 로드엣지) + 80km/h 이상 + 후방 좌/우 중 하나라도 ±1.5m 이내 시 2점등 ▼▼▼
+  nav_link_class = getattr(CS.out, 'navLinkClass', 0)
+  left_lane_type = getattr(CS.out, 'leftLaneLine', 0) % 10
+  v_ego_kph = getattr(CS.out, 'vEgo', 0) * CV.MS_TO_KPH
+  
+  lr_lat = getattr(CS.out, 'leftRearLatDist', 99.0)
+  rr_lat = getattr(CS.out, 'rightRearLatDist', 99.0)
+
+  # Linkclass가 1이고, 좌측이 로드엣지(3)이고, 80km/h 이상이며, 
+  # 좌/우측 후방 레이더 중 "하나라도(or)" 가로 거리가 -1.5m ~ 1.5m 사이일 때
+  if nav_link_class == 1 and left_lane_type == 3 and v_ego_kph >= 80.0 and \
+     ((-1.5 <= lr_lat <= 1.5) or (-1.5 <= rr_lat <= 1.5)):
+    values["HDA_LFA_SymSta"] = 2
+  else:
+    values["HDA_LFA_SymSta"] = 1 if lat_active else 0
+  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
   return [packer.make_can_msg("LFAHDA_CLUSTER", CAN.ECAN, values, rx_counter=rx_counter)]
 
 def create_lfa_icon_non_camera_scc(packer, CS, CAN, CC):
