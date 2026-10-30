@@ -753,11 +753,11 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     if blink_pairs:
       _apply_radar_blink(values, blink_pairs, frame, CS, t=blink_t)
 
-    # ▼▼▼ [회원님 최종 정립 아이디어] 후방은 순정 BSD 작동 시 무조건 +1, 전방은 거리 조건 적용 ▼▼▼
+    # ▼▼▼ [최종 하이브리드] 후방은 순정 BSD 연동 무조건 +1, 전방은 가변거리 이내 진입 시 +1 ▼▼▼
     left_bsd = getattr(CS.out, 'leftBlindspot', False)
     right_bsd = getattr(CS.out, 'rightBlindspot', False)
     
-    # 1. 현재 속도 확인 (시속 25km/h 이상 여부)
+    # 1. 속도 조건 (25km/h 이상)
     v_ego_kph = getattr(CS.out, 'vEgo', 0) * CV.MS_TO_KPH
     is_speed_valid = (v_ego_kph >= 25.0)
 
@@ -767,39 +767,38 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     left_possible = (left_raw != 0)
     right_possible = (right_raw != 0)
 
-    # 3. 25km/h 이상 + 차선 인식 + BSD 발동 조건
+    # 3. 위험 발동 조건 (속도 + 차선 + BSD)
     left_danger = is_speed_valid and left_possible and left_bsd
     right_danger = is_speed_valid and right_possible and right_bsd
 
-    # 각 레이더 위치별 위험 매핑
+    # 방향별 위험 상태 매핑
     danger_mapping = {
       'LF_DETECT': left_danger, 'LR_DETECT': left_danger,
       'RF_DETECT': right_danger, 'RR_DETECT': right_danger
     }
 
-    # 전방 레이더(LF/RF)에만 적용할 기준 거리 (예: 전방 10m 이내)
-    FRONT_WARN_DIST = 10.0
+    # 💡 CarState에서 계산한 실시간 전방 가변거리 불러오기 (기본값 5.0m)
+    bsd_limits = getattr(CS, 'bsd_limits', {'LF_DETECT': 5.0, 'RF_DETECT': 5.0})
 
     for det_key, dist_key in radar_all:
       dist = values.get(dist_key, 0)
-      
-      # 레이더에 차가 잡혀있지 않으면 패스
       if dist == 0:
         continue
 
-      # 해당 방향 BSD 조건(속도, 차선, BSD스위치)이 성립했을 때
       if danger_mapping[det_key]:
         current_val = values.get(det_key, 0)
         
-        # 💡 [후방 레이더: LR, RR] 순정 BSD가 켜지고 레이더에 차가 잡히기만 하면 거리 불문 무조건 +1!
+        # 💡 [후방 레이더: LR, RR] 거리 불문, 순정 BSD가 켜지고 차가 잡히면 무조건 빨간색(+1)
         if det_key in ('LR_DETECT', 'RR_DETECT'):
           if current_val in [0, 1]:
             values[det_key] = current_val + 1
             
-        # 💡 [전방 레이더: LF, RF] 전방 차는 BSD와 직접 연관이 적으므로 설정한 거리(예: 10m) 이내일 때만 +1
-        elif det_key in ('LF_DETECT', 'RF_DETECT') and dist <= FRONT_WARN_DIST:
-          if current_val in [0, 1]:
-            values[det_key] = current_val + 1
+        # 💡 [전방 레이더: LF, RF] 상대 속도에 따라 늘어나고 줄어드는 가변 거리(2~10m) 이내일 때만 빨간색(+1)
+        elif det_key in ('LF_DETECT', 'RF_DETECT'):
+          front_limit = bsd_limits.get(det_key, 5.0)
+          if dist <= front_limit:
+            if current_val in [0, 1]:
+              values[det_key] = current_val + 1
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 # 💡 파라미터에 corner_radar_cutin 추가
