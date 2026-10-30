@@ -375,7 +375,7 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
     
     # alpha 값 (0.0 ~ 1.0): 작을수록 묵직하고 부드러워짐(대신 반응이 살짝 느림). 
     # 기본 0.15 추천. 여전히 흔들리면 0.05~0.10으로 낮추시면 됩니다.
-    alpha = 0.02 
+    alpha = 0.05 
     _apply_scc_lead._filt_lateral = (alpha * target_lateral) + ((1.0 - alpha) * _apply_scc_lead._filt_lateral)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     
