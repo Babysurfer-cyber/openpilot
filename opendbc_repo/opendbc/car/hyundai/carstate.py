@@ -808,7 +808,16 @@ class CarState(CarStateBase):
 
       limit_lf = get_limit(v_lf)
       limit_rf = get_limit(v_rf)
-      limit_rear = 5.0 # 💡 사용자 요청: 후방은 5m로 고정하여 불필요한 조기 경고 방지!
+      limit_rear = 5.0 # 후방 고정 5m
+
+      # ▼▼▼ [추가] canfd.py CCNC UI 연동용 CarState 실시간 가변 BSD 임계값 저장 ▼▼▼
+      self.bsd_limits = {
+        'LF_DETECT': limit_lf,
+        'LR_DETECT': limit_rear,
+        'RF_DETECT': limit_rf,
+        'RR_DETECT': limit_rear,
+      }
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       seen_lf = 0.1 < ret.leftLongDist < limit_lf
       seen_lr = 0.1 < self.lr_distance < limit_rear
