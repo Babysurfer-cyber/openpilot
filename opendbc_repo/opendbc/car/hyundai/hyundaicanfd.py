@@ -753,20 +753,46 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     if blink_pairs:
       _apply_radar_blink(values, blink_pairs, frame, CS, t=blink_t)
 
-    # ▼▼▼ [회원님 아이디어] BSD 상태에 따른 일괄 +1 오프셋(Offset) 로직 ▼▼▼
+    # ▼▼▼ [회원님 아이디어] 시속 25km/h 이상 + 점선 조건 + BSD 상태에 따른 일괄 +1 오프셋 로직 ▼▼▼
     left_bsd = getattr(CS.out, 'leftBlindspot', False)
     right_bsd = getattr(CS.out, 'rightBlindspot', False)
+    
+    # 1. 현재 속도 확인 (시속 25km/h 이상 여부)
+    v_ego_kph = getattr(CS.out, 'vEgo', 0) * CV.MS_TO_KPH
+    is_speed_valid = (v_ego_kph >= 25.0)
 
-    # 각 레이더 위치별 BSD 방향 매핑
-    bsd_mapping = {
-      'LF_DETECT': left_bsd, 'LR_DETECT': left_bsd,
-      'RF_DETECT': right_bsd, 'RR_DETECT': right_bsd
+    # 2. 좌우 차선 상태 확인 (실선인지 점선인지)
+    lane_line_check = Params().get_int("LaneLineCheck")
+    left_raw = getattr(CS.out, 'leftLaneLine', 0)
+    right_raw = getattr(CS.out, 'rightLaneLine', 0)
+    
+    if lane_line_check >= 1:
+      left_solid = (left_raw % 10) not in (0, 5)
+      right_solid = (right_raw % 10) not in (0, 5)
+    else:
+      left_solid = left_raw >= 20
+      right_solid = right_raw >= 20
+      
+    left_edge = (left_raw == 0)
+    right_edge = (right_raw == 0)
+    
+    # 해당 방향이 차선 변경 가능한 "점선"일 때만 True
+    left_possible = not left_solid and not left_edge
+    right_possible = not right_solid and not right_edge
+
+    # 3. 25km/h 이상 + 점선 + BSD 3가지 조건이 모두 만족할 때만 True
+    left_danger = is_speed_valid and left_possible and left_bsd
+    right_danger = is_speed_valid and right_possible and right_bsd
+
+    # 각 레이더 위치별 위험 매핑
+    danger_mapping = {
+      'LF_DETECT': left_danger, 'LR_DETECT': left_danger,
+      'RF_DETECT': right_danger, 'RR_DETECT': right_danger
     }
 
     for det_key, dist_key in radar_all:
-      # 1. 해당 방향의 BSD가 켜져 있고
-      # 2. 레이더가 고스트(오류)가 아니라 실제로 차량을 잡고 있을 때(거리!=0)
-      if bsd_mapping[det_key] and values.get(dist_key, 0) != 0:
+      # 해당 방향이 진짜 위험 상태(danger)이고, 레이더가 차를 잡고 있을 때(dist!=0)
+      if danger_mapping[det_key] and values.get(dist_key, 0) != 0:
         current_val = values.get(det_key, 0)
         
         # 현재 화면에 0(투명) 또는 1(일반) 상태로 대기/작동 중인 경우에만 +1
