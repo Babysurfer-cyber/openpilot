@@ -675,7 +675,7 @@ def _apply_lane_desire(values, desire):
     values['LANE_CHANGING'] = 4
 
 def _apply_radar_blink(values, radar_pairs, frame, CS, *,
-                      disp_dist=30.0, min_dist=14.0, max_dist=30.0,
+                      disp_dist=20.0, min_dist=14.0, max_dist=20.0,
                       max_interval=100, t=1.0):
   """
   거리 > min_dist 일 때만 깜빡임.
