@@ -810,14 +810,12 @@ class CarState(CarStateBase):
       limit_rf = get_limit(v_rf)
       limit_rear = 5.0 # 후방 고정 5m
 
-      # ▼▼▼ [추가] canfd.py CCNC UI 연동용 CarState 실시간 가변 BSD 임계값 저장 ▼▼▼
+      # ▼▼▼ [수정할 부분: 여기에 아래 5줄 코드를 추가하세요] ▼▼▼
       self.bsd_limits = {
         'LF_DETECT': limit_lf,
-        'LR_DETECT': limit_rear,
-        'RF_DETECT': limit_rf,
-        'RR_DETECT': limit_rear,
+        'RF_DETECT': limit_rf
       }
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       seen_lf = 0.1 < ret.leftLongDist < limit_lf
       seen_lr = 0.1 < self.lr_distance < limit_rear
