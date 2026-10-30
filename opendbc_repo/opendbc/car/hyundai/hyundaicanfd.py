@@ -777,8 +777,8 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     right_edge = (right_raw == 0)
     
     # 해당 방향이 차선 변경 가능한 "점선"일 때만 True
-    left_possible = not left_edge
-    right_possible = not right_edge
+    left_possible = not left_solid and not left_edge
+    right_possible = not right_solid and not right_edge
 
     # 3. 25km/h 이상 + 점선 + BSD 3가지 조건이 모두 만족할 때만 True
     left_danger = is_speed_valid and left_possible and left_bsd
