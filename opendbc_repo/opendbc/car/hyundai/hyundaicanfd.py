@@ -746,12 +746,33 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
       ('RR_DETECT', 'RR_DETECT_DISTANCE'),
     ]
     for det_key, dist_key in radar_all:
-      if values[det_key] >= 4 and values[dist_key] != 0:
+      if values.get(det_key, 0) >= 4 and values.get(dist_key, 0) != 0:
         # 기존의 고정값 1 할당으로 원복 (ccNC 계기판 오류 방지)
         values[det_key] = 1
 
     if blink_pairs:
       _apply_radar_blink(values, blink_pairs, frame, CS, t=blink_t)
+
+    # ▼▼▼ [회원님 아이디어] BSD 상태에 따른 일괄 +1 오프셋(Offset) 로직 ▼▼▼
+    left_bsd = getattr(CS.out, 'leftBlindspot', False)
+    right_bsd = getattr(CS.out, 'rightBlindspot', False)
+
+    # 각 레이더 위치별 BSD 방향 매핑
+    bsd_mapping = {
+      'LF_DETECT': left_bsd, 'LR_DETECT': left_bsd,
+      'RF_DETECT': right_bsd, 'RR_DETECT': right_bsd
+    }
+
+    for det_key, dist_key in radar_all:
+      # 1. 해당 방향의 BSD가 켜져 있고
+      # 2. 레이더가 고스트(오류)가 아니라 실제로 차량을 잡고 있을 때(거리!=0)
+      if bsd_mapping[det_key] and values.get(dist_key, 0) != 0:
+        current_val = values.get(det_key, 0)
+        
+        # 현재 화면에 0(투명) 또는 1(일반) 상태로 대기/작동 중인 경우에만 +1
+        if current_val in [0, 1]:
+          values[det_key] = current_val + 1
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 # 💡 파라미터에 corner_radar_cutin 추가
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
