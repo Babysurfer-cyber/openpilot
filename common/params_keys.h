@@ -345,6 +345,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"VehicleNaviCanControl", {PERSISTENT, BOOL, "0"}},
 
     {"CanfdBlinkerKick", {PERSISTENT, INT, "0"}},
+    {"CanfdBlinkerControl", {PERSISTENT, BOOL, "0"}},
 
     // Model Selector
     {"DrivingModelName", {PERSISTENT, STRING}},  // 현재 사용 중인 모델 이름
