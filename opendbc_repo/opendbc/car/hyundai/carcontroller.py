@@ -9,6 +9,9 @@ from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParam
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.common.params import Params
+# ▼▼▼ [추가] 차선 이탈 감지 모듈 불러오기 ▼▼▼
+from opendbc.car.hyundai.lane_crossing import LaneCrossing
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 import cereal.messaging as messaging  # 💡 [추가] radarState를 받아오기 위한 통신 모듈
 
 
@@ -159,6 +162,84 @@ class CarController(CarControllerBase):
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
+    # ▼▼▼ [추가] 깜빡이 킥을 위한 상태 변수들 ▼▼▼
+    self.blinker_control = True  # 깜빡이 킥 기능 활성화 (옵션으로 빼도 되지만, 일단 강제 활성화)
+    self.lane_crossing = LaneCrossing()
+    self.blinker_side = 0
+    self.blinker_pulse_end = 0
+    self.yellow_until = [0, 0]  # left, right
+    self.aprk_state = 0
+    self.aprk_frame = 0
+    self.aprk_buses = ()
+    self.spas_steer_test = 0
+    # 깜빡이가 지속되는 프레임 수 (약 1.0초 = 100 프레임)
+    self.BLINKER_PULSE_FRAMES = int(1.0 / DT_CTRL) 
+    # 중앙선(황색선) 인식 시 유지 프레임 수 (약 2.0초 = 200 프레임)
+    self.YELLOW_HOLD_FRAMES = int(2.0 / DT_CTRL)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+  def aprk_blinkers(self, CC, CS):
+    ret = []
+    # 기어가 D 모드인지 확인
+    drive = CS.out.gearShifter == structs.CarState.GearShifter.drive
+    # 운전자가 이미 깜빡이를 켰는지 확인
+    lamp = CS.out.leftBlinker or CS.out.rightBlinker
+    
+    # 터널이나 회전교차로에서는 깜빡이 킥 작동 차단 (순정 내비게이션 정보 활용)
+    tunnel = getattr(CS.out, "naviTunnel", False) or getattr(CS.out, "naviRoundabout", False)
+    
+    # lane_crossing.py를 이용해 차선을 넘어가고 있는지 판단 (방향: 3(좌), 4(우), 0(안넘음))
+    side = self.lane_crossing.update(getattr(CS, "modelV2", None), self.frame * DT_CTRL,
+                                     self.blinker_control and drive and not lamp and not tunnel, CS.out.steeringTorque)
+                                     
+    # 카메라가 인식한 차선 색상 확인 (10의 자리가 2면 황색선)
+    for i, line in enumerate((CS.out.leftLaneLine, CS.out.rightLaneLine)):
+      if line // 10 == 2:  
+        self.yellow_until[i] = self.frame + self.YELLOW_HOLD_FRAMES
+        
+    # 만약 넘어가는 쪽 차선이 최근 2초 내에 황색선(중앙선)이었다면 깜빡이 킥 취소
+    if side and self.frame < self.yellow_until[side - 3]:
+      side = 0
+      
+    # 차선을 넘어가는 순간이 포착되면, 깜빡이를 유지할 종료 프레임 설정
+    if side:
+      self.blinker_side, self.blinker_pulse_end = side, self.frame + self.BLINKER_PULSE_FRAMES
+      
+    # 깜빡이를 켜야 하는 찰나의 순간인지 확인
+    pulse = self.frame < self.blinker_pulse_end
+    
+    # 조건 만족 시에만 SPAS 모듈을 제어하러 진입
+    want = self.blinker_control and drive and pulse
+    
+    if not want:
+      for bus in self.aprk_buses:
+        # 볼일이 끝났으면 SPAS를 원래 상태(DEFAULT_SESSION)로 즉시 복구
+        ret.append(CanData(0x7B1, bytes([0x02, 0x10, 0x01, 0, 0, 0, 0, 0]), bus))
+      self.aprk_state, self.aprk_buses = 0, ()
+      
+    elif self.aprk_state == 0:
+      self.aprk_buses = (self.CAN.ECAN,)
+      # SPAS 모듈 진단 모드 진입 (EXT_SESSION)
+      ret += [CanData(0x7B1, bytes([0x02, 0x10, 0x03, 0, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+      self.aprk_state, self.aprk_frame = 1, self.frame
+      
+    elif self.aprk_state == 1:
+      if self.frame - self.aprk_frame >= 5: 
+        # 통신 차단 (COM_DISABLE)
+        ret += [CanData(0x7B1, bytes([0x03, 0x28, 0x83, 0x01, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+        self.aprk_state, self.aprk_frame = 2, self.frame
+        
+    else:
+      if self.frame % 100 == 0:
+        # SPAS 모듈 입막음 유지 (Tester Present)
+        ret += [make_tester_present_msg(0x7B1, bus, suppress_response=True) for bus in self.aprk_buses]
+        
+      left = (pulse and self.blinker_side == 3)
+      right = (pulse and self.blinker_side == 4)
+      # 가짜 깜빡이 신호 전송 (SPAS1/SPAS2)
+      ret.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, left, right, getattr(CS, "spas2", None)))
+      
+    return ret
 
   def update(self, CC, CS, now_nanos):
     
@@ -354,9 +435,10 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
-      # blinkers (기존에 이미 있던 코드)
-      if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
+      # ▼▼▼ [수정] 기존 단순 깜빡이 호출을 지우고, 우리가 만든 똑똑한 깜빡이 킥(aprk_blinkers) 호출로 교체 ▼▼▼
+      if hda2:
+        can_sends.extend(self.aprk_blinkers(CC, CS))
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       if self.camera_scc_params in [2, 3]:
         self.canfd_toggle_adas(CC, CS)
