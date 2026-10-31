@@ -2408,17 +2408,6 @@ public:
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
 
-        // ▼▼▼ [새로 추가할 부분 시작] Auto Lane Change 활성화 텍스트 ▼▼▼
-        if (params.getBool("AutoLaneChangeMode")) {
-            // 텍스트 정렬을 가로 중앙, 세로 아래쪽 기준으로 설정
-            nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            
-            // x좌표: HUD 박스 시작(bx-120)부터 폭(475)의 중앙 = bx + 117
-            // y좌표: HUD 박스 상단(by-85)보다 약간 위로 띄움 = by - 100
-            ui_draw_text(s, bx + 117, by - 100, "Auto Lane Change", 45, COLOR_GREEN, BOLD);
-        }
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ [새로 추가할 부분 끝] ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
         // draw speed
         char speed[32];
         // 1. 현재 속도 계산 (0 미만으로 내려가면 0으로 고정)
