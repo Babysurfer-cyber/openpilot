@@ -251,12 +251,11 @@ class VCruiseCarrot:
       self.autoSpeedUptoRoadSpeedLimit = self.params.get_float("AutoSpeedUptoRoadSpeedLimit") * 0.01
       self.autoRoadSpeedAdjust = self.params.get_float("AutoRoadSpeedAdjust") * 0.01
 
-      # ▼▼▼ 이렇게 변경해 주세요 (Laneless 완전 고정) ▼▼▼
       useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed") * unit_factor
-      self.useLaneLineSpeedApply = 0  # 무조건 0 (Laneless)으로 강제 고정
+      if self.useLaneLineSpeed != useLaneLineSpeed:
+        self.useLaneLineSpeedApply = useLaneLineSpeed
       self.useLaneLineSpeed = useLaneLineSpeed
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-      
+
       self.speed_from_pcm = self.params.get_int("SpeedFromPCM")
       self._cruise_speed_unit = self.params.get_int("CruiseSpeedUnit")
       self._cruise_button_long_delay = self.params.get_int("CruiseButtonLongDelay")
@@ -638,7 +637,7 @@ class VCruiseCarrot:
           self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
         self._cruise_cancel_state = True
         self.carrot_cruise_active = False  
-    else:  # <--- 길게 눌렀을 때 (long_pressed)
+    else:
       if button_type == ButtonType.accelCruise:
         v_cruise_kph = button_kph
         self._v_cruise_kph_at_brake = 0
@@ -647,35 +646,15 @@ class VCruiseCarrot:
         v_cruise_kph = button_kph
         self._v_cruise_kph_at_brake = 0
         if v_cruise_kph == 0:
-          self.carrot_cruise_active = False
+          self.carrot_cruise_active = False # [수정] 0일 땐 타력주행 방어 로직과 충돌 차단
       elif button_type == ButtonType.gapAdjustCruise:
         current_mode = self.params.get_int("MyDrivingMode")
         new_mode = 5 if current_mode == 3 else 3
         self.params.put_int_nonblocking("MyDrivingMode", new_mode)
 
-      # ▼▼▼ 기존 패스 변경 기능을 지우고 Auto Lane Change 토글로 변경 ▼▼▼
       elif button_type == ButtonType.lfaButton:
-        # 상태 뒤집기 (처음 누르면 True, 다시 누르면 False)
-        self.auto_lane_change_mode = not getattr(self, 'auto_lane_change_mode', False)
-        
-        # 외부에서 읽을 수 있게 파라미터 저장 (밑작업)
-        self.params.put_bool_nonblocking("AutoLaneChangeMode", self.auto_lane_change_mode)
-        
-        if self.auto_lane_change_mode:
-          self._add_log("Auto Lane Change: ON")
-          try:
-            with open("/dev/shm/carrot_prompt_text", "w") as f:
-              f.write("Auto Lane Change ON 🟢")
-          except Exception:
-            pass
-        else:
-          self._add_log("Auto Lane Change: OFF")
-          try:
-            with open("/dev/shm/carrot_prompt_text", "w") as f:
-              f.write("Auto Lane Change OFF ⚪")
-          except Exception:
-            pass
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        useLaneLineSpeed = max(1, self.useLaneLineSpeed)
+        self.useLaneLineSpeedApply = useLaneLineSpeed if self.useLaneLineSpeedApply == 0 else 0
 
       elif button_type == ButtonType.cancel:
         self._cruise_cancel_state = True
