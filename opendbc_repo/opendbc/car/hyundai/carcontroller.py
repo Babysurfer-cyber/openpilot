@@ -160,6 +160,57 @@ class CarController(CarControllerBase):
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
 
+    # ▼▼▼ [추가] SPAS 테스트용 상태 변수 ▼▼▼
+    self.aprk_state = 0
+    self.aprk_frame = 0
+    self.aprk_buses = ()
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+  def aprk_blinkers(self, test_blinker, CS):
+    ret = []
+    
+    # 0보다 크면 테스트 시작 (입막음 후 쏘기)
+    if test_blinker > 0:
+      if self.aprk_state == 0:
+        self.aprk_buses = (self.CAN.ECAN,)
+        # 1단계: 진단 세션 진입
+        ret += [(0x7B1, bytes([0x02, 0x10, 0x03, 0, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+        self.aprk_state, self.aprk_frame = 1, self.frame
+        
+      elif self.aprk_state == 1:
+        # 2단계: 50ms 후 순정 모듈 통신 차단
+        if self.frame - self.aprk_frame >= 5: 
+          ret += [(0x7B1, bytes([0x03, 0x28, 0x83, 0x01, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+          self.aprk_state, self.aprk_frame = 2, self.frame
+          
+      else:
+        # 3단계: 순정 모듈 입막음 유지 및 신호 전송
+        if self.frame % 100 == 0:
+          # 0x7DF는 테스터 프레젠트 표준 주소, 데이터는 [0x02, 0x3E, 0x80, 0, 0, 0, 0, 0] 입니다.
+          ret += [(0x7DF, bytes([0x02, 0x3E, 0x80, 0, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+          
+        # SPAS1 깡통 전송
+        ret.append(self.packer.make_can_msg("SPAS1", self.CAN.ECAN, {}))
+        
+        # SPAS2에 설정한 숫자(test_blinker) 덮어쓰기
+        try:
+          spas2_values = {}
+          if hasattr(CS, 'spas2') and CS.spas2 is not None:
+            spas2_values = {k: v for k, v in CS.spas2.items() if k not in ("CHECKSUM", "COUNTER")}
+          spas2_values["BLINKER_CONTROL"] = test_blinker
+          ret.append(self.packer.make_can_msg("SPAS2", self.CAN.ECAN, spas2_values))
+        except Exception:
+          pass
+
+    # 0이면 원상 복구
+    else:
+      if getattr(self, 'aprk_state', 0) != 0:
+        for bus in self.aprk_buses:
+          ret.append((0x7B1, bytes([0x02, 0x10, 0x01, 0, 0, 0, 0, 0]), bus))
+        self.aprk_state, self.aprk_buses = 0, ()
+        
+    return ret
+
   def update(self, CC, CS, now_nanos):
     
     # 💡 [추가] radarState 데이터를 실시간으로 가져와서 끼어들기 여부 판별!
@@ -343,6 +394,11 @@ class CarController(CarControllerBase):
         can_sends.extend(hyundaicanfd.create_steering_messages_camera_scc(self.frame, self.packer, self.CP, self.CAN, CC, apply_steer_req, apply_torque, CS, apply_angle, self.lkas_max_torque, angle_control))
       else:
         can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled, apply_steer_req, apply_torque, apply_angle, self.lkas_max_torque, angle_control))
+
+      # ▼▼▼ [추가] SPAS 깜빡이 테스트 실행 ▼▼▼
+      test_blinker = self.params.get_int("TestBlinkerKick")
+      can_sends.extend(self.aprk_blinkers(test_blinker, CS))
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
               
       # prevent LFA from activating on HDA2 by sending "no lane lines detected" to ADAS ECU
       if self.frame % 5 == 0 and hda2 and not camera_scc:
