@@ -181,26 +181,22 @@ class CarController(CarControllerBase):
   def aprk_blinkers(self, CC, CS):
     ret = []
     
-    # 💡 [테스트 모드 추가] 파라미터에서 테스트 번호 읽어오기 (1: 좌, 2: 우, 3: 0~7 순차 탐색)
     test_blinker = self.params.get_int("TestBlinkerKick")
     
     if test_blinker in (1, 2, 3):
-      # [테스트 중] 사용자가 메뉴에서 1, 2, 3을 켰을 때
       drive = True
       lamp = False
       tunnel = False
       
-      # 3번일 때만 3초(300프레임)마다 0~7까지 숫자가 순차적으로 바뀌도록 설정
       if test_blinker == 1:
         blink_val = 3  # 좌측 강제
       elif test_blinker == 2:
         blink_val = 4  # 우측 강제
       elif test_blinker == 3:
-        blink_val = (self.frame // 300) % 8  # 3초마다 0, 1, 2, 3, 4, 5, 6, 7 순환 쏘기
+        blink_val = (self.frame // 300) % 8  # 3초마다 0~7 순환
       
-      pulse = True # 강제로 계속 켜진 상태 유지
+      pulse = True
     else:
-      # [평소 주행 모드] 기존 블링커 킥 로직 작동
       drive = CS.out.gearShifter == structs.CarState.GearShifter.drive
       lamp = CS.out.leftBlinker or CS.out.rightBlinker
       tunnel = getattr(CS.out, "naviTunnel", False) or getattr(CS.out, "naviRoundabout", False)
@@ -219,36 +215,31 @@ class CarController(CarControllerBase):
         self.blinker_side, self.blinker_pulse_end = side, self.frame + self.BLINKER_PULSE_FRAMES
         
       pulse = self.frame < self.blinker_pulse_end
-      
-      # 평소에는 좌(3) 또는 우(4) 결정
       blink_val = 3 if self.blinker_side == 3 else (4 if self.blinker_side == 4 else 0)
 
-    # 공통 제어 흐름 (세션 진입 -> 입막음 -> 메시지 송출)
     want = (test_blinker in (1, 2, 3)) or (self.blinker_control and drive and pulse)
     
     if not want:
       for bus in self.aprk_buses:
-        ret.append(CanData(0x7B1, bytes([0x02, 0x10, 0x01, 0, 0, 0, 0, 0]), bus))
+        ret.append((0x7B1, bytes([0x02, 0x10, 0x01, 0, 0, 0, 0, 0]), bus))
       self.aprk_state, self.aprk_buses = 0, ()
       
     elif self.aprk_state == 0:
       self.aprk_buses = (self.CAN.ECAN,)
-      ret += [CanData(0x7B1, bytes([0x02, 0x10, 0x03, 0, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+      ret += [(0x7B1, bytes([0x02, 0x10, 0x03, 0, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
       self.aprk_state, self.aprk_frame = 1, self.frame
       
     elif self.aprk_state == 1:
       if self.frame - self.aprk_frame >= 5: 
-        ret += [CanData(0x7B1, bytes([0x03, 0x28, 0x83, 0x01, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
+        ret += [(0x7B1, bytes([0x03, 0x28, 0x83, 0x01, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
         self.aprk_state, self.aprk_frame = 2, self.frame
         
     else:
       if self.frame % 100 == 0:
         ret += [make_tester_present_msg(0x7B1, bus, suppress_response=True) for bus in self.aprk_buses]
         
-      # SPAS1 깡통 전송
       ret.append(self.packer.make_can_msg("SPAS1", self.CAN.ECAN, {}))
       
-      # SPAS2 메시지에 현재 계산된 blink_val 주입
       try:
         spas2_values = {}
         if hasattr(CS, 'spas2') and CS.spas2 is not None:
