@@ -1922,6 +1922,22 @@
       "cdescr": ""
     },
     {
+      "group": "시작",
+      "name": "TestBlinkerKick",
+      "title": "깜빡이 테스트",
+      "descr": "",
+      "egroup": "START",
+      "etitle": "test",
+      "edescr": "test",
+      "min": 0,
+      "max": 3,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "启动设置",
+      "ctitle": "音量调节，激活音量 (10%)",
+      "cdescr": ""
+    },
+    {
       "group": "차량간격",
       "name": "TFollowGap1",
       "title": "TF(1): 차량간격시간1x0.01s(110)",
