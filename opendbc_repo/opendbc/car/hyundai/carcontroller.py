@@ -9,9 +9,6 @@ from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParam
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.common.params import Params
-# ▼▼▼ [추가] 차선 이탈 감지 모듈 불러오기 ▼▼▼
-from opendbc.car.hyundai.lane_crossing import LaneCrossing
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 import cereal.messaging as messaging  # 💡 [추가] radarState를 받아오기 위한 통신 모듈
 
 
@@ -162,95 +159,6 @@ class CarController(CarControllerBase):
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
-    # ▼▼▼ [추가] 깜빡이 킥을 위한 상태 변수들 ▼▼▼
-    self.blinker_control = True  # 깜빡이 킥 기능 활성화 (옵션으로 빼도 되지만, 일단 강제 활성화)
-    self.lane_crossing = LaneCrossing()
-    self.blinker_side = 0
-    self.blinker_pulse_end = 0
-    self.yellow_until = [0, 0]  # left, right
-    self.aprk_state = 0
-    self.aprk_frame = 0
-    self.aprk_buses = ()
-    self.spas_steer_test = 0
-    # 깜빡이가 지속되는 프레임 수 (약 1.0초 = 100 프레임)
-    self.BLINKER_PULSE_FRAMES = int(1.0 / DT_CTRL) 
-    # 중앙선(황색선) 인식 시 유지 프레임 수 (약 2.0초 = 200 프레임)
-    self.YELLOW_HOLD_FRAMES = int(2.0 / DT_CTRL)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-  def aprk_blinkers(self, CC, CS):
-    ret = []
-    
-    test_blinker = self.params.get_int("TestBlinkerKick")
-    
-    if test_blinker in (1, 2, 3):
-      drive = True
-      lamp = False
-      tunnel = False
-      
-      if test_blinker == 1:
-        blink_val = 3  # 좌측 강제
-      elif test_blinker == 2:
-        blink_val = 4  # 우측 강제
-      elif test_blinker == 3:
-        blink_val = (self.frame // 300) % 8  # 3초마다 0~7 순환
-      
-      pulse = True
-    else:
-      drive = CS.out.gearShifter == structs.CarState.GearShifter.drive
-      lamp = CS.out.leftBlinker or CS.out.rightBlinker
-      tunnel = getattr(CS.out, "naviTunnel", False) or getattr(CS.out, "naviRoundabout", False)
-      
-      side = self.lane_crossing.update(getattr(CS, "modelV2", None), self.frame * DT_CTRL,
-                                       self.blinker_control and drive and not lamp and not tunnel, CS.out.steeringTorque)
-                                       
-      for i, line in enumerate((CS.out.leftLaneLine, CS.out.rightLaneLine)):
-        if line // 10 == 2:  
-          self.yellow_until[i] = self.frame + self.YELLOW_HOLD_FRAMES
-          
-      if side and self.frame < self.yellow_until[side - 3]:
-        side = 0
-        
-      if side:
-        self.blinker_side, self.blinker_pulse_end = side, self.frame + self.BLINKER_PULSE_FRAMES
-        
-      pulse = self.frame < self.blinker_pulse_end
-      blink_val = 3 if self.blinker_side == 3 else (4 if self.blinker_side == 4 else 0)
-
-    want = (test_blinker in (1, 2, 3)) or (self.blinker_control and drive and pulse)
-    
-    if not want:
-      for bus in self.aprk_buses:
-        ret.append((0x7B1, bytes([0x02, 0x10, 0x01, 0, 0, 0, 0, 0]), bus))
-      self.aprk_state, self.aprk_buses = 0, ()
-      
-    elif self.aprk_state == 0:
-      self.aprk_buses = (self.CAN.ECAN,)
-      ret += [(0x7B1, bytes([0x02, 0x10, 0x03, 0, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
-      self.aprk_state, self.aprk_frame = 1, self.frame
-      
-    elif self.aprk_state == 1:
-      if self.frame - self.aprk_frame >= 5: 
-        ret += [(0x7B1, bytes([0x03, 0x28, 0x83, 0x01, 0, 0, 0, 0]), bus) for bus in self.aprk_buses]
-        self.aprk_state, self.aprk_frame = 2, self.frame
-        
-    else:
-      if self.frame % 100 == 0:
-        ret += [make_tester_present_msg(0x7B1, bus, suppress_response=True) for bus in self.aprk_buses]
-        
-      ret.append(self.packer.make_can_msg("SPAS1", self.CAN.ECAN, {}))
-      
-      try:
-        spas2_values = {}
-        if hasattr(CS, 'spas2') and CS.spas2 is not None:
-          spas2_values = {k: v for k, v in CS.spas2.items() if k not in ("CHECKSUM", "COUNTER")}
-        spas2_values["BLINKER_CONTROL"] = blink_val
-        ret.append(self.packer.make_can_msg("SPAS2", self.CAN.ECAN, spas2_values))
-      except Exception:
-        pass
-      
-    return ret
-
 
   def update(self, CC, CS, now_nanos):
     
@@ -446,10 +354,9 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
-      # ▼▼▼ [수정] 스위치가 켜져 있을 때만(CanfdBlinkerKick) 깜빡이 킥 기능 작동 ▼▼▼
-      if hda2 and Params().get_bool("CanfdBlinkerKick"):
-        can_sends.extend(self.aprk_blinkers(CC, CS))
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # blinkers (기존에 이미 있던 코드)
+      if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
+        can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))
 
       if self.camera_scc_params in [2, 3]:
         self.canfd_toggle_adas(CC, CS)
