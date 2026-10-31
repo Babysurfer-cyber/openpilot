@@ -1911,13 +1911,14 @@
       "title": "SPAS 깜빡이 강제 테스트",
       "descr": "0 꺼짐 (순정 복구) 1~7 해당 숫자를 SPAS2 깜빡이 신호로 강제 전송합니다.",
       "egroup": "START",
-      "etitle": "Sound Volume adjust,Engage(10%)",
+      "etitle": "test",
+      "edescr": "",
       "min": 0,
       "max": 7,
       "default": 0,
       "unit": 1,
       "cgroup": "启动设置",
-      "ctitle": "音量调节，激活音量 (10%)",
+      "ctitle": "动",
       "cdescr": ""
     },
     {
