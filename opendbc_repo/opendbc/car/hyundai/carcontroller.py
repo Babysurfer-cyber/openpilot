@@ -435,8 +435,8 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
-      # ▼▼▼ [수정] 기존 단순 깜빡이 호출을 지우고, 우리가 만든 똑똑한 깜빡이 킥(aprk_blinkers) 호출로 교체 ▼▼▼
-      if hda2:
+      # ▼▼▼ [수정] 스위치가 켜져 있을 때만(CanfdBlinkerKick) 깜빡이 킥 기능 작동 ▼▼▼
+      if hda2 and Params().get_bool("CanfdBlinkerKick"):
         can_sends.extend(self.aprk_blinkers(CC, CS))
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
