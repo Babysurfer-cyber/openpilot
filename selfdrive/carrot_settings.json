@@ -1909,7 +1909,7 @@
       "group": "시작",
       "name": "TestBlinkerKick",
       "title": "SPAS 깜빡이 강제 테스트",
-      "descr": "0: 꺼짐 (순정 복구) / 1~7: 해당 숫자를 SPAS2 깜빡이 신호로 강제 전송합니다. (보통 3:좌측, 4:우측)",
+      "descr": "0 꺼짐 (순정 복구) 1~7 해당 숫자를 SPAS2 깜빡이 신호로 강제 전송합니다.",
       "egroup": "START",
       "etitle": "Sound Volume adjust,Engage(10%)",
       "min": 0,
