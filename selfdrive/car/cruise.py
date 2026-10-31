@@ -251,11 +251,12 @@ class VCruiseCarrot:
       self.autoSpeedUptoRoadSpeedLimit = self.params.get_float("AutoSpeedUptoRoadSpeedLimit") * 0.01
       self.autoRoadSpeedAdjust = self.params.get_float("AutoRoadSpeedAdjust") * 0.01
 
+      # ▼▼▼ 이렇게 변경해 주세요 (Laneless 완전 고정) ▼▼▼
       useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed") * unit_factor
-      if self.useLaneLineSpeed != useLaneLineSpeed:
-        self.useLaneLineSpeedApply = useLaneLineSpeed
+      self.useLaneLineSpeedApply = 0  # 무조건 0 (Laneless)으로 강제 고정
       self.useLaneLineSpeed = useLaneLineSpeed
-
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      
       self.speed_from_pcm = self.params.get_int("SpeedFromPCM")
       self._cruise_speed_unit = self.params.get_int("CruiseSpeedUnit")
       self._cruise_button_long_delay = self.params.get_int("CruiseButtonLongDelay")
