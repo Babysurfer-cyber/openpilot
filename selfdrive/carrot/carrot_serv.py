@@ -1218,8 +1218,8 @@ class CarrotServ:
     manual_turn_target_speed_kph = 255.0
     if getattr(self, 'manual_turn_decel_active', False):
       elapsed_time = current_time - self.manual_turn_start_time
-      current_target_v = self.manual_turn_start_v_ego - (0.5 * elapsed_time)
-      manual_turn_target_speed_kph = max(25.0, current_target_v * 3.6)
+      current_target_v = self.manual_turn_start_v_ego - (1.0 * elapsed_time)
+      manual_turn_target_speed_kph = max(20.0, current_target_v * 3.6)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     speed_n_sources = [
