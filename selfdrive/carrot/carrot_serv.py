@@ -1174,7 +1174,7 @@ class CarrotServ:
         )
 
     # =========================================================
-    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.5m/s^2 로직 (차선 조건 제거, 시속 70 이하 한정) ▼▼▼
+    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.8m/s^2 로직 (차선 조건 제거, 시속 제한 없음) ▼▼▼
     # =========================================================
     blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
     gas_pressed = getattr(CS, 'gasPressed', False) if CS is not None else False
@@ -1201,9 +1201,8 @@ class CarrotServ:
     if v_ego_kph <= 200.0:
       speed_cond_met = True
 
-    # 조건: 고속도로 아님 & 2단 & 속도조건 충족 & 영구취소 안됨!
-    turn_cond_met = (nav_link_class not in [1, 2, 3]) and \
-                    (blinker_lever == 2) and \
+    # 조건: 2단 & 속도조건 충족 & 영구취소 안됨!
+    turn_cond_met = (blinker_lever == 2) and \
                     speed_cond_met and \
                     (not getattr(self, 'manual_turn_canceled', False))
 
