@@ -778,7 +778,7 @@ class CarState(CarStateBase):
       ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
       corner = True
     if corner:
-      # ▼▼▼ [수정] 전방 가변(2~10m) + 후방 고정(5m) 및 B필러 맹점 극복 BSD 로직 ▼▼▼
+      # ▼▼▼ [수정] 전방 가변(2~12m) + 후방 고정(5m) 및 B필러 맹점 극복 BSD 로직 ▼▼▼
       if not hasattr(self, 'bs_timer'):
         self.corner_hist = {"LF": deque(maxlen=10), "RF": deque(maxlen=10), "LR": deque(maxlen=10), "RR": deque(maxlen=10)}
         self.bs_timer = {"L": 0, "R": 0}
@@ -801,10 +801,11 @@ class CarState(CarStateBase):
       v_rr = calc_v(self.corner_hist["RR"], self.rr_distance)
 
       # 2. 상대 속도 기반 가변 경고 영역 계산 (전방 전용)
+      # 💡 [수정] 상대차가 다가오는 속도가 빠를수록(-5.0m/s 이상) 최대 12m까지 거리 연장
       def get_limit(v):
-        if v < -0.5: return float(np.interp(v, [-5.0, -0.5], [10.0, 5.0]))
-        elif v > 0.5: return float(np.interp(v, [0.5, 5.0], [5.0, 2.0]))
-        return 5.0
+        if v < -0.5: return float(np.interp(v, [-5.0, -0.5], [12.0, 6.0]))
+        elif v > 0.5: return float(np.interp(v, [0.5, 5.0], [6.0, 2.0]))
+        return 6.0
 
       limit_lf = get_limit(v_lf)
       limit_rf = get_limit(v_rf)
