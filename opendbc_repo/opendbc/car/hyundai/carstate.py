@@ -828,28 +828,33 @@ class CarState(CarStateBase):
         ret.leftBlindspot = True
         v_active = v_lr if seen_lr else v_lf
         
-        # 💡 [핵심 수정] 레이더 프리징(잔상)으로 인해 속도가 순간적으로 0이 되는 것을 무시
-        if abs(v_active) > 0.5:
+        # 💡 [수정] 천천히 추월할 때도 속도를 기록하도록 임계값을 낮춤 (0.5 -> 0.1)
+        if abs(v_active) > 0.1:
             self.last_approach_v["L"] = v_active
-        
+            
+        # 💡 [수정] 레이더 출처 기록 (어느 레이더에서 B필러로 넘어갔는지 판별용)
+        self.bs_timer["L_source"] = "rear" if seen_lr else "front"
+
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["L"] = int(hold_sec / DT_CTRL)
       else:
-        # ▼▼▼ [수정된 부분] 추월당할 때와 내가 추월할 때 모두 타이머 부여 ▼▼▼
-        if self.last_approach_v["L"] < -0.5:
-          self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 추월당할 땐 위험하므로 3초 길게 유지
-          self.last_approach_v["L"] = 0.0
-        elif self.last_approach_v["L"] > 0.5:
-          self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 내가 추월할 땐 B필러 맹점만 덮도록 1.5초 유지
-          self.last_approach_v["L"] = 0.0
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        # ▼▼▼ 출처(Source)에 따라 내가 추월하는지, 추월당하는지 정확히 판별 ▼▼▼
+        if self.last_approach_v["L"] != 0.0:
+          if self.bs_timer.get("L_source") == "front":
+            self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 내가 추월할 땐 전방에서 사라짐 (1.5초 유지)
+          else:
+            self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 추월당할 땐 후방에서 사라짐 (3.0초 길게 유지)
+          self.last_approach_v["L"] = 0.0  # 타이머 부여 후 초기화
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if self.bs_timer["L"] > 0:
           self.bs_timer["L"] -= 1
           ret.leftBlindspot = True
 
-        # 확실히 멀어짐 확인 시 타이머 해제
-        if (ret.leftLongDist >= limit_lf and v_lf > 0.5) or (self.lr_distance >= limit_rear and v_lr > 0.5):
+        # 💡 [수정] 레이더가 차량을 놓쳐 거리가 0이나 최댓값으로 튈 때 강제로 타이머가 꺼지는 오작동 방지
+        # (0.1 ~ 20.0m 사이의 정상 거리 안에서 확실히 멀어질 때만 타이머 해제)
+        if (0.1 < ret.leftLongDist < 20.0 and ret.leftLongDist >= limit_lf and v_lf > 0.5) or \
+           (0.1 < self.lr_distance < 20.0 and self.lr_distance >= limit_rear and v_lr > 0.5):
           self.bs_timer["L"] = 0
           self.last_approach_v["L"] = 0.0
 
@@ -858,30 +863,29 @@ class CarState(CarStateBase):
         ret.rightBlindspot = True
         v_active = v_rr if seen_rr else v_rf
         
-        # 💡 [핵심 수정] 레이더 프리징(잔상)으로 인해 속도가 순간적으로 0이 되는 것을 무시
-        if abs(v_active) > 0.5:
+        if abs(v_active) > 0.1:
             self.last_approach_v["R"] = v_active
+            
+        self.bs_timer["R_source"] = "rear" if seen_rr else "front"
             
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["R"] = int(hold_sec / DT_CTRL)
       else:
-        # ▼▼▼ [수정된 부분] 우측도 동일하게 적용 ▼▼▼
-        if self.last_approach_v["R"] < -0.5:
-          self.bs_timer["R"] = int(3.0 / DT_CTRL)
+        if self.last_approach_v["R"] != 0.0:
+          if self.bs_timer.get("R_source") == "front":
+            self.bs_timer["R"] = int(3.0 / DT_CTRL)
+          else:
+            self.bs_timer["R"] = int(3.0 / DT_CTRL)
           self.last_approach_v["R"] = 0.0
-        elif self.last_approach_v["R"] > 0.5:
-          self.bs_timer["R"] = int(3.0 / DT_CTRL)  # 우측도 내가 추월할 때 1.5초 유지
-          self.last_approach_v["R"] = 0.0
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         if self.bs_timer["R"] > 0:
           self.bs_timer["R"] -= 1
           ret.rightBlindspot = True
 
-        if (ret.rightLongDist >= limit_rf and v_rf > 0.5) or (self.rr_distance >= limit_rear and v_rr > 0.5):
+        if (0.1 < ret.rightLongDist < 20.0 and ret.rightLongDist >= limit_rf and v_rf > 0.5) or \
+           (0.1 < self.rr_distance < 20.0 and self.rr_distance >= limit_rear and v_rr > 0.5):
           self.bs_timer["R"] = 0
           self.last_approach_v["R"] = 0.0
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
