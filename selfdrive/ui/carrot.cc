@@ -2395,31 +2395,26 @@ public:
         bool has_lead = lead_one.getStatus();
 
         // ==========================================================
-        // ▼ [수정] 전/후방 왼쪽 코너 레이더 상시 표시 ▼
+        // ▼ [수정] 전방 코너 레이더 좌/우 가로 거리 표시 (형식: 0.0m / 0.0m) ▼
         // ==========================================================
         float front_left_long = car_state_hud.getLeftLongDist();
-        float front_left_lat = car_state_hud.getLeftLatDist();
-        
-        // ⚠️ [중요] 후방 레이더 변수명은 회원님의 car.capnp에 정의된 이름에 맞게 변경해주세요!
-        // 파이썬(carstate.py)에서 CS.leftBcaLongDist 였다면 C++에서는 getLeftBcaLongDist()가 됩니다.
-        float rear_left_long = car_state_hud.getLeftRearLongDist(); 
-        float rear_left_lat = car_state_hud.getLeftRearLatDist();
+        float front_left_lat  = car_state_hud.getLeftLatDist();
+        float front_right_long = car_state_hud.getRightLongDist();
+        float front_right_lat  = car_state_hud.getRightLatDist();
+
+        // 유효 조건: 세로 거리가 0.01 ~ 30.0m 일 때만 정상 감지로 판정하여 가로 거리 출력, 그 외는 0.0
+        float disp_left_lat = (front_left_long > 0.01f && front_left_long < 30.0f) ? std::fabs(front_left_lat) : 0.0f;
+        float disp_right_lat = (front_right_long > 0.01f && front_right_long < 30.0f) ? std::fabs(front_right_lat) : 0.0f;
 		
-        nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+        // 텍스트 정렬: HUD 박스 정중앙 정렬
+        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         char corner_str[128];
 
-        // 1. 전방 왼쪽 코너 레이더 (HUD 박스 상단에서 위로 140px)
-        if (front_left_long > 0.01f && front_left_long < 30.0f) {
-            sprintf(corner_str, "[전방 좌] 가로: %.1fm  세로: %.1fm", std::fabs(front_left_lat), front_left_long);
-            ui_draw_text(s, bx - 100, by - 140, corner_str, 32, COLOR_WHITE, BOLD);
-        }
+        // "0.0m / 0.0m" 포맷 
+        sprintf(corner_str, "%.1fm / %.1fm", disp_left_lat, disp_right_lat);
 
-        // 2. 후방 왼쪽 코너 레이더 (HUD 박스 상단에서 위로 100px)
-        if (rear_left_long > 0.01f && rear_left_long < 50.0f) {
-            sprintf(corner_str, "[후방 좌] 가로: %.1fm  세로: %.1fm", std::fabs(rear_left_lat), rear_left_long);
-            // 후방은 전방과 헷갈리지 않게 살짝 주황색(COLOR_ORANGE) 계열이나 노란색(COLOR_YELLOW)으로 하셔도 예쁩니다!
-            ui_draw_text(s, bx - 100, by - 100, corner_str, 32, COLOR_WHITE, BOLD);
-        }
+        // 글씨 크기 32의 1.5배인 48. 위치는 HUD 배경 박스의 가로 중앙(bx + 117), 상단(by - 110)
+        ui_draw_text(s, bx + 117, by - 110, corner_str, 48, COLOR_WHITE, BOLD);
         
         // 텍스트 정렬 원상복구
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
