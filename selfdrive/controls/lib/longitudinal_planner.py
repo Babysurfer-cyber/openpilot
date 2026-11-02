@@ -309,16 +309,16 @@ class LongitudinalPlanner:
       if track_id == -1 and lead_one.dRel <= 2.0:
         
         # 3. 끼어드는 차량이 내 차보다 느리거나 같을 때 (vRel <= 0.0)
-        if lead_one.vRel <= 0.0:
+        if lead_one.vRel <= 1.5:
           
           # [유동적 감속도 계산]
           # (A) 거리에 따른 기본 제동량 (가까울수록 세게 밟음)
-          # 2m 거리일 때는 -0.5, 0m 코앞일 때는 -2.0 할당
-          a_dist = float(np.interp(lead_one.dRel, [0.0, 2.0], [-2.0, -0.5]))
+          # 2m 거리일 때는 -0.0, 0m 코앞일 때는 -2.0 할당
+          a_dist = float(np.interp(lead_one.dRel, [0.0, 2.0], [-1.2, -0.0]))
           
           # (B) 상대속도에 따른 추가 제동량 (앞차가 나보다 많이 느릴수록 세게 밟음)
           # 내 차와 속도가 같으면(0.0) 추가 제동 없음, 나보다 4m/s(약 14km/h) 더 느리면 -2.0 추가 할당
-          a_vrel = float(np.interp(lead_one.vRel, [-4.0, 0.0], [-2.0, 0.0]))
+          a_vrel = float(np.interp(lead_one.vRel, [-4.0, 0.0], [-2.8, 0.0]))
           
           # (C) 최종 강제 제동값 산출 = (A) + (B)
           # 두 값이 합쳐져서 너무 급브레이크가 걸리지 않도록 최대 한계선을 -4.0으로 방어
