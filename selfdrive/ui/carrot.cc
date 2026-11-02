@@ -2402,9 +2402,9 @@ public:
         
         // ⚠️ [중요] 후방 레이더 변수명은 회원님의 car.capnp에 정의된 이름에 맞게 변경해주세요!
         // 파이썬(carstate.py)에서 CS.leftBcaLongDist 였다면 C++에서는 getLeftBcaLongDist()가 됩니다.
-        float rear_left_long = car_state_hud.getLeftBcaLongDist(); 
-        float rear_left_lat = car_state_hud.getLeftBcaLatDist();
-
+        float rear_left_long = car_state_hud.getLeftRearLongDist(); 
+        float rear_left_lat = car_state_hud.getLeftRearLatDist();
+		
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
         char corner_str[128];
 
