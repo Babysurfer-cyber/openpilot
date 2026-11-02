@@ -2403,8 +2403,8 @@ public:
         float front_right_lat  = car_state_hud.getRightLatDist();
 
         // 유효 조건: 세로 거리가 0.01 ~ 30.0m 일 때만 정상 감지로 판정하여 가로 거리 출력, 그 외는 0.0
-        float disp_left_lat = (front_left_long > 0.01f && front_left_long < 30.0f) ? std::fabs(front_left_lat) : 0.0f;
-        float disp_right_lat = (front_right_long > 0.01f && front_right_long < 30.0f) ? std::fabs(front_right_lat) : 0.0f;
+        float disp_left_lat = (front_left_long > 0.01f && front_left_long < 50.0f) ? std::fabs(front_left_lat) : 0.0f;
+        float disp_right_lat = (front_right_long > 0.01f && front_right_long < 50.0f) ? std::fabs(front_right_lat) : 0.0f;
 		
         // 텍스트 정렬: HUD 박스 정중앙 정렬
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
