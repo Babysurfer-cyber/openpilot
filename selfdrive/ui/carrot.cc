@@ -2391,7 +2391,29 @@ public:
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
         // ▼ [추가] 앞차 인식(Lead Vehicle) 및 크루즈 활성화 상태 확인
-        bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
+        auto lead_one = (*(s->sm))["radarState"].getRadarState().getLeadOne();
+        bool has_lead = lead_one.getStatus();
+
+        // ==========================================================
+        // ▼ [추가] 코너 레이더(trackId == -1) 측정 거리(가로/세로) 표시 ▼
+        // ==========================================================
+        if (has_lead && lead_one.getRadar() && lead_one.getRadarTrackId() == -1) {
+            char corner_str[64];
+            
+            // 왼쪽(yRel이 양수)인지 확인 (우측도 원하시면 fabs() 사용 가능)
+            if (lead_one.getYRel() > 0.0) {
+                // 가로거리(YRel), 세로거리(DRel) 소수점 1자리까지 표시
+                sprintf(corner_str, "가로: %.1fm  세로: %.1fm", lead_one.getYRel(), lead_one.getDRel());
+                
+                // HUD 박스 상단(by - 100) 좌측 정렬로 하얀색 텍스트 출력
+                nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+                ui_draw_text(s, bx - 100, by - 100, corner_str, 35, COLOR_WHITE, BOLD);
+                
+                // 텍스트 정렬 원상복구 (아래쪽 코드 꼬임 방지)
+                nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            }
+        }
+        // ==========================================================
 
         // 🎯 [수정] 크루즈가 켜져 있고(longActive) + 앞차를 인식했을 때만 녹색 테두리!
         NVGcolor stroke_color = (has_lead && longActive) ? COLOR_GREY : COLOR_GREY;
