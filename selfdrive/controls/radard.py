@@ -831,46 +831,43 @@ class RadarD:
       self._corner_missing_cnt[side] = 0      
       self._corner_hist[side].append((cur_long, raw_lat))
 
+    # 💡 [추가] 고정값(2.3m) 기준 단순 거리 긴급 개입
+    # 가로 거리가 2.3m 이하로 들어오고, 전방 20m 이내일 경우 즉시 개입
+    is_emergency_cutin = (raw_lat <= 2.3) and (cur_long < 20.0)
+
     h = self._corner_hist[side]
     n = len(h)
     
     # 가속도를 구하려면 데이터가 더 많이 필요합니다 (최소 8프레임 = 0.4초)
     if n < 8:
+      # 💡 0.4초 데이터가 안 모였어도, 이미 2.3m 안쪽으로 들어왔다면 즉시 브레이크 개입!
+      if is_emergency_cutin:
+        return True, 0.0, -1.0, 0.0  # 횡속도가 빠른 것처럼(-1.0) 속여서 즉시 감속 타겟으로 넘김
       return False, 0.0, 0.0, 0.0
 
     # 2. 속도 및 가속도 계산 (과거, 중간, 현재 데이터 포인트 3개 추출)
-    # h = [(long, lat), ...] 
-    p1_long = (h[0][0] + h[1][0]) / 2.0    # 가장 과거
-    p2_long = (h[n//2-1][0] + h[n//2][0]) / 2.0 # 중간
-    p3_long = (h[-1][0] + h[-2][0]) / 2.0  # 가장 현재
+    p1_long = (h[0][0] + h[1][0]) / 2.0
+    p2_long = (h[n//2-1][0] + h[n//2][0]) / 2.0
+    p3_long = (h[-1][0] + h[-2][0]) / 2.0
 
     p1_lat = (h[0][1] + h[1][1]) / 2.0
     p3_lat = (h[-1][1] + h[-2][1]) / 2.0
     
-    # 속도를 구하기 위한 시간 간격 (과거~중간, 중간~현재)
     time_diff_1_2 = max(((n//2) - 1) * DT_MDL, DT_MDL)
     time_diff_2_3 = max((n - 1 - (n//2)) * DT_MDL, DT_MDL)
     time_diff_total = max((n - 2) * DT_MDL, DT_MDL)
 
-    # 구간별 속도 (상대 속도)
     v_long_past = (p2_long - p1_long) / time_diff_1_2
     v_long_curr = (p3_long - p2_long) / time_diff_2_3
-    v_long_rel  = (p3_long - p1_long) / time_diff_total # 전체 평균 상대 속도
+    v_long_rel  = (p3_long - p1_long) / time_diff_total
 
     v_lat_measured = (p3_lat - p1_lat) / time_diff_total
 
-    # 가속도 계산: (현재 속도 - 과거 속도) / 걸린 시간
-    # 상대 가속도이므로 내 차의 가속도를 더해야 앞차의 절대 가속도(aLead)가 나옵니다.
     a_long_rel = (v_long_curr - v_long_past) / (time_diff_total / 2.0)
     raw_a_lead = CS.aEgo + a_long_rel
     
-    # 💡 [필터링] 코너 레이더의 가속도는 노이즈가 엄청나므로, 부드럽게 깎아줍니다.
-    # 클리핑: 너무 비현실적인 급가속/급감속(-4.0 ~ +2.0)은 자릅니다.
     clamped_a_lead = float(np.clip(raw_a_lead, -4.0, 2.0))
     
-    # [수정] hasattr 검사 두 줄 삭제 완료
-    
-    # 로우패스 필터(Low-pass filter) 적용: 기존 값 80% + 새 값 20%
     alpha = 0.2
     self._corner_a_lead_filt[side] = (alpha * clamped_a_lead) + ((1.0 - alpha) * self._corner_a_lead_filt[side])
     final_a_lead = self._corner_a_lead_filt[side]
@@ -880,22 +877,17 @@ class RadarD:
     # =========================================================================
     safe_v_ego = max(CS.vEgo, 1.0)  
     
-    # 💡 [추가] 커브 안쪽 차선 추월 시(상대속도 < 0) 레이더 딜레이로 인한 오차를 추가 보정 (부스터)
     curve_comp_multiplier = 1.0
-    if v_long_rel < -0.5: # 내 차가 더 빨라서 거리가 좁혀질 때
-        # 커브가 심할수록(yaw_rate가 클수록) 보정치를 최대 1.3배(30%)까지 부드럽게 증가시킴
+    if v_long_rel < -0.5:
         curve_comp_multiplier = 1.0 + min(abs(past_yaw_rate) * 2.0, 0.3)
         
     dynamic_factor = (p3_long / safe_v_ego) * curve_comp_multiplier  
-    
-    # 추월 중일 때 상대 속도에 10% 가중치를 주어 오감지(잔여 마이너스 횡속도)를 바깥으로 완벽히 밀어냄
     compensated_v_long_rel = v_long_rel * 1.1 if v_long_rel < 0 else v_long_rel
-    
     false_v_lat = compensated_v_long_rel * past_yaw_rate * dynamic_factor
 
     if side == "L":
         v_lat_corrected = v_lat_measured - false_v_lat
-    else: # side == "R"
+    else:
         v_lat_corrected = v_lat_measured + false_v_lat
     # =========================================================================
 
@@ -911,14 +903,15 @@ class RadarD:
     else:              
       v_lat_threshold = -0.5
 
-    # [수정] 5m 이내 초근접 & 내 차 속도 시속 40km(약 11.1m/s) 이하일 때만 강력한 방어 적용
     if cur_long < 5.0 and CS.vEgo < 11.1 and raw_lat <= (lane_edge):  
       v_lat_threshold = max(v_lat_threshold, 0.001)
     
     is_cutting_in = v_lat_corrected < v_lat_threshold
-    # 반환값 4개: (끼어들기 여부, 상대 속도, 보정된 횡속도, 계산된 가속도)
-    return is_cutting_in, v_long_rel, v_lat_corrected, final_a_lead
+    
+    # 💡 [수정] 최종 판별: 기존의 가로속도(예측) 방어가 잡았거나, 고정값 2.3m를 넘었거나 둘 중 하나면 감지!
+    is_cutting_in = is_cutting_in or is_emergency_cutin
 
+    return is_cutting_in, v_long_rel, v_lat_corrected, final_a_lead
 
   def corner_radar(self, CS, md, lead_dict):
     left_long = CS.leftLongDist
