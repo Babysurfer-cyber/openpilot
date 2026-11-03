@@ -830,6 +830,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
   desire, lane_changing = _get_desire_and_lane_changing(md)
 
   if CP.flags & HyundaiFlags.CAMERA_SCC.value:
+    # 💡 [추가] 순정 MAIN 활성화 발동 조건 체크 (GitHub 변경점 반영)
+    keep_stock_scc_main = (
+      getattr(CP, "openpilotLongitudinalControl", False) and enable_corner_radar > 0
+      and CS.scc_control is not None and CS.lfahda_cluster is not None
+      and CS.out.canValid and CS.out.gearShifter == "drive"
+      and math.isfinite(CS.out.vEgo) and CS.out.vEgo > 3. and not CS.out.brakePressed 
+    )
+
     HDA_CntrlModSta = 0
     HDA_LFA_SymSta = 0
     if CS.lfahda_cluster is not None:
@@ -837,29 +845,33 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
       HDA_LFA_SymSta = CS.lfahda_cluster["HDA_LFA_SymSta"]
 
     if frame % 2 == 0:
-      #if CS.adrv_0x160 is not None:
-      #  values = copy.copy(CS.adrv_0x160)
-      #  ret.append(packer.make_can_msg("ADRV_0x160", CAN.ECAN, values))
-
       if CS.cruise_buttons_msg is not None:
         values = copy.copy(CS.cruise_buttons_msg)
 
-        # ▼▼▼ [새로 추가] 운전자가 누른 LFA 버튼 신호를 차량이 모르게 0으로 숨김 (코너 레이더 리셋 방지) ▼▼▼
+        # 💡 물리적 버튼 입력 감지 (운전자 조작 우선권 보장)
+        driver_pressed = (values.get("LFA_BTN", 0) != 0 or values.get("CRUISE_BUTTONS", 0) != 0
+                          or values.get("ADAPTIVE_CRUISE_MAIN_BTN", 0) != 0
+                          or values.get("NORMAL_CRUISE_MAIN_BTN", 0) != 0)
+
+        # ▼▼▼ [유지] 운전자가 누른 LFA 버튼 신호를 차량이 모르게 0으로 숨김 (코너 레이더 리셋 방지) ▼▼▼
         if "LFA_BTN" in values and values["LFA_BTN"] == 1:
             values["LFA_BTN"] = 0
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-        if  HDA_LFA_SymSta == 0 and 0 < frame % 200 < 12:
+        if HDA_LFA_SymSta == 0 and 0 < frame % 200 < 12:
           values["LFA_BTN"] = 1
 
-        if CC.enabled:          
+        # 💡 [핵심 수정] CC.enabled(제어 중)이거나 keep_stock_scc_main(대기 중 유지)일 때 MAIN을 켬
+        if CC.enabled or keep_stock_scc_main:
           if not CS.MainMode_ACC:
-            if 10 < frame % 200 <= 16 and CS.out.vEgo > 3.:
+            # 운전자가 직접 버튼을 누르지 않은 상태에서만 가짜 MAIN 신호 송신
+            if not driver_pressed and 10 < frame % 200 <= 16 and CS.out.vEgo > 3.:
               values["ADAPTIVE_CRUISE_MAIN_BTN"] = 1
-          elif CS.ACCMode in [0, 4]:
+          # 💡 CC.enabled 안전장치: 속도 설정(SET)이나 재출발 조작은 실제 제어 중일 때만 허용
+          elif CC.enabled and CS.ACCMode in [0, 4]:
             if 10 < frame % 200 <= 16 and CS.out.vEgo > 3.:
               values["CRUISE_BUTTONS"] = 2
-          elif CS.scc_control is not None and CS.scc_control["InfoDisplay"] == 4:
+          elif CC.enabled and CS.scc_control is not None and CS.scc_control["InfoDisplay"] == 4:
             if 10 < frame % 30 <= 16 and not stopping:
               values["CRUISE_BUTTONS"] = 2
           # 아래 주석처리, 고속도로 크루즈시 옆두부 10초 주기로 꺼졌다 켜짐
