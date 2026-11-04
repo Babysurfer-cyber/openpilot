@@ -831,18 +831,24 @@ class RadarD:
       self._corner_missing_cnt[side] = 0      
       self._corner_hist[side].append((cur_long, raw_lat))
 
-    # 💡 [추가] 고정값(2.3m) 기준 단순 거리 긴급 개입
-    # 가로 거리가 2.3m 이하로 들어오고, 전방 3m 이내일 경우 즉시 개입
-    is_emergency_cutin = (raw_lat <= 2.3) and (cur_long < 3.0)
-
     h = self._corner_hist[side]
     n = len(h)
     
+    # 💡 [수정] 방향 검증 제외, 6프레임(약 0.3초) 연속 유지 검증으로 노이즈 필터링
+    is_emergency_cutin = False
+    if n >= 6:
+      # 최근 6프레임의 데이터를 가져옴
+      recent_6_frames = h[-6:]
+      
+      # 최근 6프레임 내내 가로 2.3m 이하 & 세로 10m 이내에 있었는지 확인
+      if all(lat <= 2.3 for lng, lat in recent_6_frames) and all(lng < 10.0 for lng, lat in recent_6_frames):
+        is_emergency_cutin = True
+
     # 가속도를 구하려면 데이터가 더 많이 필요합니다 (최소 8프레임 = 0.4초)
     if n < 8:
-      # 💡 0.4초 데이터가 안 모였어도, 이미 2.3m 안쪽으로 들어왔다면 즉시 브레이크 개입!
+      # n이 6이나 7일 때 긴급 컷인이 발동하면 즉시 개입 처리
       if is_emergency_cutin:
-        return True, 0.0, -1.0, 0.0  # 횡속도가 빠른 것처럼(-1.0) 속여서 즉시 감속 타겟으로 넘김
+        return True, 0.0, -1.0, 0.0
       return False, 0.0, 0.0, 0.0
 
     # 2. 속도 및 가속도 계산 (과거, 중간, 현재 데이터 포인트 3개 추출)
