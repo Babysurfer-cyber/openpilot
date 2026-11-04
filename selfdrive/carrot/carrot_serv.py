@@ -1194,8 +1194,8 @@ class CarrotServ:
       elif getattr(CS, 'rightBlinker', False):
         is_edge_far = getattr(self.right_side, 'edge_far', False)
       
-    # 💡 엑셀을 밟거나, 스티어링 휠을 45도 이상 돌렸거나, '교차로 진입(edge_far)' 시 영구 취소
-    if blinker_lever == 2 and (gas_pressed or abs(steering_angle) >= 45.0 or is_edge_far):
+    # 💡 엑셀을 밟거나, 스티어링 휠을 90도 이상 돌렸거나, '교차로 진입(edge_far)' 시 영구 취소
+    if blinker_lever == 2 and (gas_pressed or abs(steering_angle) >= 90.0 or is_edge_far):
       self.manual_turn_canceled = True
 
     # 💡 속도 조건: 200km/h 이하일 때만 허용
