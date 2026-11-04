@@ -212,6 +212,12 @@ class CarState(CarStateBase):
           return True
         return False
       
+      # ▼▼▼ [핵심 업스트림 기능] 실시간 코너 레이더 동적 감지 로직 추가 ▼▼▼
+      def _discover_canfd_camera_tx_messages(parser, attr_mapping):
+        for msg_name, attr in attr_mapping:
+          add_and_cache(parser, msg_name, attr)
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
       if self.controls_ready_count == 50:
         self.cp.controls_ready = self.cp_cam.controls_ready = True
         if self.cp_alt is not None:
@@ -229,6 +235,7 @@ class CarState(CarStateBase):
           print("cp_alt.seen_addresses =", self.cp_alt.seen_addresses)
         else:
           print("cp_alt.seen_addresses = None")
+          
       if not canfd:
         if self.controls_ready_count == 104:
           if not add_and_cache(self.cp_cam, "FCA11", "fca11"):
@@ -242,29 +249,27 @@ class CarState(CarStateBase):
           add_and_cache(cp_cruise, "SCC13", "scc13")
           add_and_cache(cp_cruise, "SCC14", "scc14")
       else: # canfd
+        # ▼▼▼ 매 루프마다 코너 레이더 메시지를 동적으로 탐색합니다 ▼▼▼
+        CANFD_CAMERA_TX_MESSAGES = (
+          ("LFA", "lfa"), ("LFA_ALT", "lfa_alt"),
+          ("LFAHDA_CLUSTER", "lfahda_cluster"),
+          ("ADRV_0x161", "adrv_0x161"), ("ADRV_0x200", "adrv_0x200"),
+          ("ADRV_0x1ea", "adrv_0x1ea"), ("ADRV_0x160", "adrv_0x160"),
+          ("CCNC_0x162", "ccnc_0x162"),
+        )
+        _discover_canfd_camera_tx_messages(self.cp_cam, CANFD_CAMERA_TX_MESSAGES)
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
         if self.controls_ready_count == 120:
           cp_cruise = self.cp_cam if self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC else self.cp
           add_and_cache(cp_cruise, "SCC_CONTROL", "scc_control")          
         elif self.controls_ready_count == 121:
           add_and_cache(self.cp, "TCS", "tcs")
           add_and_cache(self.cp, "MDPS", "mdps")
-          add_and_cache(self.cp_cam, "LFA", "lfa")
-          add_and_cache(self.cp_cam, "LFA_ALT", "lfa_alt")          
-          add_and_cache(self.cp_cam, "LFAHDA_CLUSTER", "lfahda_cluster")
-        elif self.controls_ready_count == 122:
-          add_and_cache(self.cp_cam, "ADRV_0x161", "adrv_0x161")  
-          add_and_cache(self.cp_cam, "ADRV_0x200", "adrv_0x200")
-          add_and_cache(self.cp_cam, "ADRV_0x1ea", "adrv_0x1ea")
-          add_and_cache(self.cp_cam, "ADRV_0x160", "adrv_0x160")
-          add_and_cache(self.cp_cam, "CCNC_0x162", "ccnc_0x162")
         elif self.controls_ready_count == 123:        
           add_and_cache(self.cp, "HDA_INFO_4A3", "hda_info_4a3")
-          
-          # ▼▼▼ [추가] 4B9, 4BE 방지턱 메시지 허용 ▼▼▼
           add_and_cache(self.cp, "NEW_MSG_4B9", "navi_segment_4b9")
           add_and_cache(self.cp, "NEW_MSG_4BE", "navi_profile_4be")
-          # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-          
           add_and_cache(self.cp, "STEER_TOUCH_2AF", "steer_touch_2af")
         elif self.controls_ready_count == 124:
           add_and_cache(self.cp, self.cruise_btns_msg_canfd, "cruise_buttons_msg")
@@ -277,8 +282,8 @@ class CarState(CarStateBase):
           if self.gear_msg_canfd == "ACCELERATOR":
             add_and_cache(self.cp, "ACCELERATOR", "accelerator", ignore_counter = True)
           add_and_cache(self.cp, "BLINKERS", "blinkers")
-          add_and_cache(self.cp, "BLINKERS_ALT", "blinkers_alt")  # 추가
-          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks", ignore_counter=True)  # 추가
+          add_and_cache(self.cp, "BLINKERS_ALT", "blinkers_alt")
+          add_and_cache(self.cp, "BLINKER_STALKS", "blinker_stalks", ignore_counter=True)
           add_and_cache(self.cp, "DOORS_SEATBELTS", "doors_seatbelts")
         elif self.controls_ready_count == 126:
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
