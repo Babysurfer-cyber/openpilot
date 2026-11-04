@@ -873,22 +873,9 @@ class RadarD:
     final_a_lead = self._corner_a_lead_filt[side]
 
     # =========================================================================
-    # ▼ [시공간 통합 보정] 동적 곡률 공식 + 0.5초 전(과거) 센서 데이터
+    # ▼ 곡률 보정 제거 (차량 순정 코너레이더가 이미 곡률을 보정해서 값을 보내줌)
     # =========================================================================
-    safe_v_ego = max(CS.vEgo, 1.0)  
-    
-    curve_comp_multiplier = 1.0
-    if v_long_rel < -0.5:
-        curve_comp_multiplier = 1.0 + min(abs(past_yaw_rate) * 2.0, 0.3)
-        
-    dynamic_factor = (p3_long / safe_v_ego) * curve_comp_multiplier  
-    compensated_v_long_rel = v_long_rel * 1.1 if v_long_rel < 0 else v_long_rel
-    false_v_lat = compensated_v_long_rel * past_yaw_rate * dynamic_factor
-
-    if side == "L":
-        v_lat_corrected = v_lat_measured - false_v_lat
-    else:
-        v_lat_corrected = v_lat_measured + false_v_lat
+    v_lat_corrected = v_lat_measured
     # =========================================================================
 
     # 3. 방어 구역 판별
