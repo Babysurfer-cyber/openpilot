@@ -832,8 +832,8 @@ class RadarD:
       self._corner_hist[side].append((cur_long, raw_lat))
 
     # 💡 [추가] 고정값(2.3m) 기준 단순 거리 긴급 개입
-    # 가로 거리가 2.3m 이하로 들어오고, 전방 10m 이내일 경우 즉시 개입
-    is_emergency_cutin = (raw_lat <= 2.3) and (cur_long < 10.0)
+    # 가로 거리가 2.3m 이하로 들어오고, 전방 3m 이내일 경우 즉시 개입
+    is_emergency_cutin = (raw_lat <= 2.3) and (cur_long < 3.0)
 
     h = self._corner_hist[side]
     n = len(h)
