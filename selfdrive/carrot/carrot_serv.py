@@ -1186,14 +1186,16 @@ class CarrotServ:
 
     # 💡 [추가] 교차로 진입(도로 경계선이 멀어짐) 판단
     is_edge_far = False
+    steering_angle = 0.0
     if CS is not None:
+      steering_angle = getattr(CS, 'steeringAngleDeg', 0.0)
       if getattr(CS, 'leftBlinker', False):
         is_edge_far = getattr(self.left_side, 'edge_far', False)
       elif getattr(CS, 'rightBlinker', False):
         is_edge_far = getattr(self.right_side, 'edge_far', False)
       
-    # 💡 엑셀을 밟거나, 코너에 깊게 진입하거나, '교차로 진입(edge_far)' 시 영구 취소
-    if blinker_lever == 2 and (gas_pressed or abs(vturn_speed) <= 40.0 or is_edge_far):
+    # 💡 엑셀을 밟거나, 스티어링 휠을 45도 이상 돌렸거나, '교차로 진입(edge_far)' 시 영구 취소
+    if blinker_lever == 2 and (gas_pressed or abs(steering_angle) >= 45.0 or is_edge_far):
       self.manual_turn_canceled = True
 
     # 💡 속도 조건: 200km/h 이하일 때만 허용
