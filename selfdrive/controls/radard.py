@@ -834,11 +834,11 @@ class RadarD:
     h = self._corner_hist[side]
     n = len(h)
     
-    # 💡 [수정] 방향 검증 제외, 6프레임(약 0.3초) 연속 유지 검증으로 노이즈 필터링
+    # 💡 [수정] deque 자료형 슬라이싱 오류 해결 (list로 변환 후 슬라이싱)
     is_emergency_cutin = False
     if n >= 6:
-      # 최근 6프레임의 데이터를 가져옴
-      recent_6_frames = h[-6:]
+      # 최근 6프레임의 데이터를 가져옴 (h는 deque이므로 list로 변환)
+      recent_6_frames = list(h)[-6:]
       
       # 최근 6프레임 내내 가로 2.3m 이하 & 세로 10m 이내에 있었는지 확인
       if all(lat <= 2.3 for lng, lat in recent_6_frames) and all(lng < 10.0 for lng, lat in recent_6_frames):
