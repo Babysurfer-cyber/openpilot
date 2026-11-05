@@ -834,21 +834,8 @@ class RadarD:
     h = self._corner_hist[side]
     n = len(h)
     
-    # 💡 [수정] deque 자료형 슬라이싱 오류 해결 (list로 변환 후 슬라이싱)
-    is_emergency_cutin = False
-    if n >= 6:
-      # 최근 6프레임의 데이터를 가져옴 (h는 deque이므로 list로 변환)
-      recent_6_frames = list(h)[-6:]
-      
-      # 최근 6프레임 내내 가로 2.2m 이하 & 세로 10m 이내에 있었는지 확인
-      if all(lat <= 2.2 for lng, lat in recent_6_frames) and all(lng < 10.0 for lng, lat in recent_6_frames):
-        is_emergency_cutin = True
-
     # 가속도를 구하려면 데이터가 더 많이 필요합니다 (최소 8프레임 = 0.4초)
     if n < 8:
-      # n이 6이나 7일 때 긴급 컷인이 발동하면 즉시 개입 처리
-      if is_emergency_cutin:
-        return True, 0.0, -1.0, 0.0
       return False, 0.0, 0.0, 0.0
 
     # 2. 속도 및 가속도 계산 (과거, 중간, 현재 데이터 포인트 3개 추출)
@@ -900,9 +887,6 @@ class RadarD:
       v_lat_threshold = max(v_lat_threshold, 0.001)
     
     is_cutting_in = v_lat_corrected < v_lat_threshold
-    
-    # 💡 [수정] 최종 판별: 기존의 가로속도(예측) 방어가 잡았거나, 고정값 2.2m를 넘었거나 둘 중 하나면 감지!
-    is_cutting_in = is_cutting_in or is_emergency_cutin
 
     return is_cutting_in, v_long_rel, v_lat_corrected, final_a_lead
 
