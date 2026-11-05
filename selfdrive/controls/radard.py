@@ -840,8 +840,8 @@ class RadarD:
       # 최근 6프레임의 데이터를 가져옴 (h는 deque이므로 list로 변환)
       recent_6_frames = list(h)[-6:]
       
-      # 최근 6프레임 내내 가로 2.3m 이하 & 세로 10m 이내에 있었는지 확인
-      if all(lat <= 2.3 for lng, lat in recent_6_frames) and all(lng < 10.0 for lng, lat in recent_6_frames):
+      # 최근 6프레임 내내 가로 2.2m 이하 & 세로 10m 이내에 있었는지 확인
+      if all(lat <= 2.2 for lng, lat in recent_6_frames) and all(lng < 10.0 for lng, lat in recent_6_frames):
         is_emergency_cutin = True
 
     # 가속도를 구하려면 데이터가 더 많이 필요합니다 (최소 8프레임 = 0.4초)
@@ -901,7 +901,7 @@ class RadarD:
     
     is_cutting_in = v_lat_corrected < v_lat_threshold
     
-    # 💡 [수정] 최종 판별: 기존의 가로속도(예측) 방어가 잡았거나, 고정값 2.3m를 넘었거나 둘 중 하나면 감지!
+    # 💡 [수정] 최종 판별: 기존의 가로속도(예측) 방어가 잡았거나, 고정값 2.2m를 넘었거나 둘 중 하나면 감지!
     is_cutting_in = is_cutting_in or is_emergency_cutin
 
     return is_cutting_in, v_long_rel, v_lat_corrected, final_a_lead
