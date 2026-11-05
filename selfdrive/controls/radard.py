@@ -894,7 +894,7 @@ class RadarD:
     elif raw_lat <= (lane_edge + 0.3):  
       v_lat_threshold = -0.3
     else:              
-      v_lat_threshold = -0.7
+      v_lat_threshold = -0.8
 
     if cur_long < 5.0 and CS.vEgo < 11.1 and raw_lat <= (lane_edge):  
       v_lat_threshold = max(v_lat_threshold, 0.001)
