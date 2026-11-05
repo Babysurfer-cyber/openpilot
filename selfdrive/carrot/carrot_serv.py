@@ -1174,7 +1174,7 @@ class CarrotServ:
         )
 
     # =========================================================
-    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.8m/s^2 로직 (차선 조건 제거, 시속 제한 없음) ▼▼▼
+    # ▼▼▼ [수정] 수동 턴(Turn) 감속 0.7m/s^2 로직 (차선 조건 제거, 시속 제한 없음) ▼▼▼
     # =========================================================
     blinker_lever = getattr(CS, 'blinkerLever', 0) if CS is not None else 0
     gas_pressed = getattr(CS, 'gasPressed', False) if CS is not None else False
@@ -1219,7 +1219,7 @@ class CarrotServ:
     manual_turn_target_speed_kph = 255.0
     if getattr(self, 'manual_turn_decel_active', False):
       elapsed_time = current_time - self.manual_turn_start_time
-      current_target_v = self.manual_turn_start_v_ego - (0.62 * elapsed_time)
+      current_target_v = self.manual_turn_start_v_ego - (0.7 * elapsed_time)
       manual_turn_target_speed_kph = max(20.0, current_target_v * 3.6)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
