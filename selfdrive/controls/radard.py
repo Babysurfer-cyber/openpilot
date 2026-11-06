@@ -14,6 +14,11 @@ from openpilot.common.realtime import DT_MDL, Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.simple_kalman import KF1D
 
+# --- 코너 레이더 컷인 감지 모듈 추가 ---
+try:
+  from openpilot.selfdrive.carrot.trajectory_cutin import TrajectoryCutInDetector
+except ImportError:
+  TrajectoryCutInDetector = None
 
 # Default lead acceleration decay set to 50% at 1s
 _LEAD_ACCEL_TAU = 1.5
@@ -446,12 +451,17 @@ class RadarD:
     # ▼ [추가] 코너 레이더 가속도 로우패스 필터용 초기화
     self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
+    # --- 코너 레이더 컷인 감지기 초기화 ---
+    self.trajectory_cutin = TrajectoryCutInDetector() if TrajectoryCutInDetector is not None else None
+    self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
+
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
     self.current_time = 1e-9*max(sm.logMonoTime.values())
 
     self.enable_radar_tracks = self.params.get_int("EnableRadarTracks")
     self.enable_corner_radar = self.params.get_int("EnableCornerRadar")
+    self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
     self.radar_lat_factor = self.params.get_float("RadarLatFactor") * 0.01
     self.radar_reaction_factor = self.params.get_float("RadarReactionFactor") * 0.01
     self.detect_cut_in = self.radar_lat_factor > 0
@@ -482,6 +492,16 @@ class RadarD:
       for tid in list(self.tracks.keys()):
         if tid not in valid_ids:
           self.tracks.pop(tid)
+
+      # --- 코너 레이더 트랙 궤적 분석 (update) ---
+      if self.corner_radar_track_cutin and self.trajectory_cutin is not None:
+        try:
+          try:
+            self.trajectory_cutin.update(self.tracks)
+          except TypeError:
+            self.trajectory_cutin.update(self.tracks, self.v_ego, sm['carState'], sm['modelV2'])
+        except Exception:
+          pass
 
     # *** publish radarState ***
     radar_state_valid = sm.all_checks()
@@ -605,6 +625,20 @@ class RadarD:
 
     if self.enable_corner_radar > 1:
       lead_dict = self.corner_radar(CS, md, lead_dict)
+
+    # --- 코너 레이더 트랙 기반 선행차량 덮어씌우기 (get_lead) ---
+    if self.corner_radar_track_cutin and index == 0 and self.trajectory_cutin is not None:
+      try:
+        try:
+          cutin_lead = self.trajectory_cutin.get_lead(lead_dict)
+        except TypeError:
+          cutin_lead = self.trajectory_cutin.get_lead(lead_dict, v_ego)
+          
+        if cutin_lead is not None and cutin_lead.get('status'):
+          lead_dict = cutin_lead
+          radar = True
+      except Exception:
+        pass
 
     if low_speed_override:
       low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
