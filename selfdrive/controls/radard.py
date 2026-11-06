@@ -20,6 +20,19 @@ try:
 except ImportError:
   TrajectoryCutInDetector = None
 
+# trajectory_cutin.py 가 요구하는 데이터 규격(RadarPointSnapshot)을 맞추기 위한 어댑터 클래스
+class MockRadarPoint:
+  def __init__(self, source, track_id, d_rel, y_rel, v_rel, v_lead, yv_rel, measured):
+    self.source = source
+    self.track_id = track_id
+    self.d_rel = d_rel
+    self.y_rel = y_rel
+    self.v_rel = v_rel
+    self.v_lead = v_lead
+    self.yv_rel = yv_rel
+    self.measured = measured
+    self.radar_track_state = 1 if measured else 0
+
 # Default lead acceleration decay set to 50% at 1s
 _LEAD_ACCEL_TAU = 1.5
 
@@ -496,11 +509,35 @@ class RadarD:
       # --- 코너 레이더 트랙 궤적 분석 (update) ---
       if self.corner_radar_track_cutin and self.trajectory_cutin is not None:
         try:
-          try:
-            self.trajectory_cutin.update(self.tracks)
-          except TypeError:
-            self.trajectory_cutin.update(self.tracks, self.v_ego, sm['carState'], sm['modelV2'])
-        except Exception:
+          md = sm['modelV2']
+          path_coords = list(zip(md.position.x, md.position.y))
+          yaw_rate = sm['carState'].yawRate
+          
+          # C++를 뜯지 않고 파이썬단에서 데이터를 감싸서 전달하는 핵심 어댑터
+          snap_points = []
+          for tid, t in self.tracks.items():
+            source_name = "corner235" if tid >= 1000 else "frontRadar"
+            snap_points.append(MockRadarPoint(
+              source=source_name,
+              track_id=tid,
+              d_rel=t.dRel,
+              y_rel=t.yRel,
+              v_rel=t.vRel,
+              v_lead=t.vLead,
+              yv_rel=t.yvLead,
+              measured=t.measured
+            ))
+            
+          # 정확한 파라미터 6개를 규격에 맞춰 전달
+          self.trajectory_cutin.update(
+            time_s=self.current_time,
+            v_ego=self.v_ego,
+            points=snap_points,
+            path=path_coords,
+            model=md,
+            yaw_rate_rad_s=yaw_rate
+          )
+        except Exception as e:
           pass
 
     # *** publish radarState ***
@@ -629,15 +666,29 @@ class RadarD:
     # --- 코너 레이더 트랙 기반 선행차량 덮어씌우기 (get_lead) ---
     if self.corner_radar_track_cutin and index == 0 and self.trajectory_cutin is not None:
       try:
-        try:
-          cutin_lead = self.trajectory_cutin.get_lead(lead_dict)
-        except TypeError:
-          cutin_lead = self.trajectory_cutin.get_lead(lead_dict, v_ego)
-          
-        if cutin_lead is not None and cutin_lead.get('status'):
-          lead_dict = cutin_lead
+        best_est = None
+        # get_lead() 가 아닌, trajectory_cutin 내부에 저장된 last_estimates 배열을 탐색
+        for est in getattr(self.trajectory_cutin, 'last_estimates', []):
+          if est.confirmed_cutin and est.control_eligible:
+            if best_est is None or est.point.d_rel < best_est.point.d_rel:
+              best_est = est
+              
+        if best_est is not None:
+          lead_dict['status'] = True
+          lead_dict['dRel'] = float(best_est.point.d_rel)
+          lead_dict['yRel'] = float(best_est.point.y_rel)
+          lead_dict['vRel'] = float(best_est.point.v_rel)
+          lead_dict['vLead'] = float(best_est.point.v_lead)
+          lead_dict['vLeadK'] = float(best_est.point.v_lead)
+          lead_dict['vLat'] = float(best_est.point.yv_rel)
+          lead_dict['aLead'] = 0.0 
+          lead_dict['aLeadK'] = 0.0
+          lead_dict['aLeadTau'] = 0.3
+          lead_dict['radarTrackId'] = best_est.point.track_id
+          lead_dict['radar'] = True
+          lead_dict['modelProb'] = float(best_est.confidence)
           radar = True
-      except Exception:
+      except Exception as e:
         pass
 
     if low_speed_override:
