@@ -16,7 +16,7 @@ from openpilot.common.simple_kalman import KF1D
 
 # --- 코너 레이더 컷인 감지 모듈 추가 ---
 try:
-  from openpilot.selfdrive.carrot.trajectory_cutin import TrajectoryCutInDetector
+  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutin import TrajectoryCutInDetector
 except ImportError:
   TrajectoryCutInDetector = None
 
