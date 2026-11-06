@@ -846,9 +846,12 @@ class CarState(CarStateBase):
         # ▼▼▼ 출처(Source)에 따라 내가 추월하는지, 추월당하는지 정확히 판별 ▼▼▼
         if self.last_approach_v["L"] != 0.0:
           if self.bs_timer.get("L_source") == "front":
-            self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 내가 추월할 땐 전방에서 사라짐 (1.5초 유지)
+            # 💡 [핵심 추가] 내가 추월할 때(전방에서 사라짐): 속도를 계산해 사각지대 6m를 지나가는 시간만큼 타이머 작동
+            v = max(abs(self.last_approach_v["L"]), 0.5) # 속도가 너무 낮아 무한대가 되는 것 방지 (최소 0.5m/s)
+            calc_sec = 6.0 / v                           # 남은 사각지대 거리(6m) / 현재 상대 속도
+            self.bs_timer["L"] = int(calc_sec / DT_CTRL)
           else:
-            self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 추월당할 땐 후방에서 사라짐 (3.0초 길게 유지)
+            self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 기존 유지: 추월당할 땐 후방에서 사라지므로 3.0초 고정
           self.last_approach_v["L"] = 0.0  # 타이머 부여 후 초기화
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -878,9 +881,12 @@ class CarState(CarStateBase):
       else:
         if self.last_approach_v["R"] != 0.0:
           if self.bs_timer.get("R_source") == "front":
-            self.bs_timer["R"] = int(3.0 / DT_CTRL)
+            # 💡 [핵심 추가] 내가 추월할 때(전방에서 사라짐): 속도를 계산해 사각지대 6m를 지나가는 시간만큼 타이머 작동
+            v = max(abs(self.last_approach_v["R"]), 0.5)
+            calc_sec = 6.0 / v
+            self.bs_timer["R"] = int(calc_sec / DT_CTRL)
           else:
-            self.bs_timer["R"] = int(3.0 / DT_CTRL)
+            self.bs_timer["R"] = int(3.0 / DT_CTRL) # 기존 유지
           self.last_approach_v["R"] = 0.0
 
         if self.bs_timer["R"] > 0:
