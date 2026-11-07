@@ -1036,7 +1036,9 @@ class CarState(CarStateBase):
         speed_limit_cam = True
         self.speedLimitDistance = self.totalDistance + cam_dist
       else:
-        speed_limit_cam = False
+        # 💡 [핵심 수정] 구간단속(mapSource == 2) 중에는 4BE 거리가 0이 되어도 카메라 신호를 강제로 끄지 않음!
+        if getattr(ret, 'mapSource', 0) != 2:
+          speed_limit_cam = False
 
     self.update_speed_limit(ret, speed_limit_cam)
 
