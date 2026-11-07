@@ -898,31 +898,16 @@ class VCruiseCarrot:
             
             # 💡 [통과 시점 동기화] 값이 이전 도로와 달라졌다면 조건 없이 즉시 업데이트!
             if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging:
-              
-              # 내부 금고에 저장된 오프셋 불러오기 (예: +10)
-              current_offset = getattr(self, 'auto_speed_offset', 10.0)
-
               if target_raw_limit < v_cruise_kph:
                 raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
               else:
-                raw_offset = current_offset
+                raw_offset = getattr(self, 'auto_speed_offset', 10.0)
 
               calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-              
-              # ▼▼▼ 오프셋이 0일 경우에만 max() 수식을 생략하고 칼같이 0 적용 ▼▼▼
-              if current_offset == 0.0:
-                offset = 0.0
-              else:
-                offset = max(current_offset, calculated_offset)
-              
-              # 제한속도 + 오프셋 계산 (예: 110 + 10 = 120)
+              offset = max(getattr(self, 'auto_speed_offset', 10.0), calculated_offset)
+
               expected_target = target_raw_limit + offset
-
-              # ▼▼▼ [추가] 자동으로 변경되는 목표 속도는 무조건 최대 110km/h로 제한! ▼▼▼
-              # 여기서 120이 110으로 깎이지만, 위쪽의 current_offset(+10)은 그대로 살아있습니다.
-              expected_target = min(expected_target, 110.0)
-              # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+              
               if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
                 try:
                   with open("/dev/shm/carrot_prompt_text", "w") as f:
