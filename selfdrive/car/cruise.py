@@ -904,7 +904,7 @@ class VCruiseCarrot:
                 raw_offset = getattr(self, 'auto_speed_offset', 10.0)
 
               calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-              offset = max(getattr(self, 'auto_speed_offset', 10.0), calculated_offset)
+              offset = max(getattr(self, 'auto_speed_offset', 0.0), calculated_offset)
 
               expected_target = target_raw_limit + offset
               
