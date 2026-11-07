@@ -783,7 +783,6 @@ class CarState(CarStateBase):
       ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
       corner = True
     if corner:
-      # ▼▼▼ [수정] 전방 가변(2~12m) + 후방 고정(5m) 및 B필러 맹점 극복 BSD 로직 ▼▼▼
       if not hasattr(self, 'bs_timer'):
         self.corner_hist = {"LF": deque(maxlen=10), "RF": deque(maxlen=10), "LR": deque(maxlen=10), "RR": deque(maxlen=10)}
         self.bs_timer = {"L": 0, "R": 0}
@@ -792,9 +791,14 @@ class CarState(CarStateBase):
       # 1. 5프레임간의 거리 변화를 통해 상대 속도(v) 계산
       def calc_v(hist, current_dist):
         if 0.1 < current_dist < 20.0:
+          # 💡 [필터링 추가] 1프레임(0.01초)만에 거리가 1.5m 이상 비정상적으로 튀면(레이더 소실 오류) 
+          # 히스토리를 비워서 가짜 엄청난 속도가 계산되는 것을 원천 차단합니다.
+          if len(hist) > 0 and abs(current_dist - hist[-1]) > 1.5:
+            hist.clear()
+            return 0.0
+            
           hist.append(current_dist)
           if len(hist) >= 5:
-            # 음수(-): 다가옴(추월당함), 양수(+): 멀어짐(내가 추월함)
             return (hist[-1] - hist[0]) / (len(hist) * DT_CTRL)
         else:
           hist.clear()
@@ -806,7 +810,6 @@ class CarState(CarStateBase):
       v_rr = calc_v(self.corner_hist["RR"], self.rr_distance)
 
       # 2. 상대 속도 기반 가변 경고 영역 계산 (전방 전용)
-      # 💡 [수정] 상대차가 다가오는 속도가 빠를수록(-5.0m/s 이상) 최대 12m까지 거리 연장
       def get_limit(v):
         if v < -0.5: return float(np.interp(v, [-5.0, -0.5], [12.0, 6.0]))
         elif v > 0.5: return float(np.interp(v, [0.5, 5.0], [6.0, 2.0]))
@@ -816,12 +819,10 @@ class CarState(CarStateBase):
       limit_rf = get_limit(v_rf)
       limit_rear = 5.0 # 후방 고정 5m
 
-      # ▼▼▼ [수정할 부분: 여기에 아래 5줄 코드를 추가하세요] ▼▼▼
       self.bsd_limits = {
         'LF_DETECT': limit_lf,
         'RF_DETECT': limit_rf
       }
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       seen_lf = 0.1 < ret.leftLongDist < limit_lf
       seen_lr = 0.1 < self.lr_distance < limit_rear
@@ -833,38 +834,29 @@ class CarState(CarStateBase):
         ret.leftBlindspot = True
         v_active = v_lr if seen_lr else v_lf
         
-        # 💡 [수정] 천천히 추월할 때도 속도를 기록하도록 임계값을 낮춤 (0.5 -> 0.1)
         if abs(v_active) > 0.1:
             self.last_approach_v["L"] = v_active
             
-        # 💡 [수정] 레이더 출처 기록 (어느 레이더에서 B필러로 넘어갔는지 판별용)
         self.bs_timer["L_source"] = "rear" if seen_lr else "front"
 
         hold_sec = 4.5 / max(abs(v_active), 1.0)
         self.bs_timer["L"] = int(hold_sec / DT_CTRL)
       else:
-        # ▼▼▼ 출처(Source)에 따라 내가 추월하는지, 추월당하는지 정확히 판별 ▼▼▼
         if self.last_approach_v["L"] != 0.0:
           if self.bs_timer.get("L_source") == "front":
-            # 💡 [핵심 추가] 내가 추월할 때(전방에서 사라짐): 속도를 계산해 사각지대 6m를 지나가는 시간만큼 타이머 작동
-            v = max(abs(self.last_approach_v["L"]), 0.5) # 속도가 너무 낮아 무한대가 되는 것 방지 (최소 0.5m/s)
-            calc_sec = 6.0 / v                           # 남은 사각지대 거리(6m) / 현재 상대 속도
+            # 💡 내가 추월할 때: A필러로 사라지기 직전의 '마지막 정상 속도'를 꺼내와 6m 타이머 세팅
+            v = max(abs(self.last_approach_v["L"]), 0.5)
+            calc_sec = 6.0 / v
             self.bs_timer["L"] = int(calc_sec / DT_CTRL)
           else:
-            self.bs_timer["L"] = int(3.0 / DT_CTRL)  # 기존 유지: 추월당할 땐 후방에서 사라지므로 3.0초 고정
-          self.last_approach_v["L"] = 0.0  # 타이머 부여 후 초기화
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            self.bs_timer["L"] = int(3.0 / DT_CTRL)
+          self.last_approach_v["L"] = 0.0
 
         if self.bs_timer["L"] > 0:
           self.bs_timer["L"] -= 1
           ret.leftBlindspot = True
 
-        # 💡 [수정] 레이더가 차량을 놓쳐 거리가 0이나 최댓값으로 튈 때 강제로 타이머가 꺼지는 오작동 방지
-        # (0.1 ~ 20.0m 사이의 정상 거리 안에서 확실히 멀어질 때만 타이머 해제)
-        if (0.1 < ret.leftLongDist < 20.0 and ret.leftLongDist >= limit_lf and v_lf > 0.5) or \
-           (0.1 < self.lr_distance < 20.0 and self.lr_distance >= limit_rear and v_lr > 0.5):
-          self.bs_timer["L"] = 0
-          self.last_approach_v["L"] = 0.0
+        # 💡 [조건 B 삭제] 후방 레이더 값으로 타이머를 강제 종료시키는 오작동 원인 코드를 완전 삭제함
 
       # --- 4. 우측 사각지대(BSD) 로직 ---
       if seen_rf or seen_rr:
@@ -881,23 +873,19 @@ class CarState(CarStateBase):
       else:
         if self.last_approach_v["R"] != 0.0:
           if self.bs_timer.get("R_source") == "front":
-            # 💡 [핵심 추가] 내가 추월할 때(전방에서 사라짐): 속도를 계산해 사각지대 6m를 지나가는 시간만큼 타이머 작동
             v = max(abs(self.last_approach_v["R"]), 0.5)
             calc_sec = 6.0 / v
             self.bs_timer["R"] = int(calc_sec / DT_CTRL)
           else:
-            self.bs_timer["R"] = int(3.0 / DT_CTRL) # 기존 유지
+            self.bs_timer["R"] = int(3.0 / DT_CTRL)
           self.last_approach_v["R"] = 0.0
 
         if self.bs_timer["R"] > 0:
           self.bs_timer["R"] -= 1
           ret.rightBlindspot = True
+          
+        # 💡 [조건 B 삭제] 우측 역시 타이머 강제 종료 코드를 완전 삭제함
 
-        if (0.1 < ret.rightLongDist < 20.0 and ret.rightLongDist >= limit_rf and v_rf > 0.5) or \
-           (0.1 < self.rr_distance < 20.0 and self.rr_distance >= limit_rear and v_rr > 0.5):
-          self.bs_timer["R"] = 0
-          self.last_approach_v["R"] = 0.0
-        
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
       if not self.is_metric:
