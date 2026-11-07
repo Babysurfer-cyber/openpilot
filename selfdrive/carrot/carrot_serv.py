@@ -1019,6 +1019,7 @@ class CarrotServ:
 
     ### 과속카메라, 사고방지턱
 
+    # ▼▼▼ [핵심 1] 차량 순정 내비게이션(4A3/4BE)을 1순위로 역전 ▼▼▼
     is_car_navi_active = CS is not None and getattr(CS, 'speedLimit', 0) > 0 and getattr(CS, 'speedLimitDistance', 0) > 0
     is_app_active = (self.xSpdDist > 0 or self.xSpdType in [100, 101]) and self.active_carrot > 0
 
@@ -1027,37 +1028,26 @@ class CarrotServ:
 
     if is_car_navi_active:
       # 1순위: 차량 순정 내비 (가장 정확함)
-      target_speed = CS.speedLimit * self.autoNaviSpeedSafetyFactor
-      
-      # 💡 [핵심 수정] 순정 내비 거리가 아무리 길어도, 앱이 '구간단속 중(4)'이라고 알려주면 공식을 무시하고 속도를 잠금!
-      if self.xSpdType == 4 or (self.xSpdType == 2 and self.xSpdDist <= 0):
-        sdi_speed = min(sdi_speed, target_speed)
-        final_xSpdType = 4
-      else:
-        # 일반 카메라는 거리에 맞춰 부드럽게 감속 (calculate_current_speed)
-        sdi_speed = min(sdi_speed,
-                        self.calculate_current_speed(CS.speedLimitDistance,
-                                                     target_speed,
-                                                     self.autoNaviSpeedCtrlEnd,
-                                                     self.autoNaviSpeedDecelRate))
-        final_xSpdType = 1  
-        
+      sdi_speed = min(sdi_speed,
+                      self.calculate_current_speed(CS.speedLimitDistance,
+                                                   CS.speedLimit * self.autoNaviSpeedSafetyFactor,
+                                                   self.autoNaviSpeedCtrlEnd,
+                                                   self.autoNaviSpeedDecelRate))
       hda_active = True
       final_xSpdLimit = CS.speedLimit
       final_xSpdDist = CS.speedLimitDistance
+      final_xSpdType = 1  
       self.active_carrot = max(self.active_carrot, 2)
       
     elif is_app_active:
-      # 2순위: 스마트폰 앱 (기존 로직 그대로 유지)
+      # 2순위: 스마트폰 앱 (CarrotMan 등)
       safe_sec = self.autoNaviSpeedBumpTime if self.xSpdType == 22 else self.autoNaviSpeedCtrlEnd
       decel = self.autoNaviSpeedDecelRate
-      
+      sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
+      self.active_carrot = 5 if self.xSpdType == 22 else 3
       if self.xSpdType == 4 or (self.xSpdType in [100, 101] and self.xSpdDist <= 0):
         sdi_speed = self.xSpdLimit
         self.active_carrot = 4
-      else:
-        sdi_speed = min(sdi_speed, self.calculate_current_speed(self.xSpdDist, self.xSpdLimit, safe_sec, decel))
-        self.active_carrot = 5 if self.xSpdType == 22 else 3
         
       final_xSpdLimit = self.xSpdLimit
       final_xSpdDist = self.xSpdDist
