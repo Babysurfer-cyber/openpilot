@@ -908,6 +908,10 @@ class VCruiseCarrot:
 
               expected_target = target_raw_limit + offset
               
+              # ▼▼▼ [추가] 오토모드 최대 110km/h 속도 상한 방어막 ▼▼▼
+              expected_target = min(110.0, expected_target)
+              # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+              
               if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
                 try:
                   with open("/dev/shm/carrot_prompt_text", "w") as f:
