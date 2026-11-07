@@ -791,8 +791,7 @@ class CarState(CarStateBase):
       # 1. 5프레임간의 거리 변화를 통해 상대 속도(v) 계산
       def calc_v(hist, current_dist):
         if 0.1 < current_dist < 20.0:
-          # 💡 [필터링 추가] 1프레임(0.01초)만에 거리가 1.5m 이상 비정상적으로 튀면(레이더 소실 오류) 
-          # 히스토리를 비워서 가짜 엄청난 속도가 계산되는 것을 원천 차단합니다.
+          # 💡 [필터링 유지] 레이더 소실로 인한 1.5m 이상 거리 튐 오류 방지
           if len(hist) > 0 and abs(current_dist - hist[-1]) > 1.5:
             hist.clear()
             return 0.0
@@ -844,7 +843,6 @@ class CarState(CarStateBase):
       else:
         if self.last_approach_v["L"] != 0.0:
           if self.bs_timer.get("L_source") == "front":
-            # 💡 내가 추월할 때: A필러로 사라지기 직전의 '마지막 정상 속도'를 꺼내와 6m 타이머 세팅
             v = max(abs(self.last_approach_v["L"]), 0.5)
             calc_sec = 6.0 / v
             self.bs_timer["L"] = int(calc_sec / DT_CTRL)
@@ -856,7 +854,20 @@ class CarState(CarStateBase):
           self.bs_timer["L"] -= 1
           ret.leftBlindspot = True
 
-        # 💡 [조건 B 삭제] 후방 레이더 값으로 타이머를 강제 종료시키는 오작동 원인 코드를 완전 삭제함
+        # ▼▼▼ [조건부 강제 종료 로직 복구 및 분리] ▼▼▼
+        cancel_front = (0.1 < ret.leftLongDist < 20.0 and ret.leftLongDist >= limit_lf and v_lf > 0.5)
+        cancel_rear  = (0.1 < self.lr_distance < 20.0 and self.lr_distance >= limit_rear and v_lr > 0.5)
+
+        if self.bs_timer.get("L_source") == "front":
+          # 💡 내가 추월할 때: 후방 레이더가 섣불리 취소하는 것만 제거! (cancel_rear 무시)
+          if cancel_front:
+            self.bs_timer["L"] = 0
+            self.last_approach_v["L"] = 0.0
+        else:
+          # 💡 나를 추월할 때: 내 앞으로 차가 완전히 지나가면 경고등이 빨리 꺼지도록 둘 다 유지
+          if cancel_front or cancel_rear:
+            self.bs_timer["L"] = 0
+            self.last_approach_v["L"] = 0.0
 
       # --- 4. 우측 사각지대(BSD) 로직 ---
       if seen_rf or seen_rr:
@@ -884,7 +895,20 @@ class CarState(CarStateBase):
           self.bs_timer["R"] -= 1
           ret.rightBlindspot = True
           
-        # 💡 [조건 B 삭제] 우측 역시 타이머 강제 종료 코드를 완전 삭제함
+        # ▼▼▼ [조건부 강제 종료 로직 복구 및 분리] ▼▼▼
+        cancel_front_r = (0.1 < ret.rightLongDist < 20.0 and ret.rightLongDist >= limit_rf and v_rf > 0.5)
+        cancel_rear_r  = (0.1 < self.rr_distance < 20.0 and self.rr_distance >= limit_rear and v_rr > 0.5)
+
+        if self.bs_timer.get("R_source") == "front":
+          # 💡 내가 추월할 때: 후방 레이더가 섣불리 취소하는 것만 제거!
+          if cancel_front_r:
+            self.bs_timer["R"] = 0
+            self.last_approach_v["R"] = 0.0
+        else:
+          # 💡 나를 추월할 때: 내 앞으로 차가 완전히 지나가면 경고등이 빨리 꺼지도록 유지
+          if cancel_front_r or cancel_rear_r:
+            self.bs_timer["R"] = 0
+            self.last_approach_v["R"] = 0.0
 
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
