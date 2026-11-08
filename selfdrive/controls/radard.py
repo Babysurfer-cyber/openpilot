@@ -467,7 +467,7 @@ class RadarD:
     self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
     # --- 코너 레이더 컷인/컷아웃 감지기 초기화 ---
-    self.trajectory_cutin = TrajectoryCutInDetector() if TrajectoryCutInDetector is not None else None
+    self.trajectory_cutin = TrajectoryCutInDetector(sensitivity=3) if TrajectoryCutInDetector is not None else None
     self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 추가
     self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
 
