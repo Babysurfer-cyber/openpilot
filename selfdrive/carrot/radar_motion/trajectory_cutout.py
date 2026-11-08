@@ -9,10 +9,10 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
+from typing import Any  # 👈 [여기에 이 한 줄만 추가해 주세요!]
 
 from openpilot.selfdrive.carrot.radar_motion.predictor import project_to_model_path
 from openpilot.selfdrive.carrot.radar_motion.primary import RadarPointSnapshot, VisionLead
-
 
 CLEARANCE_HALF_WIDTH_M = 2.15  # ego + target half widths, with 0.25 m margin
 MAX_EXIT_TIME_S = 2.5
@@ -133,3 +133,76 @@ class TrajectoryCutOutTracker:
       self._candidate_since = time_s
     confidence = min(1.0, max(0.0, (time_s - self._candidate_since - CONFIRMATION_S) / RAMP_S))
     return CutOutPrediction(exit_time, confidence)
+
+# =====================================================================
+# ▼▼▼ 파일 맨 아래에 추가할 코드 (radard.py와의 완벽한 연동을 위한 어댑터) ▼▼▼
+# =====================================================================
+
+@dataclass
+class CutOutEstimate:
+  point: Any
+  confidence: float
+  confirmed_cutout: bool
+  control_eligible: bool = True
+
+class TrajectoryCutOutDetector:
+  def __init__(self):
+    self.trackers = {}
+    self.last_estimates = []
+
+  def update(self, time_s: float, v_ego: float, points: list, path: tuple, model: Any, yaw_rate_rad_s: float):
+    self.last_estimates = []
+    active_ids = set()
+
+    # 1. Tracker가 요구하는 카메라(Vision) 데이터를 modelV2에서 강제 추출
+    vision_lead = None
+    if hasattr(model, 'leadsV3') and len(model.leadsV3) > 0:
+      l = model.leadsV3[0]
+      if l.prob > 0.1:
+        vision_lead = VisionLead(
+          probability=l.prob,
+          d_rel=l.x[0],
+          y_rel=-l.y[0],
+          x_std=l.xStd[0]
+        )
+
+    for pt in points:
+      tid = pt.track_id
+      active_ids.add(tid)
+      
+      if tid not in self.trackers:
+        self.trackers[tid] = TrajectoryCutOutTracker()
+
+      # 2. Tracker의 깐깐한 조건을 통과하기 위한 "신분 위장(Bypass)"
+      original_source = pt.source
+      pt.source = "frontRadar"       # 코너 레이더라도 전방 레이더인 척 통과
+      pt.radar_track_state = 2       # 측정 상태 강제 충족
+
+      # 3. 개별 트랙 업데이트 실행
+      pred = self.trackers[tid].update(
+        time_s=time_s,
+        point=pt,
+        lateral=pt,       # 단일 포인트 모델이므로 point와 lateral에 동일한 값 입력
+        vision=vision_lead,
+        path=path,
+        v_ego=v_ego,
+        yaw_rate=yaw_rate_rad_s
+      )
+      
+      # 원래 이름표 복구
+      pt.source = original_source
+
+      # 4. 컷아웃 확신도(Confidence)가 0.5 이상이면 조기 가속 승인!
+      if pred.confidence > 0.0:
+        self.last_estimates.append(CutOutEstimate(
+          point=pt,
+          confidence=pred.confidence,
+          confirmed_cutout=(pred.confidence >= 0.5) 
+        ))
+
+    # 화면에서 사라진 트랙 메모리 정리
+    for tid in list(self.trackers.keys()):
+      if tid not in active_ids:
+        del self.trackers[tid]
+
+# =====================================================================
