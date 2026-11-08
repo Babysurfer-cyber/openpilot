@@ -14,11 +14,13 @@ from openpilot.common.realtime import DT_MDL, Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.simple_kalman import KF1D
 
-# --- 코너 레이더 컷인 감지 모듈 추가 ---
+# --- 코너 레이더 컷인/컷아웃 감지 모듈 추가 ---
 try:
   from openpilot.selfdrive.carrot.radar_motion.trajectory_cutin import TrajectoryCutInDetector
+  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutout import TrajectoryCutOutDetector # 👈 추가
 except ImportError:
   TrajectoryCutInDetector = None
+  TrajectoryCutOutDetector = None # 👈 추가
 
 # trajectory_cutin.py 가 요구하는 데이터 규격(RadarPointSnapshot)을 맞추기 위한 어댑터 클래스
 class MockRadarPoint:
@@ -464,8 +466,9 @@ class RadarD:
     # ▼ [추가] 코너 레이더 가속도 로우패스 필터용 초기화
     self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
-    # --- 코너 레이더 컷인 감지기 초기화 ---
+    # --- 코너 레이더 컷인/컷아웃 감지기 초기화 ---
     self.trajectory_cutin = TrajectoryCutInDetector() if TrajectoryCutInDetector is not None else None
+    self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 추가
     self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
@@ -528,7 +531,7 @@ class RadarD:
               measured=t.measured
             ))
             
-          # 정확한 파라미터 6개를 규격에 맞춰 전달
+          # 기존 컷인 업데이트 로직
           self.trajectory_cutin.update(
             time_s=self.current_time,
             v_ego=self.v_ego,
@@ -537,6 +540,17 @@ class RadarD:
             model=md,
             yaw_rate_rad_s=yaw_rate
           )
+          
+          # ▼▼▼ [추가] 컷아웃 업데이트 로직 ▼▼▼
+          if self.trajectory_cutout is not None:
+            self.trajectory_cutout.update(
+              time_s=self.current_time,
+              v_ego=self.v_ego,
+              points=snap_points,
+              path=path_coords,
+              model=md,
+              yaw_rate_rad_s=yaw_rate
+            )
         except Exception as e:
           pass
 
@@ -688,6 +702,17 @@ class RadarD:
           lead_dict['radar'] = True
           lead_dict['modelProb'] = float(best_est.confidence)
           radar = True
+    # ▼▼▼ [추가] 코너 레이더 트랙 기반 선행차량 컷아웃(조기 가속) ▼▼▼
+    if index == 0 and self.trajectory_cutout is not None and lead_dict.get('status'):
+      try:
+        for est in getattr(self.trajectory_cutout, 'last_estimates', []):
+          if getattr(est, 'confirmed_cutout', False):
+            # 현재 잡고 있는 선행차가 컷아웃 차량과 동일 트랙이거나 거리가 거의 일치하면
+            if lead_dict.get('radarTrackId') == est.point.track_id or abs(lead_dict.get('dRel', 0) - est.point.d_rel) < 2.0:
+              # lead_dict['status'] = False (기존)
+              lead_dict = empty_lead() # 👈 [수정] 잔여 데이터가 남지 않도록 완전히 깡통으로 초기화!
+              radar = False
+              break
       except Exception as e:
         pass
 
