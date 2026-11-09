@@ -16,11 +16,11 @@ from openpilot.common.simple_kalman import KF1D
 
 # --- 코너 레이더 컷인 감지 모듈 추가 ---
 try:
-  from openpilot.selfdrive.carrot.radar_motion.controller import DPathRadarController
-  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutout import TrajectoryCutOutDetector
+  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutin import TrajectoryCutInDetector
+  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutout import TrajectoryCutOutDetector # 👈 [추가]
 except ImportError:
-  DPathRadarController = None
-  TrajectoryCutOutDetector = None
+  TrajectoryCutInDetector = None
+  TrajectoryCutOutDetector = None # 👈 [추가]
 
 # trajectory_cutin.py 가 요구하는 데이터 규격(RadarPointSnapshot)을 맞추기 위한 어댑터 클래스
 class MockRadarPoint:
@@ -466,14 +466,9 @@ class RadarD:
     # ▼ [추가] 코너 레이더 가속도 로우패스 필터용 초기화
     self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
-    # --- 컨트롤러 및 컷아웃 감지기 초기화 ---
-    self.radar_controller = None
-    if DPathRadarController is not None:
-      # EnableCornerRadar 값이 1 이상이면 코너 레이더 우선(True)
-      prefer_corner = (self.params.get_int("EnableCornerRadar") > 0)
-      self.radar_controller = DPathRadarController(prefer_corner_radar=prefer_corner)
-      
-    self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None
+    # --- 코너 레이더 컷인/컷아웃 감지기 초기화 ---
+    self.trajectory_cutin = TrajectoryCutInDetector() if TrajectoryCutInDetector is not None else None
+    self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 [추가]
     self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
@@ -536,16 +531,15 @@ class RadarD:
               measured=t.measured
             ))
             
-          # 컨트롤러로 데이터 위임 (컨트롤러 내부에서 필터링 후 cutin 모듈로 전달됨)
-          if self.radar_controller is not None:
-            self.radar_controller.update(
-              time_s=self.current_time,
-              v_ego=self.v_ego,
-              points=snap_points,
-              path=path_coords,
-              model=md,
-              yaw_rate_rad_s=yaw_rate
-            )
+          # 정확한 파라미터 6개를 규격에 맞춰 전달
+          self.trajectory_cutin.update(
+            time_s=self.current_time,
+            v_ego=self.v_ego,
+            points=snap_points,
+            path=path_coords,
+            model=md,
+            yaw_rate_rad_s=yaw_rate
+          )
           
           # ▼▼▼ [추가] 컷아웃 모듈에도 동일하게 데이터 전달 ▼▼▼
           if getattr(self, 'trajectory_cutout', None) is not None:
@@ -683,13 +677,12 @@ class RadarD:
     if self.enable_corner_radar > 1:
       lead_dict = self.corner_radar(CS, md, lead_dict)
 
-    # --- 컨트롤러 기반 선행차량 덮어씌우기 (get_lead) ---
-    if self.corner_radar_track_cutin and index == 0 and self.radar_controller is not None:
+    # --- 코너 레이더 트랙 기반 선행차량 덮어씌우기 (get_lead) ---
+    if self.corner_radar_track_cutin and index == 0 and self.trajectory_cutin is not None:
       try:
         best_est = None
-        # 컨트롤러 내부에 생성되어 있는 trajectory_cutin 객체에서 결과를 탐색
-        if hasattr(self.radar_controller, 'trajectory_cutin'):
-          for est in getattr(self.radar_controller.trajectory_cutin, 'last_estimates', []):
+        # get_lead() 가 아닌, trajectory_cutin 내부에 저장된 last_estimates 배열을 탐색
+        for est in getattr(self.trajectory_cutin, 'last_estimates', []):
           if est.confirmed_cutin and est.control_eligible:
             if best_est is None or est.point.d_rel < best_est.point.d_rel:
               best_est = est
