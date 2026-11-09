@@ -17,8 +17,10 @@ from openpilot.common.simple_kalman import KF1D
 # --- 코너 레이더 컷인 감지 모듈 추가 ---
 try:
   from openpilot.selfdrive.carrot.radar_motion.trajectory_cutin import TrajectoryCutInDetector
+  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutout import TrajectoryCutOutDetector # 👈 [추가]
 except ImportError:
   TrajectoryCutInDetector = None
+  TrajectoryCutOutDetector = None # 👈 [추가]
 
 # trajectory_cutin.py 가 요구하는 데이터 규격(RadarPointSnapshot)을 맞추기 위한 어댑터 클래스
 class MockRadarPoint:
@@ -464,8 +466,9 @@ class RadarD:
     # ▼ [추가] 코너 레이더 가속도 로우패스 필터용 초기화
     self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
-    # --- 코너 레이더 컷인 감지기 초기화 ---
+    # --- 코너 레이더 컷인/컷아웃 감지기 초기화 ---
     self.trajectory_cutin = TrajectoryCutInDetector() if TrajectoryCutInDetector is not None else None
+    self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 [추가]
     self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
@@ -537,6 +540,17 @@ class RadarD:
             model=md,
             yaw_rate_rad_s=yaw_rate
           )
+          
+          # ▼▼▼ [추가] 컷아웃 모듈에도 동일하게 데이터 전달 ▼▼▼
+          if getattr(self, 'trajectory_cutout', None) is not None:
+            self.trajectory_cutout.update(
+              time_s=self.current_time,
+              v_ego=self.v_ego,
+              points=snap_points,
+              path=path_coords,
+              model=md,
+              yaw_rate_rad_s=yaw_rate
+            )
         except Exception as e:
           pass
 
@@ -690,7 +704,42 @@ class RadarD:
           radar = True
       except Exception as e:
         pass
+        
+      # =====================================================================
+      # ▼▼▼ [추가] 코너 레이더 트랙 기반 선행차량 컷아웃(조기 가속) ▼▼▼
+      # =====================================================================
+      if lead_dict['status']:
+        try:
+          current_track_id = lead_dict.get('radarTrackId', -1)
+          is_cutting_out = False
+          
+          # 👇 [핵심 수정] cutin이 아니라 cutout 모듈에서 결과를 가져와야 합니다!
+          for est in getattr(self.trajectory_cutout, 'last_estimates', []):
+            
+            if current_track_id != -1 and est.point.track_id == current_track_id:
+              if getattr(est, 'confirmed_cutout', False):
+                is_cutting_out = True
+                break
+            
+            # 2. 비전(카메라) 타겟 매칭: 카메라만 잡고 있더라도 같은 위치의 레이더가 컷아웃 중이면 해제
+            elif getattr(est, 'confirmed_cutout', False):
+              d_diff = abs(est.point.d_rel - lead_dict['dRel'])
+              y_diff = abs(est.point.y_rel - lead_dict['yRel'])
+              if d_diff < 5.0 and y_diff < 2.0:
+                is_cutting_out = True
+                break
 
+          # 앞차가 빠져나가는 것이 확실하다면 앞차 인식 강제 해제 (즉각 가속 유도)
+          if is_cutting_out:
+            lead_dict = empty_lead()
+            radar = False
+            
+        except Exception as e:
+          pass
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    if low_speed_override:
+      low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
     if low_speed_override:
       low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
       if len(low_speed_tracks) > 0:
