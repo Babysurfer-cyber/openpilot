@@ -773,9 +773,9 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     left_bsd = getattr(CS.out, 'leftBlindspot', False)
     right_bsd = getattr(CS.out, 'rightBlindspot', False)
     
-    # 1. 속도 조건 (5km/h 이상)
+    # 1. 속도 조건 (1km/h 이상)
     v_ego_kph = getattr(CS.out, 'vEgo', 0) * CV.MS_TO_KPH
-    is_speed_valid = (v_ego_kph >= 5.0)
+    is_speed_valid = (v_ego_kph >= 1.0)
 
     # 2. 차선 인식 확인 (갓길 제외)
     left_raw = getattr(CS.out, 'leftLaneLine', 0)
