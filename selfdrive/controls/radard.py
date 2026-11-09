@@ -642,6 +642,59 @@ class RadarD:
 
     return max(sticky_tracks, key=lambda t: (t.selected_count, -t.dRel))
 
+  def _apply_cutin_predecel(self, lead_dict):
+    """ 끼어들기 차량에 대해 원작자의 동적 물리(Kinematics) 기반 선감속 계산 """
+    if not lead_dict.get('status', False):
+      return lead_dict
+      
+    # 트랙 ID가 1000 이상이거나, 컷인 플래그가 있는 경우
+    is_cutin = (lead_dict.get('radarTrackId', -1) >= 1000) or (abs(lead_dict.get('modelProb', 0.0) - 0.03) < 0.001)
+    
+    if is_cutin:
+      d_rel = lead_dict.get('dRel', 999.0)
+      v_rel = lead_dict.get('vRel', 0.0)
+      v_ego = self.v_ego  # 내 차의 실시간 속도
+      
+      # ---------------------------------------------------------
+      # 🧠 원작자(오픈파일럿 코어)의 물리 역학 계산식 이식
+      # ---------------------------------------------------------
+      
+      # 1. 동적 안전거리 계산 (속도 비례)
+      # 내 속도가 빠를수록 더 멀리서부터 감속을 시작합니다. (t_gap: 1.2초 마진 + 4m 기본 마진)
+      safe_dist = (v_ego * 1.2) + 4.0 
+      
+      a_req = 0.0
+      
+      # 2. 상대차가 나보다 느릴 때 (충돌 위험)
+      if v_rel < 0.0:
+        # 물리 공식: v^2 = 2as (속도를 0으로 만들기 위해 필요한 가속도 계산)
+        # 멈춰야 하는 목표 마지노선을 안전거리의 절반(50%)으로 설정
+        available_dist = d_rel - (safe_dist * 0.5)
+        available_dist = max(1.0, available_dist) # 0으로 나누기 방지 (최소 1m)
+        
+        a_req = -(v_rel ** 2) / (2.0 * available_dist)
+        
+      # 3. 상대차가 나보다 빠르지만, 너무 가까이 끼어들었을 때
+      elif d_rel < safe_dist:
+        # 거리 차이에 비례하여 스르륵 거리를 벌려줌 (Proportional Control)
+        a_req = (d_rel - safe_dist) * 0.15 
+        
+      # 4. 감속 한계치 설정 (승차감 확보)
+      # 계산된 가속도를 -3.0 (최대 감속) ~ 0.0 사이로 묶음
+      a_req = float(np.clip(a_req, -3.0, 0.0))
+      
+      # ---------------------------------------------------------
+      
+      # 유의미한 감속(-0.1 이상)이 계산되었을 때만 롱컨에 덮어씌움
+      if a_req < -0.1:
+        lead_dict['aLead'] = min(lead_dict.get('aLead', 0.0), a_req)
+        lead_dict['aLeadK'] = lead_dict['aLead']
+        
+        # 동적으로 정밀하게 계산된 값이므로, 롱컨이 0.3초 필터로 이질감 없이 따라오도록 설정
+        lead_dict['aLeadTau'] = 0.3
+        
+    return lead_dict
+  
   def get_lead(self, CS, md, tracks: dict[int, Track], index: int, lead_msg: capnp._DynamicStructReader,
                model_v_ego: float, lead_prob: float, low_speed_override: bool = True) -> dict[str, Any]:
 
@@ -757,7 +810,8 @@ class RadarD:
           vision_y_rel = float(-lead_msg.y[0]) if ready else 0.0
           lead_dict = closest_track.get_RadarState(lead_prob, vision_y_rel)
 
-    return lead_dict, radar
+    # 코너레이더 컷인 선감속 로직 통과 후 반환
+    return self._apply_cutin_predecel(lead_dict), radar
 
   def _is_cutin_enter_candidate(self, t: Track) -> bool:
     if not self.detect_cut_in or not self.lane_line_available:
@@ -958,7 +1012,7 @@ class RadarD:
           detected = True
 
     if chosen is not None:
-      self.radar_state.leadOne = chosen
+      self.radar_state.leadOne = self._apply_cutin_predecel(chosen)
       self.radar_detected = detected
 
   def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
