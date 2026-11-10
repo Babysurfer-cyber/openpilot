@@ -14,13 +14,28 @@ from openpilot.common.realtime import DT_MDL, Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.simple_kalman import KF1D
 
-# --- 코너 레이더 컷인 감지 모듈 추가 ---
+# --- 코너 레이더 컷인/컷아웃 감지기 및 컨트롤러 추가 ---
 try:
-  from openpilot.selfdrive.carrot.radar_motion.trajectory_cutin import TrajectoryCutInDetector
+  from openpilot.selfdrive.carrot.radar_motion.controller import DPathRadarController
   from openpilot.selfdrive.carrot.radar_motion.trajectory_cutout import TrajectoryCutOutDetector # 👈 [추가]
 except ImportError:
-  TrajectoryCutInDetector = None
+  DPathRadarController = None
   TrajectoryCutOutDetector = None # 👈 [추가]
+
+def is_corner_radar_enabled(CP, params):
+  """ radard_dpath.py 의 코너 레이더 활성화 조건 완벽 이식 """
+  try:
+    from opendbc.car.hyundai.values import HyundaiExtFlags
+    is_hyundai = (CP.carName == "hyundai")
+    param_enabled = (params.get_int("EnableCornerRadar") > 0)
+    has_flag = True
+    # 차량의 extFlags에 코너 레이더 장착 여부가 기록되어 있는지 안전하게 확인
+    if hasattr(HyundaiExtFlags, 'CORNER_RADAR'):
+      has_flag = bool(CP.extFlags & HyundaiExtFlags.CORNER_RADAR.value)
+    return is_hyundai and param_enabled and has_flag
+  except Exception:
+    # 확인 실패 시 파라미터 값에만 의존하여 유연하게 대처
+    return params.get_int("EnableCornerRadar") > 0
 
 # trajectory_cutin.py 가 요구하는 데이터 규격(RadarPointSnapshot)을 맞추기 위한 어댑터 클래스
 class MockRadarPoint:
@@ -427,7 +442,8 @@ def get_RadarState_from_vision(md, lead_msg: capnp._DynamicStructReader, v_ego: 
   }
 
 class RadarD:
-  def __init__(self, delay: float = 0.0):
+  def __init__(self, CP):
+    delay = CP.radarDelay
     self.current_time = 0.0
 
     self.tracks: dict[int, Track] = {}
@@ -467,7 +483,12 @@ class RadarD:
     self._corner_a_lead_filt = {"L": 0.0, "R": 0.0}
 
     # --- 코너 레이더 컷인/컷아웃 감지기 초기화 ---
-    self.trajectory_cutin = TrajectoryCutInDetector() if TrajectoryCutInDetector is not None else None
+    self.radar_controller = None
+    if DPathRadarController is not None:
+      # radard_dpath.py 로직 적용: 코너 레이더 우선권(Latch) 부여 여부 결정
+      prefer_corner = is_corner_radar_enabled(CP, self.params)
+      self.radar_controller = DPathRadarController(prefer_corner_radar=prefer_corner)
+      
     self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 [추가]
     self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
 
@@ -510,7 +531,7 @@ class RadarD:
           self.tracks.pop(tid)
 
       # --- 코너 레이더 트랙 궤적 분석 (update) ---
-      if self.corner_radar_track_cutin and self.trajectory_cutin is not None:
+      if self.corner_radar_track_cutin and (self.radar_controller is not None or self.trajectory_cutout is not None):
         try:
           md = sm['modelV2']
           path_coords = list(zip(md.position.x, md.position.y))
@@ -531,18 +552,19 @@ class RadarD:
               measured=t.measured
             ))
             
-          # 정확한 파라미터 6개를 규격에 맞춰 전달
-          self.trajectory_cutin.update(
-            time_s=self.current_time,
-            v_ego=self.v_ego,
-            points=snap_points,
-            path=path_coords,
-            model=md,
-            yaw_rate_rad_s=yaw_rate
-          )
+          # 정확한 파라미터 6개를 규격에 맞춰 전달 (컨트롤러로 위임)
+          if self.radar_controller is not None:
+            self.radar_controller.update(
+              time_s=self.current_time,
+              v_ego=self.v_ego,
+              points=snap_points,
+              path=path_coords,
+              model=md,
+              yaw_rate_rad_s=yaw_rate
+            )
           
           # ▼▼▼ [추가] 컷아웃 모듈에도 동일하게 데이터 전달 ▼▼▼
-          if getattr(self, 'trajectory_cutout', None) is not None:
+          if self.trajectory_cutout is not None:
             self.trajectory_cutout.update(
               time_s=self.current_time,
               v_ego=self.v_ego,
@@ -636,6 +658,67 @@ class RadarD:
 
     return max(sticky_tracks, key=lambda t: (t.selected_count, -t.dRel))
 
+  def _apply_cutin_predecel(self, lead_dict):
+    """ 끼어들기 차량에 대해 원작자의 동적 물리(Kinematics) 기반 선감속 계산 (결측치 방어 적용) """
+    if not lead_dict or not lead_dict.get('status', False):
+      return lead_dict
+      
+    try:
+      # 1. 예외 처리: 데이터가 None이거나 NaN일 경우 기본값으로 강제 변환
+      track_id = lead_dict.get('radarTrackId', -1)
+      model_prob = lead_dict.get('modelProb', 0.0)
+      cutin_triggered = lead_dict.get('cutin_triggered', False) # 컨트롤러가 지정한 컷인 플래그
+      
+      if track_id is None: track_id = -1
+      if model_prob is None or math.isnan(model_prob): model_prob = 0.0
+      
+      # 컨트롤러 컷인, 코너 트랙, 일반 컷인 판정 중 하나라도 해당되면 발동
+      is_cutin = cutin_triggered or (track_id >= 1000) or (abs(model_prob - 0.03) < 0.001)
+      
+      if is_cutin:
+        d_rel = lead_dict.get('dRel', 999.0)
+        v_rel = lead_dict.get('vRel', 0.0)
+        
+        # 물리값 결측치 방어
+        if d_rel is None or math.isnan(d_rel): d_rel = 999.0
+        if v_rel is None or math.isnan(v_rel): v_rel = 0.0
+        
+        v_ego = self.v_ego if self.v_ego is not None and not math.isnan(self.v_ego) else 0.0
+        
+        # ---------------------------------------------------------
+        # 🧠 원작자(오픈파일럿 코어)의 물리 역학 계산식 이식
+        # ---------------------------------------------------------
+        safe_dist = (v_ego * 1.2) + 4.0 
+        a_req = 0.0
+        
+        if v_rel < 0.0:
+          available_dist = d_rel - (safe_dist * 0.5)
+          available_dist = max(1.0, float(available_dist)) # 0으로 나누기 방지
+          a_req = -(v_rel ** 2) / (2.0 * available_dist)
+        elif d_rel < safe_dist:
+          a_req = (d_rel - safe_dist) * 0.15 
+          
+        a_req = float(np.clip(a_req, -3.0, 0.0))
+        
+        # ---------------------------------------------------------
+        # 2. 순정 레이더(SCC)의 가속도 결측치(NaN) 방어 후 덮어씌우기
+        if a_req < -0.1:
+          current_a_lead = lead_dict.get('aLead', 0.0)
+          
+          # 순정 레이더가 가속도를 주지 못해 None이나 NaN이 들어온 경우 0.0으로 간주
+          if current_a_lead is None or math.isnan(current_a_lead):
+            current_a_lead = 0.0
+            
+          lead_dict['aLead'] = min(float(current_a_lead), a_req)
+          lead_dict['aLeadK'] = lead_dict['aLead']
+          lead_dict['aLeadTau'] = 0.3
+          
+    except Exception as e:
+      # 만약 예상치 못한 에러가 발생해도 radard가 죽지 않고 기존 데이터를 그대로 반환
+      pass
+      
+    return lead_dict
+
   def get_lead(self, CS, md, tracks: dict[int, Track], index: int, lead_msg: capnp._DynamicStructReader,
                model_v_ego: float, lead_prob: float, low_speed_override: bool = True) -> dict[str, Any]:
 
@@ -678,14 +761,15 @@ class RadarD:
       lead_dict = self.corner_radar(CS, md, lead_dict)
 
     # --- 코너 레이더 트랙 기반 선행차량 덮어씌우기 (get_lead) ---
-    if self.corner_radar_track_cutin and index == 0 and self.trajectory_cutin is not None:
+    if self.corner_radar_track_cutin and index == 0 and self.radar_controller is not None:
       try:
         best_est = None
         # get_lead() 가 아닌, trajectory_cutin 내부에 저장된 last_estimates 배열을 탐색
-        for est in getattr(self.trajectory_cutin, 'last_estimates', []):
-          if est.confirmed_cutin and est.control_eligible:
-            if best_est is None or est.point.d_rel < best_est.point.d_rel:
-              best_est = est
+        if hasattr(self.radar_controller, 'trajectory_cutin'):
+          for est in getattr(self.radar_controller.trajectory_cutin, 'last_estimates', []):
+            if est.confirmed_cutin and est.control_eligible:
+              if best_est is None or est.point.d_rel < best_est.point.d_rel:
+                best_est = est
               
         if best_est is not None:
           lead_dict['status'] = True
@@ -701,6 +785,7 @@ class RadarD:
           lead_dict['radarTrackId'] = best_est.point.track_id
           lead_dict['radar'] = True
           lead_dict['modelProb'] = float(best_est.confidence)
+          lead_dict['cutin_triggered'] = True # 선감속 발동을 위한 특별 플래그 부여
           radar = True
       except Exception as e:
         pass
@@ -750,7 +835,7 @@ class RadarD:
           vision_y_rel = float(-lead_msg.y[0]) if ready else 0.0
           lead_dict = closest_track.get_RadarState(lead_prob, vision_y_rel)
 
-    return lead_dict, radar
+    return self._apply_cutin_predecel(lead_dict), radar
 
   def _is_cutin_enter_candidate(self, t: Track) -> bool:
     if not self.detect_cut_in or not self.lane_line_available:
@@ -951,7 +1036,7 @@ class RadarD:
           detected = True
 
     if chosen is not None:
-      self.radar_state.leadOne = chosen
+      self.radar_state.leadOne = self._apply_cutin_predecel(chosen)
       self.radar_detected = detected
 
   def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
@@ -1171,7 +1256,7 @@ def main() -> None:
   #sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'])
   pm = messaging.PubMaster(['radarState'])
 
-  RD = RadarD(CP.radarDelay)
+  RD = RadarD(CP)
 
   while 1:
     sm.update()
