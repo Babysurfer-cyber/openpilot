@@ -660,17 +660,26 @@ class RadarD:
 
   def _apply_cutin_predecel(self, lead_dict):
     """ 
-    🛡️ [원작자 의도 100% 반영] 
-    플래너(longitudinal_planner.py) 없이도 radard 단독으로 사전 감속(Pre-decel)을 완벽 에뮬레이션
-    - 원작자의 실제 가속 상한 제어(-0.25 ~ -0.65 m/s²)를 가짜 급제동 공식 대신 스무스하게 이식
+    🛡️ [오류 완벽 수정 및 원작자 의도 100% 반영] 
+    플래너 없이도 radard 단독으로 사전 감속(Pre-decel)을 완벽 에뮬레이션
     """
-    if not lead_dict or not lead_dict.get('status', False):
+    # 딕셔너리 자료형이 아니면 바로 반환하여 에러 원천 차단
+    if not isinstance(lead_dict, dict):
+      return lead_dict
+
+    # [핵심 수정] 오픈파일럿 통신 규격(capnp)에 없는 임의의 키(이름표)가 전달되면 
+    # 프로세스가 바로 죽어버리므로(Crash), 플래그를 읽자마자 pop으로 딕셔너리에서 완벽하게 제거합니다!
+    cutin_triggered = lead_dict.pop('cutin_triggered', False)
+    
+    if not lead_dict.get('status', False):
       return lead_dict
       
     try:
       track_id = lead_dict.get('radarTrackId', -1)
       model_prob = lead_dict.get('modelProb', 0.0)
-      cutin_triggered = lead_dict.get('cutin_triggered', False) 
+      
+      if track_id is None: track_id = -1
+      if model_prob is None or math.isnan(model_prob): model_prob = 0.0
       
       # 컷인 발생 감지 (일반 컷인, 코너 컷인, 강제 플래그 포함)
       is_cutin_risk = cutin_triggered or (track_id >= 1000) or (abs(model_prob - 0.03) < 0.001)
@@ -754,8 +763,8 @@ class RadarD:
               
         if best_est is not None:
           # 🛡️ [원작자 의도 100% 반영]
-          # 코너 트랙을 덮어쓰지만, 억지 급감속 수식(v^2/2d)을 제거하고
-          # 정상적으로 플래너가 대응(Pre-decel)하도록 거리/속도 정보만 전달하며 트리거를 당깁니다.
+          # 코너 트랙을 덮어쓰지만, 억지 급감속 수식을 제거하고
+          # 정상적으로 사전 감속 에뮬레이터가 대응하도록 위치/속도 정보만 전달하며 트리거를 당깁니다.
           lead_dict['status'] = True
           lead_dict['dRel'] = float(best_est.point.d_rel)
           lead_dict['yRel'] = float(best_est.point.y_rel)
