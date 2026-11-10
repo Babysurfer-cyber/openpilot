@@ -564,7 +564,7 @@ class RadarD:
             )
           
           # ▼▼▼ [추가] 컷아웃 모듈에도 동일하게 데이터 전달 ▼▼▼
-          if getattr(self, 'trajectory_cutout', None) is not None:
+          if self.trajectory_cutout is not None:
             self.trajectory_cutout.update(
               time_s=self.current_time,
               v_ego=self.v_ego,
@@ -620,18 +620,11 @@ class RadarD:
       md = sm['modelV2']
 
       alive_tracks = {tid: trk for tid, trk in self.tracks.items() if trk.measured and trk.cnt > 2 }
-      
-      # 🛡️ [원작자 의도 반영] leadOne, leadTwo 선정 시에는 코너 트랙(ID >= 1000) 배제
-      front_tracks = {tid: trk for tid, trk in alive_tracks.items() if tid < 1000}
-
-      self.radar_state.leadOne, self.radar_detected = self.get_lead(sm['carState'], md, front_tracks, 0, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x, low_speed_override=False)
-      self.radar_state.leadTwo, _ = self.get_lead(sm['carState'], md, front_tracks, 1, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x, low_speed_override=False)
+      self.radar_state.leadOne, self.radar_detected = self.get_lead(sm['carState'], md, alive_tracks, 0, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x, low_speed_override=False)
+      self.radar_state.leadTwo, _ = self.get_lead(sm['carState'], md, alive_tracks, 1, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x, low_speed_override=False)
 
       self.lane_line_available = md.laneLineProbs[1] > 0.5 and md.laneLineProbs[2] > 0.5
-      
-      # 컷인/방향 분석(compute_leads)에는 코너레이더 포함 모든 alive_tracks 전달
       self.compute_leads(self.v_ego, alive_tracks, md, self.lead_prob_filters[0].x)
-      
       if self.leadTwo is not None:
         self.radar_state.leadTwo = self.leadTwo
       if self.enable_radar_tracks >= 3:
@@ -664,6 +657,48 @@ class RadarD:
       return None
 
     return max(sticky_tracks, key=lambda t: (t.selected_count, -t.dRel))
+
+  def _apply_cutin_predecel(self, lead_dict):
+    """ 
+    🛡️ [원작자 의도 100% 반영] 
+    플래너(longitudinal_planner.py) 없이도 radard 단독으로 사전 감속(Pre-decel)을 완벽 에뮬레이션
+    - 원작자의 실제 가속 상한 제어(-0.25 ~ -0.65 m/s²)를 가짜 급제동 공식 대신 스무스하게 이식
+    """
+    if not lead_dict or not lead_dict.get('status', False):
+      return lead_dict
+      
+    try:
+      track_id = lead_dict.get('radarTrackId', -1)
+      model_prob = lead_dict.get('modelProb', 0.0)
+      cutin_triggered = lead_dict.get('cutin_triggered', False) 
+      
+      # 컷인 발생 감지 (일반 컷인, 코너 컷인, 강제 플래그 포함)
+      is_cutin_risk = cutin_triggered or (track_id >= 1000) or (abs(model_prob - 0.03) < 0.001)
+      
+      if is_cutin_risk:
+        d_rel = float(lead_dict.get('dRel', 999.0))
+        v_rel = float(lead_dict.get('vRel', 0.0))
+        
+        # 원작자의 위험 판단 핵심 조건 (거리 45m 이내, 상대속도 -0.5m/s 이하 즉, 내 차가 다가가는 중일 때만 작동)
+        if d_rel <= 45.0 and v_rel <= -0.5:
+          ttc = d_rel / abs(v_rel)
+          
+          # TTC 2.5초 이하면 -0.65 / TTC 8초 이상이면 -0.25 (그 사이는 선형 비례)
+          a_limit = float(np.interp(ttc, [2.5, 8.0], [-0.65, -0.25]))
+          
+          current_a_lead = lead_dict.get('aLead', 0.0)
+          if current_a_lead is None or math.isnan(current_a_lead):
+            current_a_lead = 0.0
+            
+          # 갑작스러운 덜컥거림을 막고, 원작자의 점진적인 감속 한계선(-0.25~-0.65)만 부드럽게 주입
+          lead_dict['aLead'] = min(float(current_a_lead), a_limit)
+          lead_dict['aLeadK'] = lead_dict['aLead']
+          lead_dict['aLeadTau'] = 0.5 # 부드러운 반응(스무딩)을 위해 넉넉히 줌
+          
+    except Exception as e:
+      pass
+      
+    return lead_dict
 
   def get_lead(self, CS, md, tracks: dict[int, Track], index: int, lead_msg: capnp._DynamicStructReader,
                model_v_ego: float, lead_prob: float, low_speed_override: bool = True) -> dict[str, Any]:
@@ -710,51 +745,45 @@ class RadarD:
     if self.corner_radar_track_cutin and index == 0 and self.radar_controller is not None:
       try:
         best_est = None
+        # get_lead() 가 아닌, trajectory_cutin 내부에 저장된 last_estimates 배열을 탐색
         if hasattr(self.radar_controller, 'trajectory_cutin'):
           for est in getattr(self.radar_controller.trajectory_cutin, 'last_estimates', []):
             if est.confirmed_cutin and est.control_eligible:
               if best_est is None or est.point.d_rel < best_est.point.d_rel:
                 best_est = est
-                
+              
         if best_est is not None:
-          # 🛡️ [원작자 선감속(Pre-decel) 100% 복원]
-          # 코너 트랙 단독 신호를 leadOne으로 강제 덮어쓰기하여 플래너의 감속을 즉각 유도
+          # 🛡️ [원작자 의도 100% 반영]
+          # 코너 트랙을 덮어쓰지만, 억지 급감속 수식(v^2/2d)을 제거하고
+          # 정상적으로 플래너가 대응(Pre-decel)하도록 거리/속도 정보만 전달하며 트리거를 당깁니다.
           lead_dict['status'] = True
           lead_dict['dRel'] = float(best_est.point.d_rel)
           lead_dict['yRel'] = float(best_est.point.y_rel)
           lead_dict['vRel'] = float(best_est.point.v_rel)
-          
           actual_vLead = float(self.v_ego + best_est.point.v_rel)
           lead_dict['vLead'] = actual_vLead
           lead_dict['vLeadK'] = actual_vLead
-          lead_dict['vLat'] = getattr(best_est.point, 'yv_rel', 0.0)
-          
-          # 원작자의 인위적 감속 방정식 (상대속도 기반 Kinematics)
-          cutin_aLead = 0.0
-          if best_est.point.v_rel < 0.0:
-            cutin_aLead = -(best_est.point.v_rel ** 2) / (2.0 * max(1.0, best_est.point.d_rel))
-          cutin_aLead = max(-4.0, min(0.0, cutin_aLead))
-          
-          lead_dict['aLead'] = cutin_aLead
-          lead_dict['aLeadK'] = cutin_aLead
+          lead_dict['vLat'] = float(best_est.point.yv_rel)
+          lead_dict['aLead'] = 0.0 
+          lead_dict['aLeadK'] = 0.0
           lead_dict['aLeadTau'] = 0.3
-          lead_dict['modelProb'] = 0.8
           lead_dict['radarTrackId'] = best_est.point.track_id
           lead_dict['radar'] = True
+          lead_dict['modelProb'] = float(best_est.confidence)
+          lead_dict['cutin_triggered'] = True # 👈 [추가] 부드러운 사전 감속 작동 지시
           radar = True
       except Exception as e:
         pass
         
-    # =====================================================================
-    # ▼▼▼ [추가] 코너 레이더 트랙 기반 선행차량 컷아웃(조기 가속) ▼▼▼
-    # =====================================================================
-    if lead_dict['status']:
-      try:
-        current_track_id = lead_dict.get('radarTrackId', -1)
-        is_cutting_out = False
-        
-        # 👇 [핵심 수정] cutin이 아니라 cutout 모듈에서 결과를 가져와야 합니다!
-        if getattr(self, 'trajectory_cutout', None) is not None:
+      # =====================================================================
+      # ▼▼▼ [추가] 코너 레이더 트랙 기반 선행차량 컷아웃(조기 가속) ▼▼▼
+      # =====================================================================
+      if lead_dict['status']:
+        try:
+          current_track_id = lead_dict.get('radarTrackId', -1)
+          is_cutting_out = False
+          
+          # 👇 [핵심 수정] cutin이 아니라 cutout 모듈에서 결과를 가져와야 합니다!
           for est in getattr(self.trajectory_cutout, 'last_estimates', []):
             
             if current_track_id != -1 and est.point.track_id == current_track_id:
@@ -770,14 +799,14 @@ class RadarD:
                 is_cutting_out = True
                 break
 
-        # 앞차가 빠져나가는 것이 확실하다면 앞차 인식 강제 해제 (즉각 가속 유도)
-        if is_cutting_out:
-          lead_dict = empty_lead()
-          radar = False
-          
-      except Exception as e:
-        pass
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+          # 앞차가 빠져나가는 것이 확실하다면 앞차 인식 강제 해제 (즉각 가속 유도)
+          if is_cutting_out:
+            lead_dict = empty_lead()
+            radar = False
+            
+        except Exception as e:
+          pass
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if low_speed_override:
       low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
@@ -791,7 +820,7 @@ class RadarD:
           vision_y_rel = float(-lead_msg.y[0]) if ready else 0.0
           lead_dict = closest_track.get_RadarState(lead_prob, vision_y_rel)
 
-    return lead_dict, radar
+    return self._apply_cutin_predecel(lead_dict), radar
 
   def _is_cutin_enter_candidate(self, t: Track) -> bool:
     if not self.detect_cut_in or not self.lane_line_available:
@@ -927,15 +956,14 @@ class RadarD:
 
     self.leadTwo = None
     if self.lane_line_available:
-      # 🛡️ [원작자 의도 반영] 중앙 차선의 예비 앞차(leadCenter, leadTwo)에서는 코너 트랙은 배제 유지
       self.leadCenter = min(
-          (ld for ld in center_list if ld['vLead'] > 5 and ld['radar'] and ld['dRel'] > 3.5 and ld.get('radarTrackId', -1) < 1000),
+          (ld for ld in center_list if ld['vLead'] > 5 and ld['radar'] and ld['dRel'] > 3.5),
           key=lambda d: d['dRel'],
           default=None
       )
       if self.radar_state.leadOne.status and self.radar_state.leadOne.radar:
         self.leadTwo = min(
-            (ld for ld in center_list if ld['vLead'] > 5 and ld['radar'] and self.radar_state.leadOne.dRel < ld['dRel'] < 80 and ld.get('radarTrackId', -1) < 1000),
+            (ld for ld in center_list if ld['vLead'] > 5 and ld['radar'] and self.radar_state.leadOne.dRel < ld['dRel'] < 80),
             key=lambda d: d['dRel'],
             default=None
         )
@@ -970,7 +998,6 @@ class RadarD:
     detected = self.radar_detected
 
     if self.leadCutIn and self.leadCutIn.get("status") and self.detect_cut_in:
-      # 🛡️ [원작자 선감속 100% 복원] 코너 트랙을 배제하지 않고 그대로 leadOne으로 승격시켜 선감속 트리거 유지!
       if self._cutin_can_replace_lead_one(self.leadCutIn):
         chosen = self.leadCutIn
         chosen["modelProb"] = 0.03
@@ -994,7 +1021,8 @@ class RadarD:
           detected = True
 
     if chosen is not None:
-      self.radar_state.leadOne = chosen
+      # 🛡️ 앞차 교체 시에도 원작자 의도인 Pre-decel 에뮬레이터 로직을 거치도록 적용
+      self.radar_state.leadOne = self._apply_cutin_predecel(chosen)
       self.radar_detected = detected
 
   def _corner_update_state(self, CS, past_yaw_rate: float, side: str, cur_long: float, raw_lat: float, lane_edge: float, max_lat_dist: float):
@@ -1160,14 +1188,8 @@ class RadarD:
 
     actual_vLead = max(0.0, CS.vEgo + v_rel)
 
-    # 🛡️ [원작자 선감속 100% 복원] 기존 원작자의 상대속도(v_rel) 기반 인위적인 감속 방정식 복구
-    cutin_aLead = 0.0
-    if v_rel < 0.0:
-      cutin_aLead = -(v_rel**2) / (2.0 * max(1.0, long_dist))
-    cutin_aLead = max(-4.0, min(0.0, cutin_aLead))
-    
-    # 실제 도출된 가속도(final_aLead)와 원작자의 감속 방정식 중 더 강하게 브레이크가 걸리는 쪽을 선택
-    applied_aLead = min(final_aLead, cutin_aLead)
+    # 🛡️ [원작자 의도 100% 반영] 억지스러운 -4.0 하드 급감속 공식 제거
+    # 대신 Pre-decel 에뮬레이터가 잡아서 스무스하게 줄여주도록 cutin_triggered 플래그만 부여
 
     if lead_dict['status']:
       if lead_dict['dRel'] > long_dist:
@@ -1177,15 +1199,13 @@ class RadarD:
         lead_dict['vLead'] = actual_vLead 
         lead_dict['vLeadK'] = actual_vLead
         lead_dict['vLat'] = v_lat
-        
-        # 👇 계산된 실제 가속도 + 원작자 감속 공식 결합 적용
-        lead_dict['aLead'] = applied_aLead       
-        lead_dict['aLeadK'] = applied_aLead      
-        
+        lead_dict['aLead'] = final_aLead       
+        lead_dict['aLeadK'] = final_aLead      
         lead_dict['aLeadTau'] = 0.3       
         lead_dict['modelProb'] = 0.8
         lead_dict['radarTrackId'] = -1
         lead_dict['radar'] = True
+        lead_dict['cutin_triggered'] = True # 👈 [추가] 부드러운 사전 감속 작동 지시
     else:
       lead_dict['status'] = True
       lead_dict['dRel'] = long_dist
@@ -1194,15 +1214,13 @@ class RadarD:
       lead_dict['vLead'] = actual_vLead
       lead_dict['vLeadK'] = actual_vLead
       lead_dict['vLat'] = v_lat
-      
-      # 👇 계산된 실제 가속도 + 원작자 감속 공식 결합 적용
-      lead_dict['aLead'] = applied_aLead         
-      lead_dict['aLeadK'] = applied_aLead        
-      
+      lead_dict['aLead'] = final_aLead         
+      lead_dict['aLeadK'] = final_aLead        
       lead_dict['aLeadTau'] = 0.3         
       lead_dict['modelProb'] = 0.8
       lead_dict['radarTrackId'] = -1
       lead_dict['radar'] = True
+      lead_dict['cutin_triggered'] = True # 👈 [추가] 부드러운 사전 감속 작동 지시
 
     return lead_dict
 
