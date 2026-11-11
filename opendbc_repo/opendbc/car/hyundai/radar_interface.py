@@ -135,8 +135,6 @@ class RadarInterface(RadarInterfaceBase):
   def __init__(self, CP):
     super().__init__(CP)
     
-    self.v_ego = 0.0 # 👈 추가: 크래시 방지용 초기값
-    
     self.canfd = True if CP.flags & HyundaiFlags.CANFD else False
     self.radar_group1 = False
     if self.canfd:
