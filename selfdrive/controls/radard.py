@@ -490,7 +490,7 @@ class RadarD:
       self.radar_controller = DPathRadarController(prefer_corner_radar=prefer_corner)
       
     self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 [추가]
-    self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
+    self.corner_radar_track_cutin = True
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -498,7 +498,7 @@ class RadarD:
 
     self.enable_radar_tracks = self.params.get_int("EnableRadarTracks")
     self.enable_corner_radar = self.params.get_int("EnableCornerRadar")
-    self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
+    self.corner_radar_track_cutin = True
     self.radar_lat_factor = self.params.get_float("RadarLatFactor") * 0.01
     self.radar_reaction_factor = self.params.get_float("RadarReactionFactor") * 0.01
     self.detect_cut_in = self.radar_lat_factor > 0
