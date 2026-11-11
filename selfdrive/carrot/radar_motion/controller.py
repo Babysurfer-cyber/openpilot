@@ -540,8 +540,7 @@ class DPathRadarController:
     )
     self.production_live_tracks = bool(production_live_tracks)
     self.motion_sensor = "corner" if prefer_corner_radar else "front"
-    self.cut_in_sensitivity = 3 # 👈 외부 설정값 무시하고 무조건 3(보통 감도)으로 강제 고정
-    self._reset_motion_pipeline()
+    self.cut_in_sensitivity = max(0, min(5, int(cut_in_sensitivity)))    self._reset_motion_pipeline()
     self.primary_cut_out_predictor = RadarMotionPredictor(cut_out_only=True)
     self.trajectory_cutout = TrajectoryCutOutTracker()
     self.front_kinematic_associator = FrontRadarKinematicAssociator()
