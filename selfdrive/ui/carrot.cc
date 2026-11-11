@@ -2390,18 +2390,33 @@ public:
         if (cs_limit > 0 && cs_limit_dist > 0) cam_detected = true;
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
-        // ▼ [추가] 앞차 인식(Lead Vehicle) 및 크루즈 활성화 상태 확인
-        auto lead_one = (*(s->sm))["radarState"].getRadarState().getLeadOne();
-        bool has_lead = lead_one.getStatus();
+        // ▼ [추가] 앞차 뿐만 아니라 주변 모든 코너 레이더 트랙 감지 확인
+        auto radar_state = (*(s->sm))["radarState"].getRadarState();
+        auto lead_one = radar_state.getLeadOne();
+        bool has_lead = lead_one.getStatus(); // 아래쪽 네모 테두리 로직을 위해 남겨둠
+        
+        bool is_corner_track_detected = false;
 
-        // 💡 오직 '코너 레이더 트랙'이 잡은 컷인만 판별 (trackId가 1000 이상일 때만)
-        int track_id = lead_one.getRadarTrackId();
-        bool is_corner_track_cutin = has_lead && (track_id >= 1000);
+        // 1. 메인 앞차(Lead 1)와 서브 앞차(Lead 2) 먼저 스캔
+        if (lead_one.getStatus() && lead_one.getRadarTrackId() >= 1000) is_corner_track_detected = true;
+        if (radar_state.getLeadTwo().getStatus() && radar_state.getLeadTwo().getRadarTrackId() >= 1000) is_corner_track_detected = true;
 
-        // 컷인 시 "cut-in" 문구 출력 (NanoVG 방식 적용)
-        if (is_corner_track_cutin) {
-            // ui_draw_text 내부에서 자동으로 테두리/그림자 처리를 해줍니다.
-            ui_draw_text(s, x, y, "cut-in", 45, COLOR_WHITE, BOLD);
+        // 2. 앞차로 승격되지 못한 좌측, 우측, 중앙의 모든 주변 타겟들까지 싹싹 긁어서 스캔
+        if (!is_corner_track_detected) {
+            for (auto const& rs : { radar_state.getLeadsLeft(), radar_state.getLeadsRight(), radar_state.getLeadsCenter() }) {
+                for (auto const& l : rs) {
+                    if (l.getRadarTrackId() >= 1000) {
+                        is_corner_track_detected = true;
+                        break; // 하나라도 발견되면 즉시 스캔 종료
+                    }
+                }
+                if (is_corner_track_detected) break;
+            }
+        }
+
+        // 💡 어디서든 1000번대 이상 트랙 ID가 하나라도 맴돌고 있다면 무조건 출력!
+        if (is_corner_track_detected) {
+            ui_draw_text(s, x, y, "corner track", 45, COLOR_WHITE, BOLD);
         }
 
         // 🎯 [수정] 크루즈가 켜져 있고(longActive) + 앞차를 인식했을 때만 녹색 테두리!
