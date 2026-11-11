@@ -27,7 +27,8 @@ def is_corner_radar_enabled(CP, params):
   try:
     from opendbc.car.hyundai.values import HyundaiExtFlags
     is_hyundai = (CP.carName == "hyundai")
-    param_enabled = (params.get_int("EnableCornerRadar") > 0)
+    # 👇 [수정] CornerRadarTrackCutIn 토글이 켜지면 코너레이더도 켜진 것으로 강제 인식
+    param_enabled = (params.get_int("CornerRadarTrackCutIn") > 0) or (params.get_int("EnableCornerRadar") > 0)
     has_flag = True
     # 차량의 extFlags에 코너 레이더 장착 여부가 기록되어 있는지 안전하게 확인
     if hasattr(HyundaiExtFlags, 'CORNER_RADAR'):
@@ -35,7 +36,7 @@ def is_corner_radar_enabled(CP, params):
     return is_hyundai and param_enabled and has_flag
   except Exception:
     # 확인 실패 시 파라미터 값에만 의존하여 유연하게 대처
-    return params.get_int("EnableCornerRadar") > 0
+    return (params.get_int("CornerRadarTrackCutIn") > 0) or (params.get_int("EnableCornerRadar") > 0)
 
 # trajectory_cutin.py 가 요구하는 데이터 규격(RadarPointSnapshot)을 맞추기 위한 어댑터 클래스
 class MockRadarPoint:
@@ -462,7 +463,12 @@ class RadarD:
 
     self.params = Params()
     self.enable_radar_tracks = self.params.get_int("EnableRadarTracks")
-    self.enable_corner_radar = self.params.get_int("EnableCornerRadar")
+    
+    # 👇 [수정] CornerRadarTrackCutIn 토글 하나로 코너레이더 메인 기능까지 통제
+    self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
+    # EnableCornerRadar 메뉴가 없으므로 컷인 토글이 켜지면 무조건 값 2(활성화)를 부여
+    self.enable_corner_radar = 2 if self.corner_radar_track_cutin else self.params.get_int("EnableCornerRadar")
+
     self.radar_lat_factor = 0.0
 
     self.radar_detected = False
@@ -490,15 +496,17 @@ class RadarD:
       self.radar_controller = DPathRadarController(prefer_corner_radar=prefer_corner)
       
     self.trajectory_cutout = TrajectoryCutOutDetector() if TrajectoryCutOutDetector is not None else None # 👈 [추가]
-    self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
     self.current_time = 1e-9*max(sm.logMonoTime.values())
 
     self.enable_radar_tracks = self.params.get_int("EnableRadarTracks")
-    self.enable_corner_radar = self.params.get_int("EnableCornerRadar")
+    
+    # 👇 [수정] 업데이트 주기마다 동일하게 토글 연동 처리
     self.corner_radar_track_cutin = self.params.get_int("CornerRadarTrackCutIn") > 0
+    self.enable_corner_radar = 2 if self.corner_radar_track_cutin else self.params.get_int("EnableCornerRadar")
+    
     self.radar_lat_factor = self.params.get_float("RadarLatFactor") * 0.01
     self.radar_reaction_factor = self.params.get_float("RadarReactionFactor") * 0.01
     self.detect_cut_in = self.radar_lat_factor > 0
