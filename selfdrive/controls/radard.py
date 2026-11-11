@@ -836,7 +836,7 @@ class RadarD:
       return False
     if t.cnt < CUTIN_MIN_TRACK_AGE:
       return False
-    if not (3.0 < t.dRel < 50.0 and t.vLead > 4.0):
+    if not (0.0 < t.dRel < 50.0 and t.vLead > 0.0):
       return False
     if t.in_lane_prob_future < CUTIN_ENTER_FUTURE_IN_LANE_PROB:
       return False
@@ -849,7 +849,7 @@ class RadarD:
   def _is_cutin_keep_candidate(self, t: Track) -> bool:
     if not self.detect_cut_in or not self.lane_line_available:
       return False
-    if not (2.5 < t.dRel < 55.0 and t.vLead > 2.0):
+    if not (0.0 < t.dRel < 55.0 and t.vLead > 0.0):
       return False
 
     moving_away = abs(t.dPath_future) - abs(t.dPath)
