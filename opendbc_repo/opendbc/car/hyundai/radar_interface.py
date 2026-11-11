@@ -78,14 +78,16 @@ def corner_object_position_valid(d_rel: float, y_rel: float) -> bool:
 def get_corner_object_can_parsers(CP, enabled):
   if not enabled or not (CP.flags & HyundaiFlags.CANFD): return None, None
   
+  CAN = CanBus(CP) # 👈 추가: CanBus 객체 생성
+  
   parser_235, parser_180 = None, None
   if os.path.exists(os.path.join(DBC_PATH, f"{CORNER_OBJECT_235_DBC}.dbc")):
     msgs_235 = [(f"CORNER_RADAR_235_OBJECTS_{addr:x}", 33) for addr in range(CORNER_OBJECT_235_START_ADDR, CORNER_OBJECT_235_START_ADDR + CORNER_OBJECT_235_MSG_COUNT)]
-    parser_235 = CANParser(CORNER_OBJECT_235_DBC, msgs_235, 0)
+    parser_235 = CANParser(CORNER_OBJECT_235_DBC, msgs_235, CAN.ACAN) # 👈 0을 CAN.ACAN으로 수정
     
   if os.path.exists(os.path.join(DBC_PATH, f"{CORNER_OBJECT_180_DBC}.dbc")):
     msgs_180 = [(f"CORNER_RADAR_180_OBJECTS_{addr:x}", 33) for addr in range(CORNER_OBJECT_180_START_ADDR, CORNER_OBJECT_180_START_ADDR + CORNER_OBJECT_180_MSG_COUNT)]
-    parser_180 = CANParser(CORNER_OBJECT_180_DBC, msgs_180, 0)
+    parser_180 = CANParser(CORNER_OBJECT_180_DBC, msgs_180, CAN.ACAN) # 👈 0을 CAN.ACAN으로 수정
     
   return parser_235, parser_180
 
@@ -132,6 +134,8 @@ def get_radar_can_parser_scc(CP):
 class RadarInterface(RadarInterfaceBase):
   def __init__(self, CP):
     super().__init__(CP)
+    
+    self.v_ego = 0.0 # 👈 추가: 크래시 방지용 초기값
     
     self.canfd = True if CP.flags & HyundaiFlags.CANFD else False
     self.radar_group1 = False
