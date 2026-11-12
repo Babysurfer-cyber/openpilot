@@ -159,8 +159,12 @@ class RadarInterface(RadarInterfaceBase):
     self.rcp_scc = get_radar_can_parser_scc(CP)
     self.trigger_msg_scc = 416 if self.canfd else 0x420
 
+    # (기존 코드)
     self.trigger_msg_tracks = self.radar_start_addr + self.radar_msg_count - 1
     self.track_id = 0
+    # 👇 여기에 아래 두 줄 추가
+    self.trigger_msg_corner_235 = CORNER_OBJECT_235_START_ADDR + CORNER_OBJECT_235_MSG_COUNT - 1
+    self.trigger_msg_corner_180 = CORNER_OBJECT_180_START_ADDR + CORNER_OBJECT_180_MSG_COUNT - 1
 
     self.radar_off_can = CP.radarUnavailable
 
@@ -209,49 +213,69 @@ class RadarInterface(RadarInterfaceBase):
     if self.radar_off_can or (self.rcp_tracks is None and self.rcp_scc is None and self.rcp_corner_235 is None and self.rcp_corner_180 is None):
       return super().update(None)
 
-    # --- Corner Radar Update Logic ---
-    if self.rcp_corner_235 is not None:
-      self.updated_corner_objects.update(self.rcp_corner_235.update(can_strings))
-    if self.rcp_corner_180 is not None:
-      self.updated_corner_objects.update(self.rcp_corner_180.update(can_strings))
+    corner_235_ready = False
+    corner_180_ready = False
 
-    if self.rcp_corner_235 is not None or self.rcp_corner_180 is not None:
-      if self.updated_corner_objects:
-        self._update_corner_objects(self.updated_corner_objects)
-        self.corner_object_missed_updates = 0
-      else:
-        self.corner_object_missed_updates += 1
-        if self.corner_object_missed_updates > 10: 
-          self._clear_corner_objects()
+    # --- Corner Radar CAN Update ---
+    if self.rcp_corner_235 is not None:
+      vls_235 = self.rcp_corner_235.update(can_strings)
+      self.updated_corner_objects.update(vls_235)
+      # 마지막 메시지가 수신되었는지 확인
+      corner_235_ready = self.trigger_msg_corner_235 in self.updated_corner_objects
+
+    if self.rcp_corner_180 is not None:
+      vls_180 = self.rcp_corner_180.update(can_strings)
+      # 180도 트리거 로직을 위한 set이 별도로 필요할 수 있지만 여기선 편의상 같이 담습니다
+      self.updated_corner_objects.update(vls_180)
+      corner_180_ready = self.trigger_msg_corner_180 in self.updated_corner_objects
+
+    # --- Corner Radar 데이터 가공 (트리거 도달 시에만) ---
+    if corner_235_ready or corner_180_ready:
+      self._update_corner_objects(self.updated_corner_objects)
+      self.corner_object_missed_updates = 0
       self.updated_corner_objects.clear()
+    else:
+      self.corner_object_missed_updates += 1
+      if self.corner_object_missed_updates > 10: 
+        self._clear_corner_objects()
 
     # --- Original Update Logic ---
     if self.rcp_scc is not None:
       vls_s = self.rcp_scc.update(can_strings)
       self.updated_scc.update(vls_s)
+      
       if not self.radar_tracks and self.frame % 5 == 0:
         self._update_scc(self.updated_scc)
         self.updated_scc.clear()
         ret = structs.RadarData()
         if not self.rcp_scc.can_valid:
           ret.errors.canError = True
-        ret.points = list(self.pts.values())
+        # 👇 리턴 수정 (measured가 True인 것만)
+        ret.points = [pt for pt in self.pts.values() if pt.measured] 
         return ret
+        
     if self.radar_tracks and self.rcp_tracks is not None:
       vls_t = self.rcp_tracks.update(can_strings)
       self.updated_tracks.update(vls_t)
+      
       if self.trigger_msg_tracks in self.updated_tracks:
         self._update(self.updated_tracks)
         self._update_scc(self.updated_scc)
         self.updated_scc.clear()
         self.updated_tracks.clear()
+        
         ret = structs.RadarData()
-        if not self.rcp_tracks.can_valid:
-          ret.errors.canError = True
-        ret.points = list(self.pts.values())
+        # 코너 레이더 CAN Valid 에러 처리 추가
+        can_error = not self.rcp_tracks.can_valid
+        if self.rcp_corner_235 is not None and not self.rcp_corner_235.can_valid: can_error = True
+        if self.rcp_corner_180 is not None and not self.rcp_corner_180.can_valid: can_error = True
+        ret.errors.canError = can_error
+        
+        # 👇 리턴 수정 (measured가 True인 것만 반환)
+        ret.points = [pt for pt in self.pts.values() if pt.measured]
         return ret
 
-    return None      
+    return None   
 
   # --- Corner Radar Processing Methods ---
   def _update_corner_objects(self, updated_messages):
