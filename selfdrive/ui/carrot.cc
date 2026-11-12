@@ -2201,6 +2201,7 @@ public:
               y_rel = l.getYRel();
 
               bool radar = l.getRadar();
+              const bool corner = l.getRadarSource() == cereal::RadarData::RadarPoint::RadarSource::CORNER180;
               model_prob = l.getModelProb();
               //score = l.getScore();
 
@@ -2230,11 +2231,11 @@ public:
                 }
 
                 // 속도 텍스트/박스
-                sprintf(str, "%.0f", (s->scene.is_metric) ? v_sum * MS_TO_KPH : v_sum * MS_TO_MPH);
+                sprintf(str, corner ? "C %.0f" : "%.0f", (s->scene.is_metric) ? v_sum * MS_TO_KPH : v_sum * MS_TO_MPH);
                 wStr = 35 * (int)strlen(str);
                 ui_fill_rect(s->vg,
                   { (int)(x - wStr / 2), (int)(y - 35), wStr, 42 },
-                  (!radar) ? COLOR_BLUE : (model_prob == 0.01f) ? COLOR_GREEN : (v_sum > 0.f) ? COLOR_ORANGE : COLOR_RED,
+                  corner ? nvgRGBA(180, 90, 255, 255) : (!radar) ? COLOR_BLUE : (model_prob == 0.01f) ? COLOR_GREEN : (v_sum > 0.f) ? COLOR_ORANGE : COLOR_RED,
                   15);
                 ui_draw_text(s, x, y, str, 40, COLOR_WHITE, BOLD);
 
@@ -2247,7 +2248,7 @@ public:
                 }
               }
               else if (show_radar_info >= 3) {
-                strcpy(str, "*");
+                strcpy(str, corner ? "C*" : "*");
                 ui_draw_text(s, x, y, str, 40, COLOR_WHITE, BOLD);
               }
             }

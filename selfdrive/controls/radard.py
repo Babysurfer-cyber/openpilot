@@ -102,6 +102,7 @@ class Track:
     self.selected_count = 0
     self.cut_in_count = 0
     self.measured = False
+    self.radar_source = "frontRadar"
     self.score = 0.0
     self.in_lane_prob = 0.0
     self.in_lane_prob_future = 0.0
@@ -143,6 +144,7 @@ class Track:
     self.yvLead = pt.yvRel
 
     self.measured = pt.measured
+    self.radar_source = str(getattr(pt, "radarSource", "frontRadar"))
     if not self.measured:
       self.cnt = 0
       self.selected_count = 0
@@ -241,11 +243,16 @@ class Track:
       "modelProb": model_prob,
       "radar": True,
       "radarTrackId": self.identifier,
+      "radarSource": self.radar_source,
       "score": self.score,
     }
 
   def potential_low_speed_lead(self, v_ego: float):
-    return abs(self.yRel) < 1.0 and (v_ego < V_EGO_STATIONARY) and (0.75 < self.dRel < 25)
+    return not self.is_corner and abs(self.yRel) < 1.0 and (v_ego < V_EGO_STATIONARY) and (0.75 < self.dRel < 25)
+
+  @property
+  def is_corner(self) -> bool:
+    return self.radar_source.startswith("corner")
 
   def is_potential_fcw(self, model_prob: float):
     return model_prob > .9
@@ -317,6 +324,8 @@ def match_vision_to_track(v_ego: float, lead: capnp._DynamicStructReader, lead_p
   first_score, second_score, extra_score = -1e18, -1e18, -1e18
 
   for t in tracks.values():
+    if t.is_corner:
+      continue
     s1, s2 = score_pair(t)
     t.score = s1
 
@@ -466,22 +475,22 @@ class RadarD:
       
       self.last_v_ego_frame = sm.recv_frame['carState']
 
-    if vision_only_mode:
-      self.tracks.clear()
-    else:
-      valid_ids = set()
-      for pt in rr.points:
-        track_id = pt.trackId
-        valid_ids.add(track_id)
+    valid_ids = set()
+    for pt in rr.points:
+      # Corner object display is independent of the front-radar track mode.
+      if vision_only_mode and not str(getattr(pt, "radarSource", "frontRadar")).startswith("corner"):
+        continue
+      track_id = pt.trackId
+      valid_ids.add(track_id)
 
-        if track_id not in self.tracks:
-          self.tracks[track_id] = Track(track_id)
+      if track_id not in self.tracks:
+        self.tracks[track_id] = Track(track_id)
 
-        self.tracks[track_id].update(sm['modelV2'], pt, self.ready, self.radar_reaction_factor, self.radar_lat_factor)
+      self.tracks[track_id].update(sm['modelV2'], pt, self.ready, self.radar_reaction_factor, self.radar_lat_factor)
 
-      for tid in list(self.tracks.keys()):
-        if tid not in valid_ids:
-          self.tracks.pop(tid)
+    for tid in list(self.tracks.keys()):
+      if tid not in valid_ids:
+        self.tracks.pop(tid)
 
     # *** publish radarState ***
     radar_state_valid = sm.all_checks()
@@ -552,6 +561,8 @@ class RadarD:
   def get_sticky_track(self, tracks: dict[int, Track]) -> Track | None:
     sticky_tracks = []
     for t in tracks.values():
+      if t.is_corner:
+        continue
       if t.selected_count > 0 and abs(t.sticky_dPath) > t.sticky_dpath_limit():
         t.selected_count = 0
         t.is_stopped_car_count = 0
@@ -666,6 +677,10 @@ class RadarD:
     return cutin["dRel"] + CUTIN_PROMOTE_DREL_MARGIN < lead_one.dRel
 
   def _is_center_lead_candidate(self, t: Track) -> bool:
+    # Corner range is clipped at zero beside/behind ego. These objects may
+    # contribute a confirmed cut-in, but are not radar-only center leads.
+    if t.is_corner:
+      return False
     in_lane_min = CENTER_LEAD_NEAR_IN_LANE_PROB
     dpath_limit = CENTER_LEAD_NEAR_DPATH_LIMIT
     if t.dRel > CENTER_LEAD_FAR_DREL:
@@ -675,6 +690,8 @@ class RadarD:
     return t.in_lane_prob > in_lane_min and abs(t.dPath) < dpath_limit
 
   def _radar_only_center_ok(self, lead: dict[str, Any]) -> bool:
+    if str(lead.get("radarSource", "frontRadar")).startswith("corner"):
+      return False
     d_rel = float(lead.get("dRel", 999.0))
     d_path = abs(float(lead.get("dPath", 999.0)))
 
@@ -706,6 +723,8 @@ class RadarD:
 
     left_list, right_list, center_list, cutin_list = [], [], [], []
     for c in tracks.values():
+      if c.is_corner and c.dRel <= 0.2:
+        c.cut_in_count = 0
       y_rel_neg = - c.yRel
       # center
       if self._is_center_lead_candidate(c):
@@ -718,13 +737,13 @@ class RadarD:
       # left/right
       elif y_rel_neg < 0:
         ld = c.get_RadarState(0, 0)
-        if self._update_cutin_sticky(c):
+        if (not c.is_corner or c.dRel > 0.2) and self._update_cutin_sticky(c):
           ld['modelProb'] = 0.03
           cutin_list.append(ld)
         left_list.append(ld)
       else:
         ld = c.get_RadarState(0, 0)
-        if self._update_cutin_sticky(c):
+        if (not c.is_corner or c.dRel > 0.2) and self._update_cutin_sticky(c):
           ld['modelProb'] = 0.03
           cutin_list.append(ld)
         right_list.append(ld)

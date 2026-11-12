@@ -792,6 +792,7 @@ struct RadarState @0x9a185389d6fdd05f {
     aLead @5 :Float32;
     jLead @16 :Float32;
     score @17 :Float32;
+    radarSource @18 :Car.RadarData.RadarPoint.RadarSource;
   }
 
   # deprecated

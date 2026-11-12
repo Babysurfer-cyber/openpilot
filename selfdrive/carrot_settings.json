@@ -1827,6 +1827,22 @@
     },
     {
       "group": "시작",
+      "name": "EnableCornerRadar",
+      "title": "코너레이더 트랙(0)",
+      "descr": "0: 끄기\n1: CAN-FD 코너레이더 트랙 사용\n2: 트랙 + 기존 후측방 끼어들기 검출\n0x180~0x184 메시지가 감지된 차량에서 적용되며, 변경 후 재시작이 필요합니다.",
+      "egroup": "START",
+      "etitle": "Corner radar tracks(0)",
+      "edescr": "0: Off\n1: CAN-FD corner radar tracks\n2: Tracks + existing rear-corner cut-in detection\nRequires detected 0x180-0x184 messages. Restart after changing.",
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "启动设置",
+      "ctitle": "角雷达轨迹 (0)",
+      "cdescr": "0: 关闭\n1: CAN-FD 角雷达轨迹\n2: 轨迹 + 现有后角雷达切入检测\n需要检测到 0x180-0x184 消息。更改后请重启。"
+    },
+    {
+      "group": "시작",
       "name": "RadarLatFactor",
       "title": "끼어들기 감지 감도(0)",
       "descr": "높을수록 옆차선에서 들어오는 차량을 더 빨리 잡지만, 너무 높으면 옆차를 앞차로 볼 수 있음",

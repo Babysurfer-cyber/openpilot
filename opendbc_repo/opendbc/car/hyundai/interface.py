@@ -61,6 +61,10 @@ class CarInterface(CarInterfaceBase):
         print("##### Radar Group 1 detected (0x210)")
         ret.extFlags |= HyundaiExtFlags.RADAR_GROUP1.value
 
+      if all(fingerprint[CAN.ACAN].get(addr) == 32 for addr in range(0x180, 0x185)):
+        ret.extFlags |= HyundaiExtFlags.CORNER_RADAR_OBJECTS_180.value
+        print("##### Corner radar objects 0x180 group detected")
+
       # detect HDA2 with ADAS Driving ECU
       if hda2:
         print("$$$CANFD HDA2")

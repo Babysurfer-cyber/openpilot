@@ -1,5 +1,7 @@
 import math
+import os
 
+from opendbc import DBC_PATH
 from opendbc.can import CANParser
 from opendbc.car import Bus, structs
 from opendbc.car.interfaces import RadarInterfaceBase
@@ -15,6 +17,90 @@ RADAR_START_ADDR_CANFD1 = 0x210
 RADAR_MSG_COUNT1 = 16
 RADAR_START_ADDR_CANFD2 = 0x3A5 # Group 2, Group 1: 0x210 2개씩있어서 일단 보류.
 RADAR_MSG_COUNT2 = 32
+
+CORNER_OBJECT_180_START_ADDR = 0x180
+CORNER_OBJECT_180_MSG_COUNT = 5
+CORNER_OBJECT_180_SLOTS_PER_MSG = 2
+CORNER_OBJECT_180_TRACK_ID_OFFSET = 240
+CORNER_OBJECT_180_DBC = 'hyundai_canfd_corner_radar_180_generated'
+CORNER_OBJECT_180_STALE_FRAMES = 50  # update() runs at the 100 Hz car interface cadence
+CORNER_OBJECT_STABLE_TRACK_ID_START = 1000
+CORNER_OBJECT_IDENTITY_STALE_CYCLES = 3
+CORNER_OBJECT_IDENTITY_MAX_DREL_DELTA = 7.0
+CORNER_OBJECT_IDENTITY_MAX_YREL_DELTA = 3.2
+CORNER_OBJECT_HANDOFF_MAX_DREL_DELTA = 2.0
+CORNER_OBJECT_HANDOFF_MAX_YREL_DELTA = 1.0
+CORNER_OBJECT_HANDOFF_MAX_VREL_DELTA = 3.0
+
+
+class CornerObjectTrackIdManager:
+  def __init__(self):
+    self.next_track_id = CORNER_OBJECT_STABLE_TRACK_ID_START
+    self.source_cycles = {}
+    self.track_states = {}
+
+  def clear_source(self, source):
+    self.track_states = {key: state for key, state in self.track_states.items() if key[0] != source}
+    self.source_cycles.pop(source, None)
+
+  def get_track_ids(self, source, candidates):
+    cycle = self.source_cycles.get(source, 0) + 1
+    self.source_cycles[source] = cycle
+    previous = {
+      track_id: state for (state_source, track_id), state in self.track_states.items()
+      if state_source == source and cycle - state[5] <= CORNER_OBJECT_IDENTITY_STALE_CYCLES
+    }
+    used_track_ids = set()
+    assignments = {}
+    for slot_id, object_id, age, _, d_rel, y_rel, *_ in candidates:
+      matches = []
+      for track_id, state in previous.items():
+        previous_slot, previous_object_id, previous_age, previous_d_rel, previous_y_rel, _ = state
+        if track_id in used_track_ids or object_id != previous_object_id or age < previous_age:
+          continue
+        d_delta = abs(d_rel - previous_d_rel)
+        y_delta = abs(y_rel - previous_y_rel)
+        if d_delta <= CORNER_OBJECT_IDENTITY_MAX_DREL_DELTA and y_delta <= CORNER_OBJECT_IDENTITY_MAX_YREL_DELTA:
+          matches.append((previous_slot != slot_id, d_delta + y_delta * 1.5, track_id))
+      if matches:
+        track_id = min(matches)[2]
+      else:
+        track_id = self.next_track_id
+        self.next_track_id += 1
+      assignments[slot_id] = track_id
+      used_track_ids.add(track_id)
+      self.track_states[(source, track_id)] = (slot_id, object_id, age, d_rel, y_rel, cycle)
+
+    self.track_states = {
+      key: state for key, state in self.track_states.items()
+      if key[0] != source or cycle - state[5] <= CORNER_OBJECT_IDENTITY_STALE_CYCLES
+    }
+    return assignments
+
+
+def deduplicate_corner_candidates(candidates):
+  objects = []
+  for candidate in candidates:
+    _, object_id, age, quality, d_rel, y_rel, v_rel, *_ = candidate
+    duplicate_index = None
+    for index, previous in enumerate(objects):
+      if (object_id == previous[1] and
+          abs(d_rel - previous[4]) <= CORNER_OBJECT_HANDOFF_MAX_DREL_DELTA and
+          abs(y_rel - previous[5]) <= CORNER_OBJECT_HANDOFF_MAX_YREL_DELTA and
+          abs(v_rel - previous[6]) <= CORNER_OBJECT_HANDOFF_MAX_VREL_DELTA):
+        duplicate_index = index
+        break
+    if duplicate_index is None:
+      objects.append(candidate)
+    elif (age, quality) > (objects[duplicate_index][2], objects[duplicate_index][3]):
+      objects[duplicate_index] = candidate
+  return objects
+
+
+def corner_object_position_valid(d_rel, y_rel):
+  normal_object = 0.2 < d_rel < 180.0
+  clipped_side_object = 0.0 <= d_rel <= 0.2 and 1.4 <= abs(y_rel) <= 4.5
+  return (normal_object or clipped_side_object) and abs(y_rel) < 40.0
 
 # POC for parsing corner radars: https://github.com/commaai/openpilot/pull/24221/
 
@@ -47,6 +133,17 @@ def get_radar_can_parser_scc(CP):
   bus = CAN.CAM if CP.flags & HyundaiFlags.CAMERA_SCC else bus
   return CANParser(DBC[CP.carFingerprint][Bus.pt], messages, bus)
 
+
+def get_corner_object_180_can_parser(CP, enabled):
+  if not enabled or not (CP.flags & HyundaiFlags.CANFD):
+    return None
+  if not os.path.exists(os.path.join(DBC_PATH, f"{CORNER_OBJECT_180_DBC}.dbc")):
+    print(f"RadarInterface: missing {CORNER_OBJECT_180_DBC}.dbc, 0x180 corner radar disabled")
+    return None
+  messages = [(f"CORNER_RADAR_180_OBJECTS_{addr:x}", 33)
+              for addr in range(CORNER_OBJECT_180_START_ADDR, CORNER_OBJECT_180_START_ADDR + CORNER_OBJECT_180_MSG_COUNT)]
+  return CANParser(CORNER_OBJECT_180_DBC, messages, CanBus(CP).ACAN)
+
 class RadarInterface(RadarInterfaceBase):
   def __init__(self, CP):
     super().__init__(CP)
@@ -67,16 +164,24 @@ class RadarInterface(RadarInterfaceBase):
       
     self.params = Params()
     self.radar_tracks = self.params.get_int("EnableRadarTracks") >= 1
+    self.corner_object_180_tracks = (bool(CP.extFlags & HyundaiExtFlags.CORNER_RADAR_OBJECTS_180.value) and
+                                     self.params.get_int("EnableCornerRadar") > 0)
+    self.rcp_corner_objects_180 = get_corner_object_180_can_parser(CP, self.corner_object_180_tracks)
+    self.corner_only = CP.radarUnavailable and self.rcp_corner_objects_180 is not None
+    self.corner_object_track_ids = CornerObjectTrackIdManager()
+    self.corner_object_180_candidates = {}
+    self.corner_object_180_last_seen = {}
+    self.corner_object_180_point_ids = set()
     self.updated_tracks = set()
     self.updated_scc = set()
-    self.rcp_tracks = get_radar_can_parser(CP, self.radar_tracks, self.radar_start_addr, self.radar_msg_count)
+    self.rcp_tracks = get_radar_can_parser(CP, self.radar_tracks and not self.corner_only, self.radar_start_addr, self.radar_msg_count)
     self.rcp_scc = get_radar_can_parser_scc(CP)
     self.trigger_msg_scc = 416 if self.canfd else 0x420
 
     self.trigger_msg_tracks = self.radar_start_addr + self.radar_msg_count - 1
     self.track_id = 0
 
-    self.radar_off_can = CP.radarUnavailable
+    self.radar_off_can = CP.radarUnavailable and not self.corner_only
 
     self.vRel_last = 0
     self.dRel_last = 0
@@ -91,23 +196,32 @@ class RadarInterface(RadarInterfaceBase):
 
     self.pts[SCC_TID] = structs.RadarData.RadarPoint()
     self.pts[SCC_TID].trackId = SCC_TID
+    self.pts[SCC_TID].radarSource = "scc"
 
     self.frame = 0
 
 
   def update(self, can_strings):
     self.frame += 1
-    if self.radar_off_can or (self.rcp_tracks is None and self.rcp_scc is None):
+    if self.radar_off_can or (self.rcp_tracks is None and self.rcp_scc is None and self.rcp_corner_objects_180 is None):
       return super().update(None)
+
+    if self.rcp_corner_objects_180 is not None:
+      updated_corner = self.rcp_corner_objects_180.update(can_strings)
+      self._update_corner_objects_180(updated_corner)
 
     if self.rcp_scc is not None:
       vls_s = self.rcp_scc.update(can_strings)
       self.updated_scc.update(vls_s)
-      if not self.radar_tracks and self.frame % 5 == 0:
-        self._update_scc(self.updated_scc)
+      if (not self.radar_tracks or self.corner_only) and self.frame % 5 == 0:
+        if not self.corner_only or self.rcp_scc.can_valid:
+          self._update_scc(self.updated_scc)
+        else:
+          self._clear_point(SCC_TID)
         self.updated_scc.clear()
         ret = structs.RadarData()
-        if not self.rcp_scc.can_valid:
+        if ((not self.corner_only and not self.rcp_scc.can_valid) or
+            (self.rcp_corner_objects_180 is not None and not self.rcp_corner_objects_180.can_valid)):
           ret.errors.canError = True
         ret.points = list(self.pts.values())
         return ret
@@ -120,12 +234,100 @@ class RadarInterface(RadarInterfaceBase):
         self.updated_scc.clear()
         self.updated_tracks.clear()
         ret = structs.RadarData()
-        if not self.rcp_tracks.can_valid:
+        if (not self.rcp_tracks.can_valid or
+            (self.rcp_corner_objects_180 is not None and not self.rcp_corner_objects_180.can_valid)):
           ret.errors.canError = True
         ret.points = list(self.pts.values())
         return ret
 
     return None      
+
+  def update_carrot(self, v_ego, a_ego, rcv_time, can_packets):
+    ret = super().update_carrot(v_ego, a_ego, rcv_time, can_packets)
+    if ret is not None:
+      # RadarData.points is copied when update() builds the result. Include this
+      # publication's filtered corner dynamics after the base updates MyTrack.
+      for point in ret.points:
+        if point.trackId in self.corner_object_180_point_ids:
+          filtered = self.pts[point.trackId]
+          point.aLead = filtered.aLead
+          point.jLead = filtered.jLead
+          point.yRel = filtered.yRel
+          point.yvRel = filtered.yvRel
+    return ret
+
+  def _update_corner_objects_180(self, updated_messages):
+    if self.rcp_corner_objects_180 is None:
+      return
+
+    changed = False
+    for addr in range(CORNER_OBJECT_180_START_ADDR, CORNER_OBJECT_180_START_ADDR + CORNER_OBJECT_180_MSG_COUNT):
+      if addr not in updated_messages:
+        continue
+      changed = True
+      self.corner_object_180_last_seen[addr] = self.frame
+      msg = self.rcp_corner_objects_180.vl[f"CORNER_RADAR_180_OBJECTS_{addr:x}"]
+      candidates = []
+      for slot_index in range(CORNER_OBJECT_180_SLOTS_PER_MSG):
+        prefix = f"SLOT{slot_index + 1}_"
+        d_rel = msg[f"{prefix}REL_POS_X"]
+        y_rel = msg[f"{prefix}REL_POS_Y"]
+        v_rel = msg[f"{prefix}REL_VEL_X"]
+        quality = int(msg[f"{prefix}QUAL_LEVEL"])
+        if quality > 0 and corner_object_position_valid(d_rel, y_rel) and v_rel > -99.0:
+          slot_id = CORNER_OBJECT_180_TRACK_ID_OFFSET + (addr - CORNER_OBJECT_180_START_ADDR) * CORNER_OBJECT_180_SLOTS_PER_MSG + slot_index
+          candidates.append((slot_id, int(msg[f"{prefix}OBJECT_ID"]), int(msg[f"{prefix}AGE"]), quality,
+                             d_rel, y_rel, v_rel, msg[f"{prefix}REL_VEL_Y"], msg[f"{prefix}REL_ACCEL_X"]))
+      self.corner_object_180_candidates[addr] = candidates
+
+    # Expire each CAN message independently. Another slot's traffic must never
+    # refresh a missing message's cached objects.
+    for addr, last_seen in list(self.corner_object_180_last_seen.items()):
+      if self.frame - last_seen > CORNER_OBJECT_180_STALE_FRAMES:
+        changed = True
+        self.corner_object_180_last_seen.pop(addr)
+        self.corner_object_180_candidates.pop(addr, None)
+
+    if changed:
+      candidates = [candidate for message in self.corner_object_180_candidates.values() for candidate in message]
+      self._apply_corner_objects("corner180", candidates)
+
+  def _apply_corner_objects(self, source, candidates):
+    objects = deduplicate_corner_candidates(candidates)
+    track_ids = self.corner_object_track_ids.get_track_ids(source, objects)
+    if not objects:
+      self.corner_object_track_ids.clear_source(source)
+    # Keep one point per stable identity. Unmeasured aliases in former CAN slots
+    # would reset MyTrack's filter after an object moves to a new slot.
+    for track_id in self.corner_object_180_point_ids:
+      self.pts.pop(track_id, None)
+    self.corner_object_180_point_ids = set()
+    for slot_id, _, _, _, d_rel, y_rel, v_rel, yv_rel, a_rel in objects:
+      track_id = track_ids[slot_id]
+      point = structs.RadarData.RadarPoint()
+      point.trackId = track_id
+      point.radarSource = source
+      point.measured = True
+      point.dRel = d_rel
+      point.yRel = y_rel
+      point.vRel = v_rel
+      point.vLead = v_rel + self.v_ego
+      point.yvRel = yv_rel
+      point.aRel = a_rel
+      self.pts[track_id] = point
+      self.corner_object_180_point_ids.add(track_id)
+
+  def _clear_point(self, track_id):
+    point = self.pts[track_id]
+    point.measured = False
+    point.dRel = 0.0
+    point.yRel = 0.0
+    point.vRel = 0.0
+    point.vLead = self.v_ego
+    point.aRel = float('nan')
+    point.yvRel = 0.0
+    point.aLead = 0.0
+    point.jLead = 0.0
 
   def _update(self, updated_messages):
 
