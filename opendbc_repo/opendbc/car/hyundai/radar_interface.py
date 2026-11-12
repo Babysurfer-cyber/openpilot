@@ -267,8 +267,6 @@ class RadarInterface(RadarInterfaceBase):
         ret = structs.RadarData()
         # 코너 레이더 CAN Valid 에러 처리 추가
         can_error = not self.rcp_tracks.can_valid
-        if self.rcp_corner_235 is not None and not self.rcp_corner_235.can_valid: can_error = True
-        if self.rcp_corner_180 is not None and not self.rcp_corner_180.can_valid: can_error = True
         ret.errors.canError = can_error
         
         # 👇 리턴 수정 (measured가 True인 것만 반환)
