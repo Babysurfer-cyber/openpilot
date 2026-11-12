@@ -665,14 +665,14 @@ class VCruiseCarrot:
 
     if self._paddle_mode > 0 and button_type in [ButtonType.paddleLeft, ButtonType.paddleRight]:
       if long_pressed:
+        self._paddle_decel_active = False
+      else:
         if self._paddle_mode == 3:
           self.carrot_cruise_active = True
         else:
           self._cruise_control(-2, -1, "Cruise off & Ready (paddle)")
           if self._paddle_mode == 2:
             self._paddle_decel_active = True
-      else:
-        pass
 
     elif self._paddle_decel_active:
       if not CC.enabled:
