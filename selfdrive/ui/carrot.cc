@@ -2391,34 +2391,7 @@ public:
         // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
         // ▼ [추가] 앞차 인식(Lead Vehicle) 및 크루즈 활성화 상태 확인
-        auto lead_one = (*(s->sm))["radarState"].getRadarState().getLeadOne();
-        bool has_lead = lead_one.getStatus();
-
-        // ==========================================================
-        // ▼ [수정] 전방 코너 레이더 좌/우 가로 거리 표시 (형식: 0.0m / 0.0m) ▼
-        // ==========================================================
-        float front_left_long = car_state_hud.getLeftLongDist();
-        float front_left_lat  = car_state_hud.getLeftLatDist();
-        float front_right_long = car_state_hud.getRightLongDist();
-        float front_right_lat  = car_state_hud.getRightLatDist();
-
-        // 유효 조건: 세로 거리가 0.01 ~ 30.0m 일 때만 정상 감지로 판정하여 가로 거리 출력, 그 외는 0.0
-        float disp_left_lat = (front_left_long > 0.01f && front_left_long < 50.0f) ? std::fabs(front_left_lat) : 0.0f;
-        float disp_right_lat = (front_right_long > 0.01f && front_right_long < 50.0f) ? std::fabs(front_right_lat) : 0.0f;
-		
-        // 텍스트 정렬: HUD 박스 정중앙 정렬
-        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        char corner_str[128];
-
-        // "0.0m / 0.0m" 포맷 
-        sprintf(corner_str, "%.1fm / %.1fm", disp_left_lat, disp_right_lat);
-
-        // 글씨 크기 32의 1.5배인 48. 위치는 HUD 배경 박스의 가로 중앙(bx + 117), 상단(by - 110)
-        ui_draw_text(s, bx + 117, by - 110, corner_str, 48, COLOR_WHITE, BOLD);
-        
-        // 텍스트 정렬 원상복구
-        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        // ==========================================================
+        bool has_lead = (*(s->sm))["radarState"].getRadarState().getLeadOne().getStatus();
 
         // 🎯 [수정] 크루즈가 켜져 있고(longActive) + 앞차를 인식했을 때만 녹색 테두리!
         NVGcolor stroke_color = (has_lead && longActive) ? COLOR_GREY : COLOR_GREY;
