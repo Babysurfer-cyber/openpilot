@@ -420,7 +420,7 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
     CS.paddle_timer = 0
   
   # 약 0.5초~0.8초(40프레임) 이상 유지 시 롱클릭으로 간주
-  is_paddle_long_pressed = (CS.paddle_timer > 50)
+  is_paddle_long_pressed = (CS.paddle_timer > 30)
   # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   # ▼▼▼ 2. 롱클릭일 때만 크루즈(방어막)를 해제하여 순정 회생제동이 작동하게 함 ▼▼▼
