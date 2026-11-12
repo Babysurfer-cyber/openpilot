@@ -409,7 +409,22 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_last, accel, stopping, g
   
   if CS.scc_control is None:
     return None
-  enabled = (enabled or CS.softHoldActive > 0) and CS.paddle_button_prev == 0
+
+  # ▼▼▼ 1. 패들 타이머(롱클릭 감지) 로직 추가 ▼▼▼
+  if not hasattr(CS, 'paddle_timer'):
+    CS.paddle_timer = 0
+
+  if CS.paddle_button_prev != 0:  # 패들이 눌려있는 동안 타이머 증가
+    CS.paddle_timer += 1
+  else:                           # 손을 떼면 즉시 초기화
+    CS.paddle_timer = 0
+  
+  # 약 0.5초~0.8초(40프레임) 이상 유지 시 롱클릭으로 간주
+  is_paddle_long_pressed = (CS.paddle_timer > 40)
+  # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+  # ▼▼▼ 2. 롱클릭일 때만 크루즈(방어막)를 해제하여 순정 회생제동이 작동하게 함 ▼▼▼
+  enabled = (enabled or CS.softHoldActive > 0) and not is_paddle_long_pressed
   
   acc_mode = 0 if not enabled else (2 if gas_override else 1)
 
