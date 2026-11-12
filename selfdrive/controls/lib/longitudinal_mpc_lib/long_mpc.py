@@ -6,6 +6,7 @@ from cereal import log
 from opendbc.car.interfaces import ACCEL_MIN
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.controls.lib.longitudinal_cutout import cutout_obstacle_relief
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
@@ -361,7 +362,8 @@ class LongitudinalMpc:
     self.cruise_min_a = min_a
     self.max_a = max_a
 
-  def update(self, carrot, reset_state, radarstate, v_cruise, x, v, a, j, personality=log.LongitudinalPersonality.standard):
+  def update(self, carrot, reset_state, radarstate, v_cruise, x, v, a, j,
+             personality=log.LongitudinalPersonality.standard, cutout_relief_enabled=False):
     v_ego = self.x0[1]
     a_ego = self.x0[2]
     t_follow = carrot.get_T_FOLLOW(personality, v_ego, a_ego)
@@ -417,7 +419,12 @@ class LongitudinalMpc:
         stop_x = cruise_obstacle[0] - adjust_dist
       x2 = stop_x * np.ones(N+1) + adjust_dist
 
-      x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle, x2])
+      lead_0_follow_obstacle = lead_0_obstacle
+      if cutout_relief_enabled and not reset_state:
+        lead_0_follow_obstacle = lead_0_obstacle + cutout_obstacle_relief(
+          radarstate.leadOne, v_ego, T_IDXS, t_follow, stop_distance,
+        )
+      x_obstacles = np.column_stack([lead_0_follow_obstacle, lead_1_obstacle, cruise_obstacle, x2])
       self.source = SOURCES[np.argmin(x_obstacles[0])]
 
       if v_cruise == 0 and self.source == 'cruise':

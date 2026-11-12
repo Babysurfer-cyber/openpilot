@@ -2201,7 +2201,9 @@ public:
               y_rel = l.getYRel();
 
               bool radar = l.getRadar();
-              const bool corner = l.getRadarSource() == cereal::RadarData::RadarPoint::RadarSource::CORNER180;
+              const auto source = l.getRadarSource();
+              const bool corner = source == cereal::RadarData::RadarPoint::RadarSource::CORNER180 ||
+                                  source == cereal::RadarData::RadarPoint::RadarSource::CORNER235;
               model_prob = l.getModelProb();
               //score = l.getScore();
 

@@ -1,5 +1,8 @@
 # 현대 CAN-FD 0x180 코너레이더 트랙
 
+> 아래는 최초 0x180 이식 설명이다. 0x235 자동 감지와 원본 cut-in/cut-out·정지차
+> 판정을 추가한 현재 동작과 설정은 [현대 레이더 궤적 처리](hyundai_radar_motion.md)를 따른다.
+
 `ajouatom/openpilot`의 `carrot-wip` 커밋
 `162da468cc4157f9b18daa4f6ac85438f51719ef`에서 0x180 코너레이더 물체
 디코딩과 추적을 `ms-xy-radar3`에 이식했다.

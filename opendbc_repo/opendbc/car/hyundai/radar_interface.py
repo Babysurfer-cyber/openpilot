@@ -8,7 +8,7 @@ from opendbc.car.interfaces import RadarInterfaceBase
 from opendbc.car.hyundai.values import DBC, HyundaiFlags, HyundaiExtFlags
 from openpilot.common.params import Params
 from opendbc.car.hyundai.hyundaicanfd import CanBus
-from openpilot.common.filter_simple import MyMovingAverage
+from opendbc.car.hyundai.radar_tracks import MyTrack
 
 SCC_TID = 0
 RADAR_START_ADDR = 0x500
@@ -18,6 +18,11 @@ RADAR_MSG_COUNT1 = 16
 RADAR_START_ADDR_CANFD2 = 0x3A5 # Group 2, Group 1: 0x210 2개씩있어서 일단 보류.
 RADAR_MSG_COUNT2 = 32
 
+CORNER_OBJECT_235_START_ADDR = 0x235
+CORNER_OBJECT_235_MSG_COUNT = 20
+CORNER_OBJECT_235_TRACK_ID_OFFSET = 200
+CORNER_OBJECT_235_DBC = 'hyundai_canfd_corner_radar_235_generated'
+CORNER_OBJECT_235_STALE_FRAMES = 50
 CORNER_OBJECT_180_START_ADDR = 0x180
 CORNER_OBJECT_180_MSG_COUNT = 5
 CORNER_OBJECT_180_SLOTS_PER_MSG = 2
@@ -144,6 +149,20 @@ def get_corner_object_180_can_parser(CP, enabled):
               for addr in range(CORNER_OBJECT_180_START_ADDR, CORNER_OBJECT_180_START_ADDR + CORNER_OBJECT_180_MSG_COUNT)]
   return CANParser(CORNER_OBJECT_180_DBC, messages, CanBus(CP).ACAN)
 
+
+def get_corner_object_can_parser(CP, enabled):
+  if not enabled or not (CP.flags & HyundaiFlags.CANFD):
+    return None
+  if not os.path.exists(os.path.join(DBC_PATH, f"{CORNER_OBJECT_235_DBC}.dbc")):
+    print(f"RadarInterface: missing {CORNER_OBJECT_235_DBC}.dbc, 0x235 corner radar disabled")
+    return None
+  messages = [(f"CORNER_RADAR_235_OBJECTS_{addr:x}", 33)
+              for addr in range(CORNER_OBJECT_235_START_ADDR, CORNER_OBJECT_235_START_ADDR + CORNER_OBJECT_235_MSG_COUNT)]
+  return CANParser(CORNER_OBJECT_235_DBC, messages, CanBus(CP).ACAN)
+
+
+get_corner_object_235_can_parser = get_corner_object_can_parser
+
 class RadarInterface(RadarInterfaceBase):
   def __init__(self, CP):
     super().__init__(CP)
@@ -166,9 +185,15 @@ class RadarInterface(RadarInterfaceBase):
     self.radar_tracks = self.params.get_int("EnableRadarTracks") >= 1
     self.corner_object_180_tracks = (bool(CP.extFlags & HyundaiExtFlags.CORNER_RADAR_OBJECTS_180.value) and
                                      self.params.get_int("EnableCornerRadar") > 0)
+    self.corner_object_tracks = (bool(CP.extFlags & HyundaiExtFlags.CORNER_RADAR_OBJECTS_235.value) and
+                                 self.params.get_int("EnableCornerRadar") > 0)
+    self.rcp_corner_objects = get_corner_object_can_parser(CP, self.corner_object_tracks)
     self.rcp_corner_objects_180 = get_corner_object_180_can_parser(CP, self.corner_object_180_tracks)
-    self.corner_only = CP.radarUnavailable and self.rcp_corner_objects_180 is not None
+    self.corner_only = CP.radarUnavailable and (self.rcp_corner_objects is not None or self.rcp_corner_objects_180 is not None)
     self.corner_object_track_ids = CornerObjectTrackIdManager()
+    self.corner_object_235_candidates = {}
+    self.corner_object_235_last_seen = {}
+    self.corner_object_235_point_ids = set()
     self.corner_object_180_candidates = {}
     self.corner_object_180_last_seen = {}
     self.corner_object_180_point_ids = set()
@@ -203,9 +228,12 @@ class RadarInterface(RadarInterfaceBase):
 
   def update(self, can_strings):
     self.frame += 1
-    if self.radar_off_can or (self.rcp_tracks is None and self.rcp_scc is None and self.rcp_corner_objects_180 is None):
+    if self.radar_off_can or (self.rcp_tracks is None and self.rcp_scc is None and self.rcp_corner_objects is None and self.rcp_corner_objects_180 is None):
       return super().update(None)
 
+    if self.rcp_corner_objects is not None:
+      updated_corner = self.rcp_corner_objects.update(can_strings)
+      self._update_corner_objects(updated_corner)
     if self.rcp_corner_objects_180 is not None:
       updated_corner = self.rcp_corner_objects_180.update(can_strings)
       self._update_corner_objects_180(updated_corner)
@@ -221,6 +249,7 @@ class RadarInterface(RadarInterfaceBase):
         self.updated_scc.clear()
         ret = structs.RadarData()
         if ((not self.corner_only and not self.rcp_scc.can_valid) or
+            (self.rcp_corner_objects is not None and not self.rcp_corner_objects.can_valid) or
             (self.rcp_corner_objects_180 is not None and not self.rcp_corner_objects_180.can_valid)):
           ret.errors.canError = True
         ret.points = list(self.pts.values())
@@ -235,6 +264,7 @@ class RadarInterface(RadarInterfaceBase):
         self.updated_tracks.clear()
         ret = structs.RadarData()
         if (not self.rcp_tracks.can_valid or
+            (self.rcp_corner_objects is not None and not self.rcp_corner_objects.can_valid) or
             (self.rcp_corner_objects_180 is not None and not self.rcp_corner_objects_180.can_valid)):
           ret.errors.canError = True
         ret.points = list(self.pts.values())
@@ -243,18 +273,75 @@ class RadarInterface(RadarInterfaceBase):
     return None      
 
   def update_carrot(self, v_ego, a_ego, rcv_time, can_packets):
-    ret = super().update_carrot(v_ego, a_ego, rcv_time, can_packets)
+    if self.rcp_corner_objects is None and self.rcp_corner_objects_180 is None:
+      return super().update_carrot(v_ego, a_ego, rcv_time, can_packets)
+    # Use the upstream identified-track observer locally to Hyundai. The old
+    # generic filter reset a stable track's history during real braking, which
+    # destroys the stationary/cut-out evidence consumed by radar_motion.
+    self.v_ego_hist.append(v_ego)
+    self.v_ego = self.v_ego_hist[0]
+    self.a_ego_hist.append(a_ego)
+    self.a_ego = self.a_ego_hist[0]
+    ret = self.update(can_packets)
     if ret is not None:
-      # RadarData.points is copied when update() builds the result. Include this
-      # publication's filtered corner dynamics after the base updates MyTrack.
+      if not self.init_done:
+        self.estimate_dt(rcv_time)
+        return None
+      new_tracks = {}
+      for point in self.pts.values():
+        track_id = point.trackId
+        track = self.tracks.get(track_id)
+        if track is None:
+          track = MyTrack(track_id, point, self.dt)
+        track.update(point, self.a_ego)
+        track.write_acceleration(point)
+        point.yRel = float(track.yRel)
+        point.yvRel = float(track.yvRel)
+        new_tracks[track_id] = track
+      self.tracks = new_tracks
+      # update() has already copied the points. Publish this observation's
+      # dynamics with its current range and retain its native sensor metadata.
       for point in ret.points:
-        if point.trackId in self.corner_object_180_point_ids:
-          filtered = self.pts[point.trackId]
-          point.aLead = filtered.aLead
-          point.jLead = filtered.jLead
-          point.yRel = filtered.yRel
-          point.yvRel = filtered.yvRel
+        track = self.tracks.get(point.trackId)
+        if track is not None:
+          track.write_acceleration(point)
+          point.yRel = float(track.yRel)
+          point.yvRel = float(track.yvRel)
     return ret
+
+  def _update_corner_objects(self, updated_messages):
+    if self.rcp_corner_objects is None:
+      return
+
+    changed = False
+    for addr in range(CORNER_OBJECT_235_START_ADDR, CORNER_OBJECT_235_START_ADDR + CORNER_OBJECT_235_MSG_COUNT):
+      if addr not in updated_messages:
+        continue
+      changed = True
+      self.corner_object_235_last_seen[addr] = self.frame
+      msg = self.rcp_corner_objects.vl[f"CORNER_RADAR_235_OBJECTS_{addr:x}"]
+      d_rel = msg["OBJ_REL_POS_X"]
+      y_rel = msg["OBJ_REL_POS_Y"]
+      v_rel = msg["OBJ_REL_VEL_X"]
+      quality = int(msg["OBJ_QUAL_LEVEL"])
+      candidates = []
+      if quality > 0 and corner_object_position_valid(d_rel, y_rel) and v_rel > -99.0:
+        slot_id = CORNER_OBJECT_235_TRACK_ID_OFFSET + addr - CORNER_OBJECT_235_START_ADDR
+        candidates.append((slot_id, int(msg["OBJ_OBJECT_ID"]), int(msg["OBJ_AGE"]), quality,
+                           d_rel, y_rel, v_rel, msg["OBJ_REL_VEL_Y"], msg["OBJ_REL_ACCEL_X"]))
+      self.corner_object_235_candidates[addr] = candidates
+
+    for addr, last_seen in list(self.corner_object_235_last_seen.items()):
+      if self.frame - last_seen > CORNER_OBJECT_235_STALE_FRAMES:
+        changed = True
+        self.corner_object_235_last_seen.pop(addr)
+        self.corner_object_235_candidates.pop(addr, None)
+
+    if changed:
+      candidates = [candidate for message in self.corner_object_235_candidates.values() for candidate in message]
+      self._apply_corner_objects("corner235", candidates)
+
+  _update_corner_objects_235 = _update_corner_objects
 
   def _update_corner_objects_180(self, updated_messages):
     if self.rcp_corner_objects_180 is None:
@@ -299,9 +386,11 @@ class RadarInterface(RadarInterfaceBase):
       self.corner_object_track_ids.clear_source(source)
     # Keep one point per stable identity. Unmeasured aliases in former CAN slots
     # would reset MyTrack's filter after an object moves to a new slot.
-    for track_id in self.corner_object_180_point_ids:
+    point_ids_name = "corner_object_235_point_ids" if source == "corner235" else "corner_object_180_point_ids"
+    point_ids = getattr(self, point_ids_name)
+    for track_id in point_ids:
       self.pts.pop(track_id, None)
-    self.corner_object_180_point_ids = set()
+    point_ids.clear()
     for slot_id, _, _, _, d_rel, y_rel, v_rel, yv_rel, a_rel in objects:
       track_id = track_ids[slot_id]
       point = structs.RadarData.RadarPoint()
@@ -315,7 +404,7 @@ class RadarInterface(RadarInterfaceBase):
       point.yvRel = yv_rel
       point.aRel = a_rel
       self.pts[track_id] = point
-      self.corner_object_180_point_ids.add(track_id)
+      point_ids.add(track_id)
 
   def _clear_point(self, track_id):
     point = self.pts[track_id]
@@ -328,6 +417,7 @@ class RadarInterface(RadarInterfaceBase):
     point.yvRel = 0.0
     point.aLead = 0.0
     point.jLead = 0.0
+    point.trackState = 0
 
   def _update(self, updated_messages):
 
@@ -338,12 +428,16 @@ class RadarInterface(RadarInterfaceBase):
 
       if self.radar_group1:
         valid = msg['VALID_CNT1'] > 10
+        track_state = 0  # VALID_CNT is an age counter, not an object state.
       elif self.canfd:
         valid = msg['VALID_CNT'] > 10
+        track_state = int(msg['VALID'])
       else:
         valid = msg['STATE'] in (3, 4)
+        track_state = int(msg['STATE'])
 
       self.pts[t_id].measured = bool(valid)
+      self.pts[t_id].trackState = track_state
       if not valid:
         self.pts[t_id].dRel = 0
         self.pts[t_id].yRel = 0
@@ -382,6 +476,7 @@ class RadarInterface(RadarInterfaceBase):
 
         valid = msg['VALID_CNT2'] > 10
         self.pts[t_id].measured = bool(valid)
+        self.pts[t_id].trackState = 0
         if not valid:
           self.pts[t_id].dRel = 0
           self.pts[t_id].yRel = 0

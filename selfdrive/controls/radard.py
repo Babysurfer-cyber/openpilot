@@ -1051,12 +1051,19 @@ def main() -> None:
   CP = messaging.log_from_bytes(Params().get("CarParams", block=True), car.CarParams)
   cloudlog.info("radard got CarParams")
 
-  # *** setup messaging
-  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='modelV2')
-  #sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'])
+  # Supported corner-object streams use the original Carrot motion pipeline.
+  # Other configurations retain this branch's existing lead-selection policy.
+  from openpilot.selfdrive.carrot.radar.radard_dpath import DPathRadarD, corner_radar_enabled
+  use_dpath = corner_radar_enabled(CP, Params().get_int("EnableCornerRadar"))
+  if use_dpath:
+    sm = messaging.SubMaster(
+      ['modelV2', 'carState', 'liveTracks', 'livePose'], poll='modelV2',
+    )
+    RD = DPathRadarD(CP)
+  else:
+    sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='modelV2')
+    RD = RadarD(CP.radarDelay)
   pm = messaging.PubMaster(['radarState'])
-
-  RD = RadarD(CP.radarDelay)
 
   while 1:
     sm.update()

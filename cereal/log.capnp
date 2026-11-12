@@ -771,6 +771,7 @@ struct RadarState @0x9a185389d6fdd05f {
   leadsLeft2 @19 : List(LeadData);
   leadsRight2 @20 : List(LeadData);
   leadsCutIn @21 : List(LeadData);
+  leadCutInRisk @22 :LeadData;
 
   struct LeadData {
     dRel @0 :Float32;
@@ -793,6 +794,8 @@ struct RadarState @0x9a185389d6fdd05f {
     jLead @16 :Float32;
     score @17 :Float32;
     radarSource @18 :Car.RadarData.RadarPoint.RadarSource;
+    cutOutTime @19 :Float32; # predicted body clearance in seconds; 0 = inactive
+    cutOutConfidence @20 :Float32; # confirmed future headway relief, 0..1
   }
 
   # deprecated

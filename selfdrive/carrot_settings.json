@@ -1829,17 +1829,17 @@
       "group": "시작",
       "name": "EnableCornerRadar",
       "title": "코너레이더 트랙(0)",
-      "descr": "0: 끄기\n1: CAN-FD 코너레이더 트랙 사용\n2: 트랙 + 기존 후측방 끼어들기 검출\n0x180~0x184 메시지가 감지된 차량에서 적용되며, 변경 후 재시작이 필요합니다.",
+      "descr": "0: 기존 레이더 처리\n1: 지원 코너레이더의 원본 궤적·끼어들기·정지차량 처리\n2: 지원 차량은 1과 동일, 미지원 차량은 기존 거리 기반 끼어들기 처리\n0x180 또는 0x235 코너레이더가 감지된 CAN-FD 차량에서 원본 처리를 사용합니다. 레이더트랙 설정과 함께 동작하며, 변경 후 재시작이 필요합니다.",
       "egroup": "START",
       "etitle": "Corner radar tracks(0)",
-      "edescr": "0: Off\n1: CAN-FD corner radar tracks\n2: Tracks + existing rear-corner cut-in detection\nRequires detected 0x180-0x184 messages. Restart after changing.",
+      "edescr": "0: Existing radar processing\n1: Original trajectory, cut-in/out and stationary-object processing\n2: Same as 1 on supported cars; existing distance-based cut-in handling on unsupported cars\nOriginal processing requires a detected 0x180 or 0x235 corner-radar stream on CAN-FD. Uses the radar-track setting. Restart after changing.",
       "min": 0,
       "max": 2,
       "default": 0,
       "unit": 1,
       "cgroup": "启动设置",
       "ctitle": "角雷达轨迹 (0)",
-      "cdescr": "0: 关闭\n1: CAN-FD 角雷达轨迹\n2: 轨迹 + 现有后角雷达切入检测\n需要检测到 0x180-0x184 消息。更改后请重启。"
+      "cdescr": "0: 原有雷达处理\n1: 原版轨迹、切入切出和静止目标处理\n2: 支持的车辆同 1；其他车辆使用原有距离切入处理\nCAN-FD 车辆需检测到 0x180 或 0x235 角雷达流。与雷达轨迹设置共同工作。更改后请重启。"
     },
     {
       "group": "시작",

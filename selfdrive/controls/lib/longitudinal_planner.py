@@ -3,6 +3,7 @@ import math
 import numpy as np
 
 import cereal.messaging as messaging
+from cereal import log
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -11,6 +12,10 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, N
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
+from openpilot.selfdrive.controls.lib.cutin_predecel import (
+  apply_cutin_predecel_accel_limit,
+  get_cutin_predecel_accel_limit,
+)
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_speed_error, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
@@ -254,14 +259,31 @@ class LongitudinalPlanner:
 
     if force_slow_decel:
       v_cruise = 0.0
+    radar_state_current = sm.all_checks(service_list=['radarState'])
+    cutin_predecel_limit = (
+      get_cutin_predecel_accel_limit(sm['radarState'])
+      if radar_state_current and not reset_state and not sm['carState'].gasPressed
+      else None
+    )
     # clip limits, cannot init MPC outside of bounds
     accel_limits_turns[0] = min(accel_limits_turns[0], self.a_desired + 0.05)
-    accel_limits_turns[1] = max(accel_limits_turns[1], self.a_desired - 0.05)
+    accel_limits_turns[1] = apply_cutin_predecel_accel_limit(
+      accel_limits_turns[1], self.a_desired, cutin_predecel_limit,
+    )
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality, jerk_factor = carrot.jerk_factor_apply, a_change_cost_starting = carrot.aChangeCostStarting)
     self.mpc.set_accel_limits(accel_limits_turns[0], accel_limits_turns[1])
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(carrot, reset_state, sm['radarState'], v_cruise, x, v, a, j, personality=sm['selfdriveState'].personality)
+    self.mpc.update(
+      carrot, reset_state, sm['radarState'], v_cruise, x, v, a, j,
+      personality=sm['selfdriveState'].personality,
+      cutout_relief_enabled=(
+        radar_state_current and not reset_state and not sm['carState'].gasPressed
+        and not force_slow_decel and not self.output_should_stop
+        and sm['modelV2'].meta.laneChangeState == log.LaneChangeState.off
+        and not getattr(carrot, 'lane_change_active', False)
+      ),
+    )
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
