@@ -871,7 +871,7 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   startToggles->addItem(selectModelBtn);
 
   startToggles->addItem(new CValueControl("HyundaiCameraSCC", tr("HYUNDAI: CAMERA SCC"), tr("1:Connect the SCC's CAN line to CAM, 2:Sync Cruise state, 3:StockLong"), 0, 3, 1));
-  const QString blinkerTestDescription = tr("0: 종료, 1: 왼쪽, 2: 오른쪽. 다음 차량 인식/주행 프로세스 시작 때 시험 모드로 진입합니다. P단·브레이크·주차브레이크·정차 상태에서만 시험하며, 시험 모드에서는 오픈파일럿 주행 제어가 차단됩니다. 0으로 종료한 뒤 주행 프로세스를 다시 시작해야 정상 모드로 복귀합니다. 주차보조 경고가 발생할 수 있으며 ECU 복구 후 점등 유지는 실차 검증 전입니다.");
+  const QString blinkerTestDescription = tr("0: 종료, 1: 왼쪽, 2: 오른쪽. 실행 중 재부팅 없이 변경할 수 있습니다. P단·브레이크·주차브레이크·정차·오픈파일럿 비활성 상태에서만 시작하며, 주행 중 선택하면 조건이 갖춰질 때까지 대기합니다. 시험 중에는 오픈파일럿 주행 제어가 차단됩니다. 0으로 종료하면 주차보조 ECU와 Panda 안전 모드 복귀를 확인한 뒤 일반 제어를 다시 허용합니다. 복구 미확인 시 제어 차단을 유지합니다. 방향 변경이나 재시도 전에는 0을 선택하세요. 주차보조 경고가 발생할 수 있으며 ECU 복구 후 점등 유지는 실차 검증 전입니다.");
   auto *blinkerTest = new CValueControl("HyundaiBlinkerTest", tr("EV6 깜빡이 인계 시험 (정차 전용)"), blinkerTestDescription, 0, 2, 1);
   startToggles->addItem(blinkerTest);
   connect(uiState(), &UIState::uiUpdate, blinkerTest, [blinkerTest, blinkerTestDescription, updateCount = UI_FREQ - 1](const UIState &) mutable {

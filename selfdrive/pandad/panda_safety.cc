@@ -12,12 +12,68 @@ void PandaSafety::configureSafetyMode() {
     if (!car_params.empty()) {
       LOGW("got %lu bytes CarParams", car_params.size());
       setSafetyMode(car_params);
+      cacheNormalSafetyMode(car_params);
+      // A request left over from an earlier card/pandad instance is not a new
+      // authorization to pause an ECU. A new session must request a new token.
+      blinker_safety_transition_.reset(params_.get("HyundaiBlinkerTestSafetyRequest"));
+      params_.remove("HyundaiBlinkerTestSafetyAck");
       safety_configured_ = true;
     }
+  } else if (is_onroad && safety_configured_) {
+    configureBlinkerTest();
   } else if (!is_onroad) {
     initialized_ = false;
     safety_configured_ = false;
     log_once_ = false;
+    normal_car_params_.clear();
+    blinker_test_supported_ = false;
+    normal_hyundai_safety_param_ = 0U;
+    blinker_safety_transition_.reset(params_.get("HyundaiBlinkerTestSafetyRequest"));
+    if (!params_.get("HyundaiBlinkerTestSafetyAck").empty()) params_.remove("HyundaiBlinkerTestSafetyAck");
+  }
+}
+
+void PandaSafety::cacheNormalSafetyMode(const std::string &params_string) {
+  // Preserve the exact original configuration, including all alternative
+  // experiences and every other Panda's safety entry. Never rewrite CarParams.
+  normal_car_params_ = params_string;
+  AlignedBuffer aligned_buf;
+  capnp::FlatArrayMessageReader cmsg(aligned_buf.align(params_string.data(), params_string.size()));
+  auto cp = cmsg.getRoot<cereal::CarParams>();
+  auto configs = cp.getSafetyConfigs();
+  HyundaiBlinkerSafetyEligibility eligibility;
+  eligibility.brand = cp.getBrand().cStr();
+  eligibility.fingerprint = cp.getCarFingerprint().cStr();
+  eligibility.flags = cp.getFlags();
+  eligibility.passive = cp.getPassive();
+  eligibility.dashcam_only = cp.getDashcamOnly();
+  eligibility.panda_count = pandas_.size();
+  eligibility.safety_config_count = configs.size();
+  if (configs.size() == 1) {
+    eligibility.hyundai_canfd_mode = configs[0].getSafetyModel() == cereal::CarParams::SafetyModel::HYUNDAI_CANFD;
+    eligibility.safety_param = configs[0].getSafetyParam();
+  }
+  blinker_test_supported_ = eligibility.supported();
+  normal_hyundai_safety_param_ = eligibility.safety_param;
+}
+
+void PandaSafety::configureBlinkerTest() {
+  const auto request = params_.get("HyundaiBlinkerTestSafetyRequest");
+  const auto action = blinker_safety_transition_.request(request, blinker_test_supported_);
+  if (action == HyundaiBlinkerSafetyTransition::Action::TEST) {
+    LOGW("Entering parked EV6 blinker safety session %s", blinker_safety_transition_.activeNonce().c_str());
+    pandas_[0]->set_safety_model(cereal::CarParams::SafetyModel::HYUNDAI_CANFD, normal_hyundai_safety_param_ | 1024U);
+  } else if (action == HyundaiBlinkerSafetyTransition::Action::NORMAL) {
+    LOGW("Restoring original Panda safety after parked EV6 blinker test");
+    setSafetyMode(normal_car_params_);
+  } else if (action == HyundaiBlinkerSafetyTransition::Action::ERROR) {
+    LOGW("Rejected parked EV6 blinker safety request");
+  }
+  // This acknowledges that the USB command was issued, not that hardware
+  // applied it. The Python coordinator separately checks new pandaStates.
+  const auto &ack = blinker_safety_transition_.ack();
+  if (!ack.empty() && params_.get("HyundaiBlinkerTestSafetyAck") != ack) {
+    params_.put("HyundaiBlinkerTestSafetyAck", ack);
   }
 }
 

@@ -20,6 +20,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
+from openpilot.selfdrive.selfdrived.blinker_safety import BlinkerSafetyExpectation
 from openpilot.selfdrive.controls.lib.latcontrol import MIN_LATERAL_CONTROL_SPEED
 
 from openpilot.system.hardware import HARDWARE
@@ -45,6 +46,7 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 class SelfdriveD:
   def __init__(self, CP=None):
     self.params = Params()
+    self.blinker_safety_expectation = BlinkerSafetyExpectation()
 
     # Ensure the current branch is cached, otherwise the first cycle lags
     build_metadata = get_build_metadata()
@@ -281,6 +283,9 @@ class SelfdriveD:
         safety_mismatch = pandaState.safetyModel != self.CP.safetyConfigs[i].safetyModel or \
                           pandaState.safetyParam != self.CP.safetyConfigs[i].safetyParam or \
                           pandaState.alternativeExperience != self.CP.alternativeExperience
+        if (safety_mismatch and len(self.sm['pandaStates']) == 1
+            and self.blinker_safety_expectation.matches(self.CP, pandaState, self.enabled, self.params, time.monotonic())):
+          safety_mismatch = False
       else:
         safety_mismatch = pandaState.safetyModel not in IGNORED_SAFETY_MODES
         safety_mismatch  = False #carrot

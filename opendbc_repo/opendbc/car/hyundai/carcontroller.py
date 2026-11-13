@@ -1,10 +1,12 @@
+import time
+
 import numpy as np
 from opendbc.can import CANPacker
 from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs, apply_std_steer_angle_limits
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
-from opendbc.car.hyundai.blinker_test import BlinkerHandoffTest
+from opendbc.car.hyundai.blinker_runtime import LiveBlinkerTest, PandaObservation, supports_blinker_runtime
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -114,7 +116,7 @@ class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     super().__init__(dbc_names, CP)
     self.CAN = CanBus(CP)
-    self.blinker_test = BlinkerHandoffTest() if CP.flags & HyundaiFlags.BLINKER_TEST else None
+    self.blinker_runtime = LiveBlinkerTest(CP, Params()) if supports_blinker_runtime(CP, self.CAN.ECAN) else None
     self.blinker_test_request = 0
     self.blinker_test_status = None
     self.params = CarControllerParams(CP)
@@ -158,28 +160,45 @@ class CarController(CarControllerBase):
     self.enable_corner_radar = 0
 
     # 💡 [수정] radarState와 modelV2를 모두 수신하도록 변경
-    self.sm = messaging.SubMaster(['radarState', 'modelV2'])
+    services = ['radarState', 'modelV2']
+    if self.blinker_runtime is not None:
+      services.append('pandaStates')
+    self.sm = messaging.SubMaster(services)
     self.corner_radar_cutin = False
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
 
   def update(self, CC, CS, now_nanos):
-    if self.blinker_test is not None:
-      params = Params()
-      if self.frame % 10 == 0:
-        self.blinker_test_request = params.get_int("HyundaiBlinkerTest")
-      can_sends = self.blinker_test.update(self.blinker_test_request, now_nanos / 1e9,
-                                         enabled=CC.enabled or CC.latActive or CC.longActive,
-                                         can_valid=CS.out.canValid)
-      if self.blinker_test.status != self.blinker_test_status:
-        self.blinker_test_status = self.blinker_test.status
-        params.put_nonblocking("HyundaiBlinkerTestStatus", self.blinker_test_status)
-      self.frame += 1
-      return structs.CarControl.Actuators(), can_sends
-    
     # 💡 [추가] radarState 데이터를 실시간으로 가져와서 끼어들기 여부 판별!
     self.sm.update(0) # 0초 대기(Non-blocking)로 최신 데이터만 쓱 읽어옴
+    if self.frame % 10 == 0:
+      self.blinker_test_request = Params().get_int("HyundaiBlinkerTest")
+    if self.blinker_runtime is not None:
+      observation = None
+      if self.blinker_test_request or self.blinker_runtime.blocking:
+        states = self.sm['pandaStates']
+        observation = PandaObservation(
+          tuple((str(p.safetyModel), p.safetyParam) for p in states), self.sm.recv_time['pandaStates'],
+          self.sm.valid['pandaStates'] and self.sm.alive['pandaStates']
+          and not any(p.faults or p.safetyRxChecksInvalid for p in states),
+          any(p.controlsAllowed for p in states),
+        )
+      result = self.blinker_runtime.update(
+        self.blinker_test_request, time.monotonic(), observation,
+        enabled=CC.enabled or CC.latActive or CC.longActive, can_valid=CS.out.canValid,
+      )
+      if result.reset_controller:
+        self.apply_torque_last = self.accel_last = self.angle_limit_counter = 0
+        self.apply_angle_last = float(CS.out.steeringAngleDeg)
+        self.corner_radar_cutin = False
+        self.hyundai_jerk = HyundaiJerk()
+      if result.blocked:
+        self.frame += 1
+        return structs.CarControl.Actuators(), result.messages
+    elif self.blinker_test_request and self.blinker_test_status != 'unsupported':
+      self.blinker_test_status = 'unsupported'
+      Params().put_nonblocking("HyundaiBlinkerTestStatus", "unsupported: EV6 CAN-FD CAMERA SCC bus 0 required")
     if self.sm.updated['radarState']:
       lead_one = self.sm['radarState'].leadOne
       # 완벽한 공식: 레이더가 켜져있는데 TrackId가 -1 이면 코너 레이더 개입!
