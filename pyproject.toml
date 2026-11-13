@@ -44,6 +44,7 @@ dependencies = [
   # modeld
   "onnx >= 1.14.0",
   "llvmlite",
+  "opencv-python-headless == 4.11.0.86", # optional signal observer; no GPU contention
 
   # logging
   "pyzmq",

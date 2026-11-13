@@ -1314,6 +1314,9 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   tFollow @46: Float32;
   desiredDistance @47: Float32;
   myDrivingMode @48: Int32;
+  signalDetectionSuspended @49 :Bool;
+  signalObservationColor @50 :UInt8; # 0 unknown, 1 red, 2 green, 3 mixed
+  signalAssistAction @51 :UInt8; # 0 none, 1 departure veto, 2 preparation, 3 confirmed green
 
   solverExecutionTime @35 :Float32;
 

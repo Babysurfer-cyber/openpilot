@@ -55,6 +55,12 @@ cdef class VisionBuf:
   def uv_offset(self):
     return self.buf.uv_offset
 
+  @property
+  def frame_id(self):
+    # Read the shared buffer identity, which can change when camerad reuses it.
+    # Client metadata alone retains the identity from the last recv().
+    return self.buf.get_frame_id()
+
 
 cdef class VisionIpcServer:
   cdef cppVisionIpcServer * server

@@ -2,6 +2,7 @@
 #include "selfdrive/ui/qt/onroad/annotated_camera.h"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <algorithm>
 #include <cmath>
 #include <unistd.h>
@@ -128,6 +129,14 @@ mat4 AnnotatedCameraWidget::calcFrameMatrix() {
 
   float zx = zoom * 2 * center_x / w;
   float zy = zoom * 2 * center_y / h;
+  // Derive from the actual GL frame matrix and buffer dimensions. This also
+  // handles cropping and calibration offsets; model projection is different.
+  signal_camera_transform_valid = stream_width > 0 && stream_height > 0 &&
+    std::isfinite(zx) && std::isfinite(zy) && std::isfinite(x_offset) && std::isfinite(y_offset);
+  if (signal_camera_transform_valid) {
+    signal_camera_transform = QTransform(zx * w / stream_width, 0., 0., zy * h / stream_height,
+                                        w * (1. - zx) / 2. - x_offset, h * (1. - zy) / 2. - y_offset);
+  }
   return mat4{{
     zx, 0.0, 0.0, -x_offset / w * 2,
     0.0, zy, 0.0, y_offset / h * 2,
@@ -137,6 +146,44 @@ mat4 AnnotatedCameraWidget::calcFrameMatrix() {
 }
 
 void AnnotatedCameraWidget::paintGL() {
+}
+
+void AnnotatedCameraWidget::drawSignalBoxes(QPainter &painter) {
+  if (!ui_signal_display_enabled() || !signal_camera_transform_valid || active_stream_type != VISION_STREAM_ROAD) return;
+  const auto &sm = *uiState()->sm;
+  if (!sm.valid("roadCameraState") || !sm.alive("roadCameraState")) return;
+  const auto camera = sm["roadCameraState"].getRoadCameraState();
+  // Only place boxes on the camera frame actually rendered, never on a model
+  // frame or an unrelated wide-camera image.
+  if (frames.empty() || camera.getFrameId() != prev_frame_id) return;
+  const double now = double(nanos_monotonic()) / 1e9;
+  const auto &display = ui_signal_display_state();
+  const auto tracks = display.tracks(now, prev_frame_id, double(camera.getTimestampEof()) / 1e9,
+                                     stream_width, stream_height, false);
+  painter.save();
+  painter.setClipRect(rect());
+  QFont font = painter.font();
+  font.setPixelSize(20);
+  painter.setFont(font);
+  for (const auto &track : tracks) {
+    const auto source = signal_display::source_box(track, stream_width, stream_height);
+    const QRectF box = signal_camera_transform.mapRect(QRectF(QPointF(source[0], source[1]), QPointF(source[2], source[3])));
+    if (!box.isValid() || !box.intersects(rect())) continue;
+    QColor color = track.color == signal_display::Color::red ? QColor(255, 75, 75) :
+                   track.color == signal_display::Color::green ? QColor(60, 255, 120) : QColor(160, 165, 170);
+    if (track.held) color.setAlpha(140);
+    painter.setPen(QPen(color, track.confirmed ? 3 : 2, track.held ? Qt::DashLine : Qt::SolidLine));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(box);
+    const QString label = QString("S%1%2").arg(track.id).arg(track.held ? " ~" : "");
+    const QPointF text_position(std::max(2., box.left()), std::max(22., box.top() - 4.));
+    painter.setPen(QPen(Qt::black, 3));
+    QPainterPath text;
+    text.addText(text_position, font, label);
+    painter.drawPath(text);
+    painter.fillPath(text, color);
+  }
+  painter.restore();
 }
 
 void print_stack_trace() {
@@ -198,6 +245,10 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
   painter.setPen(Qt::NoPen);
 
   model.draw(painter, rect());
+  {
+    std::lock_guard lk(frame_lock);
+    drawSignalBoxes(painter);
+  }
   painter.beginNativePainting();
   try {
       ui_draw(s, &model, width(), height());      

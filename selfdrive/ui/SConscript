@@ -40,7 +40,7 @@ qt_src = ["main.cc", "ui.cc", "qt/sidebar.cc", "qt/body.cc",
           "qt/offroad/software_settings.cc", "qt/offroad/developer_panel.cc", "qt/offroad/onboarding.cc",
           "qt/offroad/driverview.cc", "qt/offroad/experimental_mode.cc", "qt/offroad/firehose.cc", "qt/offroad/model_manager.cc",
           "qt/onroad/onroad_home.cc", "qt/onroad/annotated_camera.cc", "qt/onroad/model.cc",
-          "carrot.cc",
+          "carrot.cc", "signal_display.cc",
           "qt/screenrecorder/screenrecorder.cc",
           "qt/screenrecorder/omx_encoder.cc",
           "#third_party/nanovg/nanovg.c",
@@ -93,6 +93,7 @@ asset_obj = qt_env.Object("assets", assets)
 # build main UI
 qt_env.Program("ui", qt_src + [asset_obj], LIBS=qt_libs)
 if GetOption('extras'):
+  qt_env.Program('tests/test_signal_display', ['tests/test_runner.cc', 'tests/test_signal_display.cc', 'signal_display.cc'], LIBS=qt_libs)
   qt_src.remove("main.cc")  # replaced by test_runner
   qt_env.Program('tests/test_translations', [asset_obj, 'tests/test_runner.cc', 'tests/test_translations.cc'] + qt_src, LIBS=qt_libs)
 

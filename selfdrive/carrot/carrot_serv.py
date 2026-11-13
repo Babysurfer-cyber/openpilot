@@ -132,6 +132,7 @@ class CarrotServ:
     self.vpPosPointLat = 0.0
     self.vpPosPointLon = 0.0
     self.roadcate = 8
+    self.signal_road_category = (0, False, 0)
 
     self.nPosSpeed = 0.0
     self.nPosAngle = 0.0
@@ -1349,6 +1350,10 @@ class CarrotServ:
     msg.carrotMan.naviPaths = coords_str
 
     msg.carrotMan.leftSec = int(self.carrot_left_sec)
+    category, category_valid, category_time = self.signal_road_category
+    msg.carrotMan.roadCategory = category
+    msg.carrotMan.roadCategoryValid = category_valid and self.active_carrot > 1
+    msg.carrotMan.roadCategoryMonoTimeNanos = category_time
     pm.send('carrotMan', msg)
 
 
@@ -1481,6 +1486,8 @@ class CarrotServ:
       self.szGoalName = json.get("szGoalName", self.szGoalName)
 
     if "nRoadLimitSpeed" in json:
+      from openpilot.selfdrive.carrot.signal_road_policy import road_category_observation
+      self.signal_road_category = road_category_observation(json, time.monotonic_ns())
       #print(json)
       self.active_sdi_count = self.active_sdi_count_max
       ### roadLimitSpeed

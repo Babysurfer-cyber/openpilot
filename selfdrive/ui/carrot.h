@@ -3,6 +3,10 @@
 #include "selfdrive/ui/ui.h"
 #include "selfdrive/ui/qt/onroad/alerts.h"
 #include "selfdrive/ui/qt/onroad/model.h"
+#include "selfdrive/ui/signal_display.h"
+
+bool ui_signal_display_enabled();
+const signal_display::State &ui_signal_display_state();
 
 typedef struct Rect1 {
 	int x, y, w, h;

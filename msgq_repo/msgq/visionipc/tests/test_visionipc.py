@@ -2,6 +2,7 @@ import os
 import time
 import random
 import numpy as np
+import pytest
 from msgq.visionipc import VisionIpcServer, VisionIpcClient, VisionStreamType
 
 def zmq_sleep(t=1):
@@ -62,6 +63,7 @@ class TestVisionIpc:
     assert recv_buf is not None
     assert recv_buf.data.view('<i4')[0] == 1234
     assert self.client.frame_id == 1337
+    assert recv_buf.frame_id == 1337
     del self.client
     del self.server
 
@@ -79,6 +81,23 @@ class TestVisionIpc:
     recv_buf = self.client.recv()
     assert recv_buf is not None
     assert self.client.frame_id == 2
+    del self.client
+    del self.server
+
+  def test_readonly_frame_id_observes_mapped_buffer_reuse(self):
+    self.setup_vipc("camerad", VisionStreamType.VISION_STREAM_ROAD, conflate=True)
+    buf = np.zeros(self.client.buffer_len, dtype=np.uint8)
+    self.server.send(VisionStreamType.VISION_STREAM_ROAD, buf, frame_id=10)
+    frame = self.client.recv()
+    assert frame.frame_id == self.client.frame_id == 10
+
+    self.server.send(VisionStreamType.VISION_STREAM_ROAD, buf, frame_id=11)
+    # Packet metadata stays old until recv(), but the mapped buffer has changed.
+    # The observer checks this after converting/copying pixels.
+    assert self.client.frame_id == 10
+    assert frame.frame_id == 11
+    with pytest.raises(AttributeError):
+      frame.frame_id = 12
     del self.client
     del self.server
 

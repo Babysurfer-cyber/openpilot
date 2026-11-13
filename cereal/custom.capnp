@@ -41,6 +41,9 @@ struct CarrotMan @0x81c2f05a394cf4af {
 	szSdiDescr @26 : Text;
 	naviPaths @27 : Text;
 	leftSec @28 : Int32;
+	roadCategory @29 : Int32;
+	roadCategoryValid @30 : Bool;
+	roadCategoryMonoTimeNanos @31 : UInt64;
 }
 
 struct CustomReserved1 @0xaedffd8f31e7b55d {

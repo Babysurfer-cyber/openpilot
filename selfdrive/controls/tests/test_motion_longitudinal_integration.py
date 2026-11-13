@@ -26,6 +26,8 @@ from openpilot.selfdrive.controls.lib.cutin_predecel import (
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.controls.lib.longitudinal_cutout import cutout_obstacle_relief
 from openpilot.selfdrive.modeld.constants import ModelConstants, index_function
+from openpilot.selfdrive.carrot.signal_stop_prepare import PrepareAccel, PrepareDecision
+from openpilot.selfdrive.carrot.signal_start_guard import StartDecision
 
 
 LIB = Path(__file__).resolve().parents[1] / "lib"
@@ -171,7 +173,7 @@ class PlannerMpc:
 def planner_module(mpc_module):
   path = LIB / "longitudinal_planner.py"
   return production_definitions(path, {
-    "__file__": str(path), "math": math, "np": np, "log": log,
+    "__file__": str(path), "math": math, "time": time, "np": np, "log": log,
     "CV": CV, "ACCEL_MIN": ACCEL_MIN, "ACCEL_MAX": ACCEL_MAX, "DT_MDL": 0.05,
     "CONTROL_N": CONTROL_N, "ModelConstants": ModelConstants,
     "FirstOrderFilter": FirstOrderFilter, "LongitudinalMpc": PlannerMpc,
@@ -181,6 +183,7 @@ def planner_module(mpc_module):
     "get_accel_from_plan": get_accel_from_plan,
     "get_cutin_predecel_accel_limit": get_cutin_predecel_accel_limit,
     "apply_cutin_predecel_accel_limit": apply_cutin_predecel_accel_limit,
+    "PrepareAccel": PrepareAccel,
   })
 
 
@@ -198,7 +201,8 @@ class PlannerInputs(dict):
     super().__init__(
       carControl=NS(orientationNED=[]),
       carState=NS(vEgo=15.0, aEgo=0.0, vCruise=72.0, vCluRatio=1.0,
-                  steeringAngleDeg=0.0, standstill=False, gasPressed=gas),
+                  steeringAngleDeg=0.0, standstill=False, gasPressed=gas,
+                  brakePressed=False, softHoldActive=0),
       controlsState=NS(forceDecel=force, desiredCurvature=0.0,
                        longControlState=car.CarControl.Actuators.LongControlState.off if reset else car.CarControl.Actuators.LongControlState.pid),
       selfdriveState=NS(enabled=not reset, experimentalMode=False, personality=log.LongitudinalPersonality.standard),

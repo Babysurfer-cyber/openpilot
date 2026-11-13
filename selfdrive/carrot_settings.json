@@ -2115,6 +2115,22 @@
     },
     {
       "group": "감속제어",
+      "name": "SignalAssistMode",
+      "title": "신호보조 모드 (시험)",
+      "descr": "0:보조 인식·표시·제어 끔(기본값). 1:주행 중 신호 인식 표시·알림과 정차 중 적색 출발 제한. 2:1의 기능에 주행 중 완만한 감속 준비 추가. 앞차가 없거나 두 추적 앞차 모두 50m보다 멀 때 유효한 적색을 확인하면 약 -0.5m/s²까지 점진적으로 감속을 요청합니다. 가까운 앞차가 있으면 기존 앞차 추종을 사용합니다. 정차 후에는 1과 같으며 보조 감속만으로 완전 정지를 보장하지 않습니다. 야간에는 적색 램프 2개와 도로 방향 지지가 필요합니다. 인식 표시는 독립적으로 동작하며 보조 제어는 기존 신호감지·주행모드 제한을 따릅니다. 바깥 원은 인식 색상, 안쪽 점은 실제 보조 개입이며 흐린 원·점선 상자는 최대 2초 전 결과입니다. 오감지·미감지가 가능합니다.",
+      "egroup": "SPEED",
+      "etitle": "Signal Assistance Mode (Trial)",
+      "edescr": "0: Auxiliary recognition/display/control off (default). 1: Recognition display and alerts, plus a stopped-red departure veto. 2: Mode 1 plus gentle preparation toward -0.5m/s² with qualified red evidence when neither tracked lead is within 50m. Preparation does not guarantee a complete stop. Recognition is displayed independently; assistance follows the existing traffic-light and driving-mode restrictions. The ring shows observed color and the centre dot shows actual assistance; dim rings/dashed boxes retain previous observations for at most two seconds. False and missed detections remain possible.",
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "速度控制",
+      "ctitle": "信号辅助模式（试验）",
+      "cdescr": "0:关闭辅助识别、显示和控制（默认）。1:显示信号识别、提醒及停车时红灯起步限制。2:增加轻微减速准备；确认有效红灯且两个跟踪前车均在50米之外或没有前车时，逐渐请求约-0.5m/s²。辅助减速不保证完全停车。外环表示识别颜色，中心点表示实际辅助介入；暗色圆环及虚线框最多保留两秒前结果。识别显示独立运行，辅助控制遵循原有信号检测和驾驶模式限制，仍可能误检或漏检。"
+    },
+    {
+      "group": "감속제어",
       "name": "TrafficLightDetectMode",
       "title": "신호감지 기능",
       "descr": "0:신호감지안함\n 1:신호정지만 감지\n 2:신호정지/출발 모두",

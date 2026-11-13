@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QVBoxLayout>
+#include <QTransform>
 #include <memory>
 #include "selfdrive/ui/qt/onroad/hud.h"
 #include "selfdrive/ui/qt/onroad/buttons.h"
@@ -26,6 +27,9 @@ private:
 
   int skip_frame_count = 0;
   bool wide_cam_requested = false;
+  QTransform signal_camera_transform;
+  bool signal_camera_transform_valid = false;
+  void drawSignalBoxes(QPainter &painter);
 
 protected:
   void paintGL() override;

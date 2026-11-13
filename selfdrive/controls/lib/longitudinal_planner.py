@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import time
 import numpy as np
 
 import cereal.messaging as messaging
@@ -20,6 +21,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_speed_
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
+from openpilot.selfdrive.carrot.signal_stop_prepare import PrepareAccel
 
 
 LON_MPC_STEP = 0.2  # first step is 0.2s
@@ -107,6 +109,10 @@ class LongitudinalPlanner:
     self.output_v_target_now = 0.0
     self.output_j_target_now = 0.0
     self.output_should_stop = False
+    self._signal_prepare_accel = PrepareAccel()
+    self._signal_prepare_time = None
+    self._signal_prepare_previous = None
+    self.signal_prepare_active = False
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -362,6 +368,42 @@ class LongitudinalPlanner:
     self.output_v_target_now = output_v_target_now
     self.output_j_target_now = self.j_desired_trajectory[0]
 
+    self.apply_signal_stop_prepare(sm, carrot, reset_state)
+    self.apply_signal_start_guard(carrot, v_ego)
+
+  def apply_signal_stop_prepare(self, sm, carrot, reset_state, now=None):
+    from openpilot.selfdrive.carrot.signal_stop_prepare import prepare_lead_blocked
+    now = time.monotonic() if now is None else now
+    elapsed = self.dt if self._signal_prepare_time is None else now - self._signal_prepare_time
+    self._signal_prepare_time = now
+    cs = sm['carState']
+    decision = getattr(carrot, 'prepare_decision', None)
+    active = (decision is not None and decision.active
+              and carrot.prepare_control_active
+              and not reset_state and not cs.gasPressed and not cs.brakePressed
+              and 5 / 3.6 < cs.vEgo < 82 / 3.6 and cs.softHoldActive == 0
+              and 0 < elapsed <= .2
+              and not self.output_should_stop and self.mpc.mode == 'acc'
+              and not prepare_lead_blocked(sm['radarState']))
+    self.signal_prepare_active = active
+    previous = cs.aEgo if self._signal_prepare_previous is None else self._signal_prepare_previous
+    uncapped = self.output_a_target
+    self.output_a_target = self._signal_prepare_accel.apply(self.output_a_target, previous, elapsed, active)
+    self._signal_prepare_previous = self.output_a_target
+    if active:
+      self.output_v_target_now = min(self.output_v_target_now, max(0., cs.vEgo + self.output_a_target * self.dt))
+      self.a_desired = min(self.a_desired, self.output_a_target)
+      if self.output_a_target < uncapped:
+        self.output_j_target_now = min(self.output_j_target_now, (self.output_a_target - previous) / elapsed)
+
+  def apply_signal_start_guard(self, carrot, v_ego):
+    from openpilot.selfdrive.carrot.signal_assist import departed_signal_stop
+    decision = getattr(carrot, 'start_decision', None)
+    if not departed_signal_stop(v_ego) and decision is not None and decision.hold:
+      self.output_should_stop = True
+      self.output_v_target_now = 0.0
+      self.output_a_target = min(self.output_a_target, 0.0)
+
   def publish(self, sm, pm, carrot):
     plan_send = messaging.new_message('longitudinalPlan')
 
@@ -394,5 +436,10 @@ class LongitudinalPlanner:
     longitudinalPlan.desiredDistance = float(self.mpc.desired_distance)
     longitudinalPlan.events = carrot.events.to_msg()
     longitudinalPlan.myDrivingMode = carrot.myDrivingMode.value
+    longitudinalPlan.signalDetectionSuspended = carrot.signal_detection_suspended
+    longitudinalPlan.signalObservationColor = carrot.signal_observation_color
+    longitudinalPlan.signalAssistAction = (1 if carrot.start_decision and carrot.start_decision.hold else
+                                         2 if self.signal_prepare_active else
+                                         3 if carrot.signal_green_active else 0)
 
     pm.send('longitudinalPlan', plan_send)

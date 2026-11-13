@@ -58,6 +58,23 @@ ModelRenderer* _model = NULL;
 extern  int get_path_length_idx(const cereal::XYZTData::Reader& line, const float path_height);
 int g_fps= 0;
 
+bool ui_signal_display_enabled() {
+  static Params params;
+  static double next_read = 0.;
+  static int mode = 0;
+  const double now = double(nanos_monotonic()) / 1e9;
+  if (now >= next_read || now < next_read - .5) {
+    mode = params.getInt("SignalAssistMode");
+    next_read = now + .5;
+  }
+  return mode == 1 || mode == 2;
+}
+
+const signal_display::State &ui_signal_display_state() {
+  static SignalDisplayReader reader;
+  return reader.read(ui_signal_display_enabled(), double(nanos_monotonic()) / 1e9);
+}
+
 static void ui_draw_text(const UIState* s, float x, float y, const char* string, float size, NVGcolor color, const char* font_name, float borderWidth=3.0, float shadowOffset=0.0, NVGcolor borderColor=COLOR_BLACK, NVGcolor shadowColor=COLOR_BLACK) {
     y += 6;
     nvgFontFace(s->vg, font_name);
@@ -102,6 +119,51 @@ static void ui_draw_text_vg(NVGcontext* vg, float x, float y, const char* string
     nvgFillColor(vg, color);
     nvgText(vg, x, y, string, NULL);
 }
+static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
+  if (!ui_signal_display_enabled()) return;
+  const auto &display = ui_signal_display_state();
+  const double now = double(nanos_monotonic()) / 1e9;
+  const SubMaster &sm = *s->sm;
+  const double plan_age = (double(nanos_since_boot()) - double(sm.rcv_time("longitudinalPlan"))) / 1e9;
+  const bool plan_valid = sm.valid("longitudinalPlan") && sm.alive("longitudinalPlan") && plan_age >= 0 && plan_age <= .25;
+  const auto plan = sm["longitudinalPlan"].getLongitudinalPlan();
+  const bool paused = plan_valid && plan.getSignalDetectionSuspended();
+  const int action = plan_valid && !paused ? plan.getSignalAssistAction() : 0;
+  const NVGcolor palette[] = {nvgRGBA(160, 165, 170, 255), nvgRGBA(255, 75, 75, 255),
+                              nvgRGBA(60, 255, 120, 255), nvgRGBA(255, 185, 40, 255)};
+  cx = std::min(cx, float(s->fb_w - 36));
+  nvgSave(s->vg);
+  nvgBeginPath(s->vg);
+  nvgCircle(s->vg, cx, cy, 26);
+  nvgFillColor(s->vg, nvgRGBA(20, 25, 30, 200));
+  nvgFill(s->vg);
+  NVGcolor ring = palette[paused ? 0 : int(display.color(now))];
+  if (display.held(now) && !paused) {
+    ring.r *= .55f; ring.g *= .55f; ring.b *= .55f;
+  }
+  nvgStrokeColor(s->vg, ring);
+  nvgStrokeWidth(s->vg, 3);
+  nvgStroke(s->vg);
+  if (paused) {
+    nvgStrokeColor(s->vg, palette[0]);
+    nvgStrokeWidth(s->vg, 5);
+    for (int side : {-1, 1}) {
+      nvgBeginPath(s->vg);
+      nvgMoveTo(s->vg, cx + side * 7, cy - 12);
+      nvgLineTo(s->vg, cx + side * 7, cy + 12);
+      nvgStroke(s->vg);
+    }
+  } else if (action >= 1 && action <= 3) {
+    nvgBeginPath(s->vg);
+    nvgCircle(s->vg, cx, cy, 7);
+    nvgFillColor(s->vg, palette[action == 1 ? 1 : action == 2 ? 3 : 2]);
+    nvgFill(s->vg);
+  }
+  nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+  ui_draw_text(s, cx, cy + 27, "신호보조", 19, COLOR_WHITE_ALPHA(200), BOLD, 1.);
+  nvgRestore(s->vg);
+}
+
 void ui_draw_line_vg(NVGcontext* vg, const QPolygonF& vd, NVGcolor* color, NVGpaint* paint, float stroke = 0.0, NVGcolor strokeColor = COLOR_WHITE) {
     if (vd.size() == 0) return;
 
@@ -2633,6 +2695,9 @@ public:
 
         ui_draw_image(s, { tl_x_red - tl_size_red / 2, tl_y_red - tl_size_red / 2, tl_size_red, tl_size_red }, "ic_traffic_red", red_alpha);
         ui_draw_image(s, { tl_x_green - tl_size_green / 2, tl_y_green - tl_size_green / 2, tl_size_green, tl_size_green }, "ic_traffic_green", green_alpha);
+
+        // Independent observer evidence/action; keep the existing model icons.
+        ui_draw_signal_assist(s, bx + 390, by + 146);
 	
         dx = bx + 200;
         dy = by + 175;

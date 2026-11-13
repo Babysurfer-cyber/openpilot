@@ -684,6 +684,11 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   cruiseToggles->addItem(new CValueControl("MyDrivingMode", tr("DRIVEMODE: Select"), tr("1:ECO,2:SAFE,3:NORMAL,4:HIGH"), 1, 4, 1));
   cruiseToggles->addItem(new CValueControl("MyDrivingModeAuto", tr("DRIVEMODE: Auto"), tr("NORMAL mode only"), 0, 1, 1));
   cruiseToggles->addItem(new CValueControl("TrafficLightDetectMode", tr("TrafficLight DetectMode"), tr("0:None, 1:Stopping only, 2: Stop & Go"), 0, 2, 1));
+  cruiseToggles->addItem(new CValueControl("SignalAssistMode", tr("신호보조 모드 (시험)"),
+    tr("0: 끔. 1: 신호 인식 표시·알림과 정차 중 적색 출발 제한. 2: 1의 기능에 완만한 감속 준비 추가. "
+       "2번은 두 앞차 모두 50m 밖에 있거나 앞차가 없을 때 약 -0.5m/s²까지 보조하며, 완전 정지를 보장하지 않습니다. "
+       "인식 표시는 독립적으로 동작하며, 보조 제어는 기존 신호감지·주행모드 제한을 따릅니다. "
+       "표시의 바깥 원은 인식 색상, 안쪽 점은 실제 보조 개입이며 흐린 표시는 최대 2초 전 결과입니다."), 0, 2, 1));
   cruiseToggles->addItem(new CValueControl("AChangeCostStarting", tr("AChangeCostStarting"), "", 0, 200, 10));
   cruiseToggles->addItem(new CValueControl("TrafficStopDistanceAdjust", tr("TrafficStopDistanceAdjust"), "", -600, 600, 50));
   //cruiseToggles->addItem(new CValueControl("CruiseSpeedMin", "CRUISE: Speed Lower limit(10)", "Cruise control MIN speed", 5, 50, 1));
