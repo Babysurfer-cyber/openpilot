@@ -8,6 +8,10 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, create_button_events, structs, DT_CTRL
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai.hyundaicanfd import CanBus
+from opendbc.car.hyundai.blindspot import CornerBsdSupplement
+from opendbc.car.hyundai.blindspot_inputs import (
+  CORNER_MESSAGES, STOCK_BSD_MESSAGE, read_corner_samples, read_stock_blindspots, register_seen_messages,
+)
 from opendbc.car.hyundai.values import HyundaiFlags, CAR, DBC, Buttons, CarControllerParams, CAMERA_SCC_CAR, HyundaiExtFlags
 from opendbc.car.interfaces import CarStateBase
 
@@ -179,6 +183,7 @@ class CarState(CarStateBase):
     self.LOCAL_TIME = True if 1264 in fingerprints[pt_bus] else False
 
     self.cp_bsm = None
+    self.corner_bsd = CornerBsdSupplement()
     self.time_zone = "UTC"
     
     self.cp = None
@@ -721,19 +726,6 @@ class CarState(CarStateBase):
       self.right_blinker_timer = max(0, self.right_blinker_timer - 1)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    if self.CP.enableBsm:
-      if self.cp_bsm is None:
-        if 442 in cp.seen_addresses:
-          self.cp_bsm = cp
-          print("######## BSM in ECAN")
-        elif 442 in cp_cam.seen_addresses:
-          self.cp_bsm = cp_cam
-          print("######## BSM in CAM")
-      else:
-        bsm_info = self.cp_bsm.vl["BLINDSPOTS_REAR_CORNERS"]
-        ret.leftBlindspot = (bsm_info["FL_INDICATOR"] + bsm_info["INDICATOR_LEFT_TWO"] + bsm_info["INDICATOR_LEFT_FOUR"]) > 0
-        ret.rightBlindspot = (bsm_info["FR_INDICATOR"] + bsm_info["INDICATOR_RIGHT_TWO"] + bsm_info["INDICATOR_RIGHT_FOUR"]) > 0
-
     # cruise state
     if self.cruise_buttons_alt2 is not None:
       cruise_button = self.cruise_buttons_alt2["CRUISE_BUTTONS"]
@@ -765,150 +757,7 @@ class CarState(CarStateBase):
       ret.brakeHoldActive = cp.vl["ESP_STATUS"]["AUTO_HOLD"] == 1 and cp_cruise_info.vl["SCC_CONTROL"]["ACCMode"] not in (1, 2)
 
     speed_limit_cam = False
-    corner = False
-    corner_infos = [info for info in (self.adrv_0x1ea, self.ccnc_0x162) if info is not None]
-    if corner_infos:
-      def corner_max(signal):
-        return max(info[signal] for info in corner_infos)
-
-      ret.leftLongDist = self.lf_distance = corner_max("LF_DETECT_DISTANCE")
-      ret.rightLongDist = self.rf_distance = corner_max("RF_DETECT_DISTANCE")
-      self.lr_distance = corner_max("LR_DETECT_DISTANCE")
-      self.rr_distance = corner_max("RR_DETECT_DISTANCE")
-      ret.leftLatDist = corner_max("LF_DETECT_LATERAL")
-      ret.rightLatDist = corner_max("RF_DETECT_LATERAL")
-      ret.leftRearLongDist = self.lr_distance
-      ret.rightRearLongDist = self.rr_distance
-      ret.leftRearLatDist = corner_max("LR_DETECT_LATERAL")
-      ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
-      corner = True
-    if corner:
-      if not hasattr(self, 'bs_timer'):
-        self.corner_hist = {"LF": deque(maxlen=10), "RF": deque(maxlen=10), "LR": deque(maxlen=10), "RR": deque(maxlen=10)}
-        self.bs_timer = {"L": 0, "R": 0}
-        self.last_approach_v = {"L": 0.0, "R": 0.0}
-
-      # 1. 5프레임간의 거리 변화를 통해 상대 속도(v) 계산
-      def calc_v(hist, current_dist):
-        if 0.1 < current_dist < 20.0:
-          # 💡 [필터링 유지] 레이더 소실로 인한 1.5m 이상 거리 튐 오류 방지
-          if len(hist) > 0 and abs(current_dist - hist[-1]) > 1.5:
-            hist.clear()
-            return 0.0
-            
-          hist.append(current_dist)
-          if len(hist) >= 5:
-            return (hist[-1] - hist[0]) / (len(hist) * DT_CTRL)
-        else:
-          hist.clear()
-        return 0.0
-
-      v_lf = calc_v(self.corner_hist["LF"], ret.leftLongDist)
-      v_lr = calc_v(self.corner_hist["LR"], self.lr_distance)
-      v_rf = calc_v(self.corner_hist["RF"], ret.rightLongDist)
-      v_rr = calc_v(self.corner_hist["RR"], self.rr_distance)
-
-      # 2. 상대 속도 기반 가변 경고 영역 계산 (전방 전용)
-      def get_limit(v):
-        if v < -0.5: return float(np.interp(v, [-5.0, -0.5], [12.0, 6.0]))
-        elif v > 0.5: return float(np.interp(v, [0.5, 5.0], [6.0, 2.0]))
-        return 6.0
-
-      limit_lf = get_limit(v_lf)
-      limit_rf = get_limit(v_rf)
-      limit_rear = 5.0 # 후방 고정 5m
-
-      self.bsd_limits = {
-        'LF_DETECT': limit_lf,
-        'RF_DETECT': limit_rf
-      }
-
-      seen_lf = 0.1 < ret.leftLongDist < limit_lf
-      seen_lr = 0.1 < self.lr_distance < limit_rear
-      seen_rf = 0.1 < ret.rightLongDist < limit_rf
-      seen_rr = 0.1 < self.rr_distance < limit_rear
-
-      # --- 3. 좌측 사각지대(BSD) 로직 ---
-      if seen_lf or seen_lr:
-        ret.leftBlindspot = True
-        v_active = v_lr if seen_lr else v_lf
-        
-        if abs(v_active) > 0.1:
-            self.last_approach_v["L"] = v_active
-            
-        self.bs_timer["L_source"] = "rear" if seen_lr else "front"
-
-        hold_sec = 4.5 / max(abs(v_active), 1.0)
-        self.bs_timer["L"] = int(hold_sec / DT_CTRL)
-      else:
-        if self.last_approach_v["L"] != 0.0:
-          if self.bs_timer.get("L_source") == "front":
-            v = max(abs(self.last_approach_v["L"]), 0.5)
-            calc_sec = 6.0 / v
-            self.bs_timer["L"] = int(calc_sec / DT_CTRL)
-          else:
-            self.bs_timer["L"] = int(3.0 / DT_CTRL)
-          self.last_approach_v["L"] = 0.0
-
-        if self.bs_timer["L"] > 0:
-          self.bs_timer["L"] -= 1
-          ret.leftBlindspot = True
-
-        # ▼▼▼ [조건부 강제 종료 로직 복구 및 분리] ▼▼▼
-        cancel_front = (0.1 < ret.leftLongDist < 20.0 and ret.leftLongDist >= limit_lf and v_lf > 0.5)
-        cancel_rear  = (0.1 < self.lr_distance < 20.0 and self.lr_distance >= limit_rear and v_lr > 0.5)
-
-        if self.bs_timer.get("L_source") == "front":
-          # 💡 내가 추월할 때: 후방 레이더가 섣불리 취소하는 것만 제거! (cancel_rear 무시)
-          if cancel_front:
-            self.bs_timer["L"] = 0
-            self.last_approach_v["L"] = 0.0
-        else:
-          # 💡 나를 추월할 때: 내 앞으로 차가 완전히 지나가면 경고등이 빨리 꺼지도록 둘 다 유지
-          if cancel_front or cancel_rear:
-            self.bs_timer["L"] = 0
-            self.last_approach_v["L"] = 0.0
-
-      # --- 4. 우측 사각지대(BSD) 로직 ---
-      if seen_rf or seen_rr:
-        ret.rightBlindspot = True
-        v_active = v_rr if seen_rr else v_rf
-        
-        if abs(v_active) > 0.1:
-            self.last_approach_v["R"] = v_active
-            
-        self.bs_timer["R_source"] = "rear" if seen_rr else "front"
-            
-        hold_sec = 4.5 / max(abs(v_active), 1.0)
-        self.bs_timer["R"] = int(hold_sec / DT_CTRL)
-      else:
-        if self.last_approach_v["R"] != 0.0:
-          if self.bs_timer.get("R_source") == "front":
-            v = max(abs(self.last_approach_v["R"]), 0.5)
-            calc_sec = 6.0 / v
-            self.bs_timer["R"] = int(calc_sec / DT_CTRL)
-          else:
-            self.bs_timer["R"] = int(3.0 / DT_CTRL)
-          self.last_approach_v["R"] = 0.0
-
-        if self.bs_timer["R"] > 0:
-          self.bs_timer["R"] -= 1
-          ret.rightBlindspot = True
-          
-        # ▼▼▼ [조건부 강제 종료 로직 복구 및 분리] ▼▼▼
-        cancel_front_r = (0.1 < ret.rightLongDist < 20.0 and ret.rightLongDist >= limit_rf and v_rf > 0.5)
-        cancel_rear_r  = (0.1 < self.rr_distance < 20.0 and self.rr_distance >= limit_rear and v_rr > 0.5)
-
-        if self.bs_timer.get("R_source") == "front":
-          # 💡 내가 추월할 때: 후방 레이더가 섣불리 취소하는 것만 제거!
-          if cancel_front_r:
-            self.bs_timer["R"] = 0
-            self.last_approach_v["R"] = 0.0
-        else:
-          # 💡 나를 추월할 때: 내 앞으로 차가 완전히 지나가면 경고등이 빨리 꺼지도록 유지
-          if cancel_front_r or cancel_rear_r:
-            self.bs_timer["R"] = 0
-            self.last_approach_v["R"] = 0.0
+    self._update_canfd_blindspots(ret, cp, cp_cam)
 
     if self.hda_info_4a3 is not None:
       speedLimit = self.hda_info_4a3["SPEED_LIMIT"]
@@ -1054,6 +903,35 @@ class CarState(CarStateBase):
 
     self.paddle_button_prev = paddle_button
     return ret
+
+  def _update_canfd_blindspots(self, ret, cp, cp_cam):
+    # BSD discovery stays live after monitor_fingerprint's startup window.
+    # Read factory distance messages before our ECAN cluster forwarding.
+    register_seen_messages(cp_cam, CORNER_MESSAGES)
+    if self.CP.enableBsm:
+      for parser in (cp, cp_cam):
+        register_seen_messages(parser, (STOCK_BSD_MESSAGE,))
+    for name, attr in (("ADRV_0x1ea", "adrv_0x1ea"), ("CCNC_0x162", "ccnc_0x162")):
+      if any(cp_cam.ts_nanos.get(name, {}).values()):
+        setattr(self, attr, cp_cam.vl[name])
+
+    now_ns = max(cp._last_update_nanos, cp_cam._last_update_nanos)
+    samples = read_corner_samples(cp_cam, now_ns)
+    for corner, longitudinal, lateral in (
+      ("LF", "leftLongDist", "leftLatDist"), ("RF", "rightLongDist", "rightLatDist"),
+      ("LR", "leftRearLongDist", "leftRearLatDist"), ("RR", "rightRearLongDist", "rightRearLatDist"),
+    ):
+      sample = samples.get(corner)
+      setattr(ret, longitudinal, sample.distance if sample is not None else 0.0)
+      setattr(ret, lateral, sample.lateral if sample is not None else 0.0)
+    self.lf_distance, self.rf_distance = ret.leftLongDist, ret.rightLongDist
+    self.lr_distance, self.rr_distance = ret.leftRearLongDist, ret.rightRearLongDist
+    supplemental = self.corner_bsd.update(now_ns, samples)
+    self.bsd_limits = self.corner_bsd.limits.copy()
+    stock_left, stock_right = read_stock_blindspots((cp, cp_cam), now_ns) if self.CP.enableBsm else (False, False)
+    # A supplemental expiry or cancellation must never clear a fresh OEM BSD.
+    ret.leftBlindspot = stock_left or supplemental["L"]
+    ret.rightBlindspot = stock_right or supplemental["R"]
 
   def get_can_parsers_canfd(self, CP):
     msgs = []
