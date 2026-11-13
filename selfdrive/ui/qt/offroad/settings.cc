@@ -871,6 +871,16 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   startToggles->addItem(selectModelBtn);
 
   startToggles->addItem(new CValueControl("HyundaiCameraSCC", tr("HYUNDAI: CAMERA SCC"), tr("1:Connect the SCC's CAN line to CAM, 2:Sync Cruise state, 3:StockLong"), 0, 3, 1));
+  const QString blinkerTestDescription = tr("0: 종료, 1: 왼쪽, 2: 오른쪽. 다음 차량 인식/주행 프로세스 시작 때 시험 모드로 진입합니다. P단·브레이크·주차브레이크·정차 상태에서만 시험하며, 시험 모드에서는 오픈파일럿 주행 제어가 차단됩니다. 0으로 종료한 뒤 주행 프로세스를 다시 시작해야 정상 모드로 복귀합니다. 주차보조 경고가 발생할 수 있으며 ECU 복구 후 점등 유지는 실차 검증 전입니다.");
+  auto *blinkerTest = new CValueControl("HyundaiBlinkerTest", tr("EV6 깜빡이 인계 시험 (정차 전용)"), blinkerTestDescription, 0, 2, 1);
+  startToggles->addItem(blinkerTest);
+  connect(uiState(), &UIState::uiUpdate, blinkerTest, [blinkerTest, blinkerTestDescription, updateCount = UI_FREQ - 1](const UIState &) mutable {
+    if (!blinkerTest->isVisible() || ++updateCount < UI_FREQ) return;
+    updateCount = 0;
+    const QString status = QString::fromStdString(Params().get("HyundaiBlinkerTestStatus")).trimmed();
+    blinkerTest->setDescription(blinkerTestDescription.toHtmlEscaped() +
+      (status.isEmpty() ? QString() : "<br><br>" + QObject::tr("현재 상태: ") + status.toHtmlEscaped()));
+  });
   startToggles->addItem(new CValueControl("CanfdHDA2", tr("CANFD: HDA2 mode"), tr("1:HDA2,2:HDA2+BSM"), 0, 2, 1));
   startToggles->addItem(new CValueControl("EnableRadarTracks", tr("Enable Radar Track"), tr("1:Enable RadarTrack, -1,2:Disable use HKG SCC radar at all times"), -1, 3, 1));
   startToggles->addItem(new CValueControl("AutoCruiseControl", tr("Auto Cruise control"), tr("Softhold, Auto Cruise ON/OFF control"), 0, 3, 1));

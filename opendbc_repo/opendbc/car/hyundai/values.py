@@ -83,6 +83,7 @@ class HyundaiSafetyFlags(IntFlag):
   CANFD_LKA_STEERING_ALT = 128
   FCEV_GAS = 256
   ALT_LIMITS_2 = 512
+  BLINKER_TEST = 1024  # isolated parked test; never a driving safety configuration
 
 
 class HyundaiFlags(IntFlag):
@@ -137,6 +138,8 @@ class HyundaiFlags(IntFlag):
   FCEV = 2 ** 25
 
   ALT_LIMITS_2 = 2 ** 26
+
+  BLINKER_TEST = 2 ** 27  # dynamic, test-only boot (no steering/longitudinal TX)
 
   CC_ONLY_CAR = 2 ** 31
 

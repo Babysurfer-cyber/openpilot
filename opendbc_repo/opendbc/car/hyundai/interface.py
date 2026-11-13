@@ -1,3 +1,5 @@
+import time
+
 from opendbc.car import Bus, get_safety_config, structs
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, CAR, DBC, CANFD_RADAR_SCC_CAR, \
@@ -237,10 +239,43 @@ class CarInterface(CarInterfaceBase):
     # TODO: Optima Hybrid 2017 uses a different SCC12 checksum
     #ret.dashcamOnly = candidate in {CAR.KIA_OPTIMA_H, }
 
+    blinker_test = params.get_int("HyundaiBlinkerTest")
+    if blinker_test in (1, 2):
+      # Deliberately narrow: the user's pre-facelift EV6 with modified SCC
+      # wiring. An unsupported test request also blocks driving, without UDS.
+      if (candidate == CAR.KIA_EV6 and ret.flags & HyundaiFlags.CANFD
+          and ret.flags & HyundaiFlags.CAMERA_SCC and CanBus(ret).ECAN == 0):
+        ret.flags |= HyundaiFlags.BLINKER_TEST.value
+        ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.BLINKER_TEST.value
+        ret.openpilotLongitudinalControl = False
+        ret.pcmCruise = True
+        ret.minEnableSpeed = 1000.
+        params.put("HyundaiBlinkerTestStatus", "test-only boot armed; openpilot driving disabled")
+      else:
+        ret.dashcamOnly = True
+        ret.openpilotLongitudinalControl = False
+        ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.noOutput)]
+        params.put("HyundaiBlinkerTestStatus", "unsupported: EV6 CAN-FD CAMERA SCC bus 0 required; no test armed")
+
+    return ret
+
+  def update(self, can_packets):
+    if self.CC is not None and self.CC.blinker_test is not None:
+      self.CC.blinker_test.observe(can_packets, time.monotonic_ns() / 1e9)
+    ret = super().update(can_packets)
+    if self.CP.flags & HyundaiFlags.BLINKER_TEST:
+      # Keep selfdrived unavailable even if the original auto-engage setting is
+      # enabled. Panda separately rejects all driving commands in this mode.
+      ret.cruiseState.available = False
+      ret.cruiseState.enabled = False
     return ret
 
   @staticmethod
   def init(CP, can_recv, can_send):
+
+    if CP.flags & HyundaiFlags.BLINKER_TEST or (CP.dashcamOnly and Params().get_int("HyundaiBlinkerTest") in (1, 2)):
+      # No startup ADAS/radar/parking ECU knockout in a parked test boot.
+      return
 
     Params().put_int('LongitudinalPersonalityMax', 4)
 

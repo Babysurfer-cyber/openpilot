@@ -240,6 +240,8 @@ static uint32_t hyundai_canfd_get_checksum(const CANPacket_t* to_push) {
   return chksum;
 }
 
+#include "safety_hyundai_canfd_blinker_test.h"
+
 
 typedef struct {
   int addr;
@@ -450,6 +452,10 @@ static bool canfd_bfwd_reuse_last(CanfdBufferedFwd* st, CANPacket_t* pkt) {
 
 
 static void hyundai_canfd_rx_hook(const CANPacket_t *to_push) {
+  if (hyundai_canfd_blinker_test) {
+    hyundai_blinker_test_rx(to_push);
+    return;
+  }
   int bus = GET_BUS(to_push);
   int addr = GET_ADDR(to_push);
 
@@ -533,6 +539,7 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *to_push) {
 }
 
 static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
+  if (hyundai_canfd_blinker_test) return hyundai_blinker_test_tx(to_send_const);
   CANPacket_t* to_send = (CANPacket_t*)to_send_const;
 
   const TorqueSteeringLimits HYUNDAI_CANFD_STEERING_LIMITS = {
@@ -639,6 +646,7 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
 }
 
 static int hyundai_canfd_fwd_hook(CANPacket_t* to_send) {
+  if (hyundai_canfd_blinker_test) return hyundai_blinker_test_fwd(to_send);
   const int bus_num = GET_BUS(to_send);
   const int addr = GET_ADDR(to_send);
 
@@ -711,6 +719,21 @@ static safety_config hyundai_canfd_init(uint16_t param) {
   hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);
   hyundai_canfd_hda2_alt_steering = GET_FLAG(param, HYUNDAI_PARAM_CANFD_HDA2_ALT_STEERING);
   hyundai_canfd_buffered_fwd = hyundai_camera_scc;
+
+  // A requested but unsupported test configuration must never fall back to
+  // ordinary driving TX, including on release firmware without ALLOW_DEBUG.
+  hyundai_canfd_blinker_test = GET_FLAG(param, HYUNDAI_PARAM_BLINKER_TEST);
+  hyundai_canfd_blinker_test_authorized = false;
+#ifdef ALLOW_DEBUG
+  hyundai_canfd_blinker_test_authorized = hyundai_canfd_blinker_test && hyundai_ev_gas_signal && hyundai_camera_scc;
+#endif
+  (void)memset(&hyundai_blinker_test_state, 0, sizeof(hyundai_blinker_test_state));
+  if (hyundai_canfd_blinker_test) {
+    controls_allowed = false;
+    hyundai_longitudinal = false;
+    hyundai_canfd_buffered_fwd = false;
+    return BUILD_SAFETY_CFG(hyundai_blinker_test_rx_checks, HYUNDAI_BLINKER_TEST_TX_MSGS);
+  }
 
   // no long for radar-SCC HDA1 yet
   //if (!hyundai_canfd_hda2 && !hyundai_camera_scc) {

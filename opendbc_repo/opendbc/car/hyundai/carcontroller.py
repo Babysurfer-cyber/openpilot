@@ -4,6 +4,7 @@ from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_f
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
+from opendbc.car.hyundai.blinker_test import BlinkerHandoffTest
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -113,6 +114,9 @@ class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     super().__init__(dbc_names, CP)
     self.CAN = CanBus(CP)
+    self.blinker_test = BlinkerHandoffTest() if CP.flags & HyundaiFlags.BLINKER_TEST else None
+    self.blinker_test_request = 0
+    self.blinker_test_status = None
     self.params = CarControllerParams(CP)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
@@ -161,6 +165,18 @@ class CarController(CarControllerBase):
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
 
   def update(self, CC, CS, now_nanos):
+    if self.blinker_test is not None:
+      params = Params()
+      if self.frame % 10 == 0:
+        self.blinker_test_request = params.get_int("HyundaiBlinkerTest")
+      can_sends = self.blinker_test.update(self.blinker_test_request, now_nanos / 1e9,
+                                         enabled=CC.enabled or CC.latActive or CC.longActive,
+                                         can_valid=CS.out.canValid)
+      if self.blinker_test.status != self.blinker_test_status:
+        self.blinker_test_status = self.blinker_test.status
+        params.put_nonblocking("HyundaiBlinkerTestStatus", self.blinker_test_status)
+      self.frame += 1
+      return structs.CarControl.Actuators(), can_sends
     
     # 💡 [추가] radarState 데이터를 실시간으로 가져와서 끼어들기 여부 판별!
     self.sm.update(0) # 0초 대기(Non-blocking)로 최신 데이터만 쓱 읽어옴
