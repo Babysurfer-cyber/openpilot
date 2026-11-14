@@ -12,6 +12,10 @@ from openpilot.selfdrive.controls.lib.desire_lib.constants import (
 )
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import classify_maneuver_type
+from openpilot.selfdrive.controls.lib.desire_lib.next_lane import LaneCrossing, StalkPressTracker
+
+STALK_QUEUE_GUARD_S = 0.3
+QUEUED_LANE_WAIT_S = 4.0
 
 
 class DesireHelper:
@@ -71,11 +75,21 @@ class DesireHelper:
     self.lane_change_available_right = False
 
     # ▼▼▼ [추가] 레버 원터치 판단용 변수 ▼▼▼
-    self.prev_left_stalk_count = 0
-    self.prev_right_stalk_count = 0
-    self.stalk_press_timer = 2.0  # 초기값은 동작 시간(0.15초)을 넘겨서 세팅
+    self.stalk_tracker = StalkPressTracker()
+    self.stalk_press_side = BLINKER_NONE
+    self.stalk_tap_confirmed = False
+    self.stalk_queue_eligible = False
+    self.stalk_press_timer = 2.0  # 초기값은 원터치 확인 시간(0.3초)을 넘겨서 세팅
     self.stalk_max_level = 0
     self.one_touch_triggered = False
+    self.queued_lane_change = BLINKER_NONE
+    self.queued_wait = 0.0
+    self.finishing_timer = 0.0
+    self.crossing = LaneCrossing()
+    self.blinker_hold_direction = LaneChangeDirection.none
+    self.handoff_blinker_hold = BLINKER_NONE
+    self.followup_requires_press = False
+    self.driver_lane_change = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   # ─────────────────────────────────────────────
@@ -231,21 +245,28 @@ class DesireHelper:
     self._make_model_turn_speed(modeldata)
 
     # ▼▼▼ [수정] 깜빡이 레버 물리 상태(Debounce) 추적 로직 ▼▼▼
-    left_stalk_changed = carstate.leftBlinkerStalkCount != self.prev_left_stalk_count
-    right_stalk_changed = carstate.rightBlinkerStalkCount != self.prev_right_stalk_count
+    previous_state = self.lane_change_state
+    stalk_press = self.stalk_tracker.update(carstate)
+    confirmed_tap = BLINKER_NONE
+    if self.stalk_tracker.invalidated:
+      self.stalk_press_side = BLINKER_NONE
+      self.stalk_tap_confirmed = True
+      self.stalk_max_level = 0
+      self.one_touch_triggered = False
+      self.followup_requires_press = True
+      self.stalk_queue_eligible = False
 
     # 새로운 레버 조작(Count 변화)이 감지되면 타이머 및 상태 갱신
-    if left_stalk_changed or right_stalk_changed:
-      self.prev_left_stalk_count = carstate.leftBlinkerStalkCount
-      self.prev_right_stalk_count = carstate.rightBlinkerStalkCount
+    if stalk_press != BLINKER_NONE:
       self.stalk_press_timer = 0.0
-      self.stalk_max_level = 0
-      
-      # 💡 핵심: 톡 칠 때마다 즉시 다시 트리거를 살림 (연속 차선 변경 허용)
-      if self.lane_change_state != LaneChangeState.off:
-          self.one_touch_triggered = True
-      else:
-          self.one_touch_triggered = False
+      # A complete tap can fall between two model frames. A progressing physical
+      # press counter with an already released lever still represents that tap.
+      self.stalk_max_level = 1 if carstate.blinkerLever == 0 else carstate.blinkerLever
+      self.stalk_press_side = stalk_press
+      self.stalk_tap_confirmed = False
+      self.stalk_queue_eligible = False
+      if self.lane_change_state == LaneChangeState.off:
+        self.one_touch_triggered = False
 
     # 레버가 도달한 최대 깊이(1: 원터치, 2: 완전 체결) 갱신
     if carstate.blinkerLever > self.stalk_max_level:
@@ -260,6 +281,12 @@ class DesireHelper:
     elif carstate.blinkerLever == 0 and self.stalk_max_level == 1 and self.stalk_press_timer > 0:
       # 0.3초 전에 레버가 다시 0으로 튕겨 올라왔어도 원터치로 확정
       self.one_touch_triggered = True
+
+    tap_confirmed = (self.stalk_max_level == 1 and
+                     (self.stalk_press_timer >= 0.3 or carstate.blinkerLever == 0))
+    if tap_confirmed and not self.stalk_tap_confirmed:
+      confirmed_tap = self.stalk_press_side
+      self.stalk_tap_confirmed = True
 
     # 완전 체결(2)이 감지되었다면 원터치 동작은 무조건 취소 (메뉴얼 턴/수동 조향용)
     if self.stalk_max_level == 2:
@@ -280,6 +307,56 @@ class DesireHelper:
     v_ego = carstate.vEgo
     below_lane_change_speed = v_ego < LANE_CHANGE_SPEED_MIN
 
+    raw_blinker = int(carstate.leftBlinker) + 2 * int(carstate.rightBlinker)
+    request_allowed = (lateral_active and carstate.canValid and not below_lane_change_speed
+                       and self.laneChangeNeedTorque >= 0 and self.desire_disable_count == 0)
+    if request_allowed and confirmed_tap:
+      self.followup_requires_press = False
+    elif not request_allowed:
+      self.followup_requires_press = True
+    if previous_state in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing):
+      self.crossing.update(modeldata, self.lane_change_direction == LaneChangeDirection.left)
+      current_side = BLINKER_LEFT if self.lane_change_direction == LaneChangeDirection.left else BLINKER_RIGHT
+      after_crossing = (self.crossing.since >= 0.0 or
+                        (previous_state == LaneChangeState.laneChangeFinishing
+                         and self.finishing_timer + DT_MDL >= STALK_QUEUE_GUARD_S))
+      if stalk_press:
+        # Classify intent at the press, not its later release. Holding an early
+        # press through the crossing must not promote it into a next-lane request.
+        self.stalk_queue_eligible = request_allowed and stalk_press == current_side and after_crossing
+      if request_allowed and confirmed_tap == current_side and self.stalk_queue_eligible:
+        self.queued_lane_change = confirmed_tap
+        self.queued_wait = 0.0
+    elif previous_state == LaneChangeState.preLaneChange:
+      if stalk_press:
+        self.stalk_queue_eligible = request_allowed and self.next_lane_change
+      if self.next_lane_change and request_allowed and confirmed_tap and self.stalk_queue_eligible:
+        # The first change already finished; accept a new tap even when the old
+        # lamp has not gone dark. It must pass the normal preLaneChange gates.
+        self.queued_lane_change = confirmed_tap
+        self.queued_wait = 0.0
+        self.next_lane_change = False
+
+    queued = self.queued_lane_change
+    incompatible = (self.stalk_tracker.invalidated or raw_blinker == 3 or carstate.blinkerLever == 2
+                    or (queued and raw_blinker not in (BLINKER_NONE, queued))
+                    or (queued and stalk_press not in (BLINKER_NONE, queued)))
+    if previous_state == LaneChangeState.preLaneChange and queued:
+      self.queued_wait += DT_MDL
+    if (not request_allowed or incompatible or
+        (previous_state == LaneChangeState.preLaneChange and self.queued_wait >= QUEUED_LANE_WAIT_S)):
+      if queued:
+        self.next_lane_change = True  # A later BSD/line release cannot revive an expired request.
+        self.followup_requires_press = True
+      self.queued_lane_change = BLINKER_NONE
+    if (not request_allowed or self.stalk_tracker.invalidated or raw_blinker == 3 or carstate.blinkerLever == 2
+        or (self.handoff_blinker_hold and
+            (raw_blinker not in (BLINKER_NONE, self.handoff_blinker_hold)
+             or stalk_press not in (BLINKER_NONE, self.handoff_blinker_hold)))):
+      self.handoff_blinker_hold = BLINKER_NONE
+    if self.crossing.since >= 0.0:
+      self.handoff_blinker_hold = BLINKER_NONE
+
     # per-side compute (좌/우 모두)
     self._process_sides(carstate, modeldata, radarState)
 
@@ -288,6 +365,11 @@ class DesireHelper:
 
     # blinkers
     driver_st, driver_changed, driver_enabled = self._update_driver_blinker(carstate)
+    if self.queued_lane_change:
+      # The physical one-touch flashes can end before the model finishes this
+      # change. Keep the explicit queued request, bounded below, independently.
+      driver_st = self.queued_lane_change
+      driver_enabled = True
     atc_st, atc_enabled = self._update_atc_blinker(carrotMan, driver_st)
 
     desire_enabled = driver_enabled or atc_enabled
@@ -340,17 +422,19 @@ class DesireHelper:
       self.next_lane_change = False
 
     # ───────────────────────── FSM ─────────────────────────
-    if not lateral_active or self.lane_change_timer > LANE_CHANGE_TIME_MAX:
+    if not lateral_active or not carstate.canValid or self.lane_change_timer > LANE_CHANGE_TIME_MAX:
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
       self.turn_direction = TurnDirection.none
       self.maneuver_type = "none"
+      self.followup_requires_press = True
 
     elif self.desire_disable_count > 0:
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
       self.turn_direction = TurnDirection.none
       self.maneuver_type = "none"
+      self.followup_requires_press = True
 
     else:
       # classify maneuver type using selected side
@@ -390,7 +474,9 @@ class DesireHelper:
         self.turn_direction = TurnDirection.none
 
         if self.lane_change_state == LaneChangeState.off:
-          if desire_enabled and not self.prev_desire_enabled and not below_lane_change_speed and side is not None:
+          fresh_driver_request = not driver_enabled or not self.followup_requires_press or confirmed_tap
+          if (desire_enabled and (not self.prev_desire_enabled or confirmed_tap) and fresh_driver_request
+              and not below_lane_change_speed and side is not None):
             # ▼▼▼ [수정] 원터치 조작이거나, 자동차선변경(ATC)일 때만 차선변경 로직 진입 허용 ▼▼▼
             if self.one_touch_triggered or atc_enabled or self.carrot_lane_change_count > 0:
               self.lane_change_state = LaneChangeState.preLaneChange
@@ -437,7 +523,8 @@ class DesireHelper:
               start_gate = (side.lane_change_available_geom and self.lane_change_delay == 0) or \
                            side.lane_line_info_edge_detect or solid_line_blocked or block_released_auto or atc_line_release
 
-              if start_gate:
+              queued_signal_ready = not self.queued_lane_change or raw_blinker == self.queued_lane_change
+              if start_gate and queued_signal_ready:
                 if solid_line_blocked:
                   if atc_line_release or (torque_applied and not (bsd_active and block_lanechange_bsd)):
                     self.lane_change_state = LaneChangeState.laneChangeStarting
@@ -464,16 +551,26 @@ class DesireHelper:
           self.lane_change_ll_prob = max(self.lane_change_ll_prob - 2 * DT_MDL, 0.0)
           if lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:
             self.lane_change_state = LaneChangeState.laneChangeFinishing
+            self.finishing_timer = 0.0
 
         elif self.lane_change_state == LaneChangeState.laneChangeFinishing:
+          self.finishing_timer += DT_MDL
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
             if desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
-              self.next_lane_change = False
+              # A lingering lamp is not a second automatic request. A fresh
+              # queued tap removes only this extra confirmation, never the
+              # configured LaneChangeNeedTorque/BSD/line checks above.
+              self.next_lane_change = driver_enabled and self.queued_lane_change != blinker_state
+              self.queued_wait = 0.0
+              if self.driver_lane_change and not self.queued_lane_change:
+                self.followup_requires_press = True
             else:
               self.lane_change_state = LaneChangeState.off
+              if self.driver_lane_change:
+                self.followup_requires_press = True
     
     # timer
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
@@ -496,6 +593,24 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
       self.lane_change_state = LaneChangeState.off
       self.blinker_ignore = True
+      self.followup_requires_press = True
+
+    if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
+      self.crossing.reset()
+    if self.lane_change_state == LaneChangeState.laneChangeStarting and previous_state == LaneChangeState.preLaneChange:
+      self.driver_lane_change = driver_enabled
+      # Keep the queued signal through the new maneuver's initial model-probability
+      # ramp. The legacy hold can be zero here, after the one-touch flashes ended.
+      self.handoff_blinker_hold = self.queued_lane_change
+      self.queued_lane_change = BLINKER_NONE
+    elif self.lane_change_state == LaneChangeState.off:
+      self.queued_lane_change = BLINKER_NONE
+    if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
+      self.handoff_blinker_hold = BLINKER_NONE
+    hold_side = self.queued_lane_change or self.handoff_blinker_hold
+    self.blinker_hold_direction = {
+      BLINKER_LEFT: LaneChangeDirection.left, BLINKER_RIGHT: LaneChangeDirection.right,
+    }.get(hold_side, LaneChangeDirection.none)
 
     # final desire
     if self.turn_direction != TurnDirection.none:

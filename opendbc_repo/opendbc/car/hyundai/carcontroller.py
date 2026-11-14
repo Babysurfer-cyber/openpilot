@@ -207,6 +207,7 @@ class CarController(CarControllerBase):
     # ▼▼▼ [추가] canfd.py에서 쓰도록 CS 객체에 레이더와 비전 경로 데이터를 심어줍니다 ▼▼▼
     CS.radarState = self.sm['radarState']
     CS.MD = self.sm['modelV2']
+    CS.MD_valid = self.sm.valid['modelV2'] and self.sm.alive['modelV2']
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if self.frame % 50 == 0:

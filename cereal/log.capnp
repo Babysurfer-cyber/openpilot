@@ -1186,6 +1186,7 @@ struct ModelDataV2 {
     modelTurnSpeed @17 :Float32;
     laneChangeAvailableLeft @18 :Bool;
     laneChangeAvailableRight @19 :Bool;
+    laneChangeBlinkerHold @20 :LaneChangeDirection;  # driver-requested queued/handoff turn-signal hold
 
     # deprecated
     brakeDisengageProbDEPRECATED @2 :Float32;
