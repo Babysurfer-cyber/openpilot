@@ -36,6 +36,7 @@ def test_real_model_metadata_serialization(side):
   assert str(md.meta.laneChangeBlinkerHold) == 'none'
   md.meta.laneChangeBlinkerHold = side
   md.meta.desire = 'laneChangeLeft'
+  md.meta.laneChangeState = 'laneChangeStarting'
   md.meta.desireState = [0., 0., 0., 0.95, 0.]
   with log.ModelDataV2.from_bytes(md.to_bytes()) as received:
     assert str(received.meta.laneChangeBlinkerHold) == side
@@ -50,6 +51,7 @@ def make_adrv(request, *, current=0, active=True, valid=True, compatibility=Fals
   stock_fields.update(COUNTER=71, LEFT_BLINK_HOLD=1, RIGHT_BLINK_HOLD=1, NEW_SIGNAL_1=1)
   md = log.ModelDataV2.new_message()
   md.meta.laneChangeBlinkerHold = request
+  md.meta.laneChangeState = 'laneChangeStarting' if current else 'preLaneChange'
   md.meta.desireState = [0.] * 5
   if current:
     md.meta.desireState[current] = 0.95

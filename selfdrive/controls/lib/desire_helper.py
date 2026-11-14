@@ -79,7 +79,7 @@ class DesireHelper:
     self.stalk_press_side = BLINKER_NONE
     self.stalk_tap_confirmed = False
     self.stalk_queue_eligible = False
-    self.stalk_press_timer = 2.0  # 초기값은 원터치 확인 시간(0.3초)을 넘겨서 세팅
+    self.stalk_press_timer = 2.0  # 레버 조작 경과 시간(초)
     self.stalk_max_level = 0
     self.one_touch_triggered = False
     self.queued_lane_change = BLINKER_NONE
@@ -90,6 +90,7 @@ class DesireHelper:
     self.handoff_blinker_hold = BLINKER_NONE
     self.followup_requires_press = False
     self.driver_lane_change = False
+    self.latched_blinker_state = BLINKER_NONE
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   # ─────────────────────────────────────────────
@@ -236,6 +237,23 @@ class DesireHelper:
   def _get_selected_side(self, blinker_state: int) -> SideState:
     return self.left if blinker_state == BLINKER_LEFT else self.right
 
+  def _latched_turn_side(self, carstate, stalk_press, raw_blinker):
+    """Resolve a manual latch from physical input, never a navigation request."""
+    if carstate.blinkerLever != 2:
+      self.latched_blinker_state = BLINKER_NONE
+      return BLINKER_NONE
+    if self.stalk_tracker.invalidated:
+      self.latched_blinker_state = BLINKER_NONE
+      return BLINKER_NONE
+    if stalk_press:
+      self.latched_blinker_state = stalk_press
+    elif not self.stalk_tap_confirmed and self.stalk_press_side:
+      self.latched_blinker_state = self.stalk_press_side
+    elif not self.latched_blinker_state and raw_blinker in (BLINKER_LEFT, BLINKER_RIGHT):
+      self.latched_blinker_state = raw_blinker
+    self.stalk_tap_confirmed = True
+    return BLINKER_NONE if raw_blinker == 3 else self.latched_blinker_state
+
   # ─────────────────────────────────────────────
   # main update
   # ─────────────────────────────────────────────
@@ -275,15 +293,11 @@ class DesireHelper:
     if self.stalk_press_timer < 2.0:
       self.stalk_press_timer += DT_MDL
 
-    # 원터치 확정 로직 (0.3초 안에 완전 체결이 되지 않고 1까지만 갔다면 원터치)
-    if self.stalk_max_level == 1 and self.stalk_press_timer >= 0.3:
+    # A latch passes through detent 1. Waiting for release avoids starting a
+    # lane change while a slow movement toward detent 2 is still undecided.
+    tap_confirmed = carstate.blinkerLever == 0 and self.stalk_max_level == 1 and self.stalk_press_timer > 0
+    if tap_confirmed:
       self.one_touch_triggered = True
-    elif carstate.blinkerLever == 0 and self.stalk_max_level == 1 and self.stalk_press_timer > 0:
-      # 0.3초 전에 레버가 다시 0으로 튕겨 올라왔어도 원터치로 확정
-      self.one_touch_triggered = True
-
-    tap_confirmed = (self.stalk_max_level == 1 and
-                     (self.stalk_press_timer >= 0.3 or carstate.blinkerLever == 0))
     if tap_confirmed and not self.stalk_tap_confirmed:
       confirmed_tap = self.stalk_press_side
       self.stalk_tap_confirmed = True
@@ -308,6 +322,8 @@ class DesireHelper:
     below_lane_change_speed = v_ego < LANE_CHANGE_SPEED_MIN
 
     raw_blinker = int(carstate.leftBlinker) + 2 * int(carstate.rightBlinker)
+    manual_latched = carstate.blinkerLever == 2
+    manual_turn_side = self._latched_turn_side(carstate, stalk_press, raw_blinker)
     request_allowed = (lateral_active and carstate.canValid and not below_lane_change_speed
                        and self.laneChangeNeedTorque >= 0 and self.desire_disable_count == 0)
     if request_allowed and confirmed_tap:
@@ -422,7 +438,8 @@ class DesireHelper:
       self.next_lane_change = False
 
     # ───────────────────────── FSM ─────────────────────────
-    if not lateral_active or not carstate.canValid or self.lane_change_timer > LANE_CHANGE_TIME_MAX:
+    if (not lateral_active or not carstate.canValid
+        or (not manual_latched and self.lane_change_timer > LANE_CHANGE_TIME_MAX)):
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
       self.turn_direction = TurnDirection.none
@@ -435,6 +452,35 @@ class DesireHelper:
       self.turn_direction = TurnDirection.none
       self.maneuver_type = "none"
       self.followup_requires_press = True
+
+    elif manual_latched:
+      # A fully latched lever is a manual turn input in every lane-change
+      # state. It cannot inherit a pending tap or authorize an ATC lane change.
+      was_turn_active = self.turn_direction != TurnDirection.none
+      self.maneuver_type = "turn"
+      self.lane_change_state = LaneChangeState.off
+      self.lane_change_direction = LaneChangeDirection.none
+      self.turn_direction = TurnDirection.none
+      self.lane_change_ll_prob = 1.0
+      self.lane_change_timer = self.lane_change_delay = self.finishing_timer = 0.0
+      self.queued_lane_change = self.handoff_blinker_hold = BLINKER_NONE
+      self.queued_wait = 0.0
+      self.next_lane_change = self.auto_lane_change_enable = False
+      self.followup_requires_press = True
+      self.stalk_queue_eligible = False
+      self.driver_lane_change = False
+      if manual_turn_side in (BLINKER_LEFT, BLINKER_RIGHT):
+        turn_side = self._get_selected_side(manual_turn_side)
+        # Classification as TURN does not enable new high-speed turn steering.
+        # Retain the existing speed/geometry/navigation eligibility and cooldown.
+        turn_type = classify_maneuver_type(
+          blinker_state=manual_turn_side, carstate=carstate, side=turn_side,
+          turn_desire_state=self.turn_desire_state, atc_type=self.atc_type,
+          old_type="turn" if was_turn_active else "none",
+        )
+        if self.enable_turn_desires and self.turn_disable_count == 0 and turn_type == "turn":
+          self.turn_direction = TurnDirection.turnLeft if manual_turn_side == BLINKER_LEFT else TurnDirection.turnRight
+          self.lane_change_direction = self.turn_direction
 
     else:
       # classify maneuver type using selected side
@@ -476,7 +522,7 @@ class DesireHelper:
         if self.lane_change_state == LaneChangeState.off:
           fresh_driver_request = not driver_enabled or not self.followup_requires_press or confirmed_tap
           if (desire_enabled and (not self.prev_desire_enabled or confirmed_tap) and fresh_driver_request
-              and not below_lane_change_speed and side is not None):
+              and carstate.blinkerLever == 0 and not below_lane_change_speed and side is not None):
             # ▼▼▼ [수정] 원터치 조작이거나, 자동차선변경(ATC)일 때만 차선변경 로직 진입 허용 ▼▼▼
             if self.one_touch_triggered or atc_enabled or self.carrot_lane_change_count > 0:
               self.lane_change_state = LaneChangeState.preLaneChange
@@ -524,7 +570,7 @@ class DesireHelper:
                            side.lane_line_info_edge_detect or solid_line_blocked or block_released_auto or atc_line_release
 
               queued_signal_ready = not self.queued_lane_change or raw_blinker == self.queued_lane_change
-              if start_gate and queued_signal_ready:
+              if start_gate and queued_signal_ready and carstate.blinkerLever == 0:
                 if solid_line_blocked:
                   if atc_line_release or (torque_applied and not (bsd_active and block_lanechange_bsd)):
                     self.lane_change_state = LaneChangeState.laneChangeStarting

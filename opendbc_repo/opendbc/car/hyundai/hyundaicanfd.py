@@ -687,15 +687,18 @@ def _get_desire_and_lane_changing(md):
   return desire, lane_changing
 
 
-def _lane_change_blink_hold(md, lane_changing, *, lateral_active, model_valid):
+def _lane_change_blink_hold(md, lane_changing, *, lateral_active, model_valid, manual_latched=False):
   """A fresh driver's queued request wins over the existing model hold side."""
-  if md is None or not lateral_active or not model_valid:
+  if md is None or not lateral_active or not model_valid or manual_latched:
     return 0
   requested = str(getattr(getattr(md, 'meta', None), 'laneChangeBlinkerHold', 'none'))
   if requested == 'left':
     return 3
   if requested == 'right':
     return 4
+  state = getattr(getattr(md, 'meta', None), 'laneChangeState', None)
+  if state is not None and str(state) not in ('laneChangeStarting', 'laneChangeFinishing'):
+    return 0  # Residual model probability is not an active lane-change request.
   return lane_changing if lane_changing in (3, 4) else 0
 
 
@@ -1080,7 +1083,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
 
         # blinker hold
         hold_side = _lane_change_blink_hold(md, lane_changing, lateral_active=CC.latActive,
-                                           model_valid=getattr(CS, 'MD_valid', True))
+                                           model_valid=getattr(CS, 'MD_valid', True),
+                                           manual_latched=getattr(CS.out, 'blinkerLever', 0) == 2)
         values['LEFT_BLINK_HOLD'] = 1 if hold_side == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if hold_side == 4 else 0
 
