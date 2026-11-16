@@ -14,7 +14,7 @@ from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import classify_maneuver_type
 from openpilot.selfdrive.controls.lib.desire_lib.next_lane import LaneCrossing, StalkPressTracker
 
-QUEUED_LANE_WAIT_S = 4.0
+QUEUED_LANE_WAIT_S = 5.0
 FAST_LANE_CHANGE_MODEL_SETTLE_S = 0.5
 
 
