@@ -199,13 +199,15 @@ class CarController(CarControllerBase):
     elif self.blinker_test_request and self.blinker_test_status != 'unsupported':
       self.blinker_test_status = 'unsupported'
       Params().put_nonblocking("HyundaiBlinkerTestStatus", "unsupported: EV6 CAN-FD CAMERA SCC bus 0 required")
-    if self.sm.updated['radarState']:
-      lead_one = self.sm['radarState'].leadOne
-      # 완벽한 공식: 레이더가 켜져있는데 TrackId가 -1 이면 코너 레이더 개입!
-      self.corner_radar_cutin = (lead_one.status and lead_one.radar and lead_one.radarTrackId == -1)
-
     # ▼▼▼ [추가] canfd.py에서 쓰도록 CS 객체에 레이더와 비전 경로 데이터를 심어줍니다 ▼▼▼
     CS.radarState = self.sm['radarState']
+    # Reevaluate on every control cycle so an interrupted publisher clears the
+    # indication even when no new radarState message arrives.
+    self.corner_radar_cutin = hyundaicanfd.radar_cutin_detected(
+      CS.radarState,
+      valid=CS.out.canValid and self.sm.valid['radarState'] and self.sm.alive['radarState'],
+      received_s=self.sm.recv_time['radarState'], now_s=time.monotonic(),
+    )
     CS.MD = self.sm['modelV2']
     CS.MD_valid = self.sm.valid['modelV2'] and self.sm.alive['modelV2']
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
