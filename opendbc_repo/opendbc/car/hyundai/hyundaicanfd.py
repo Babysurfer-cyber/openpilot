@@ -12,6 +12,31 @@ LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 TurnDirection = log.Desire
 
+RADAR_CUTIN_DISPLAY_MAX_AGE_S = 0.25
+
+
+def radar_cutin_detected(radar_state, *, valid, received_s, now_s):
+  """Confirmed CUT-IN indication for the legacy and trajectory radar paths."""
+  if (not valid or radar_state is None
+      or not math.isfinite(now_s) or not math.isfinite(received_s) or received_s <= 0.0
+      or not 0.0 <= now_s - received_s <= RADAR_CUTIN_DISPLAY_MAX_AGE_S):
+    return False
+  errors = getattr(radar_state, "radarErrors", None)
+  if any(getattr(errors, name, False) for name in
+         ("canError", "radarFault", "wrongConfig", "radarUnavailableTemporary")):
+    return False
+
+  def measured_lead(lead):
+    return (lead is not None and lead.status and lead.radar
+            and math.isfinite(lead.dRel) and lead.dRel > 0.2 and math.isfinite(lead.vRel))
+
+  lead_one = getattr(radar_state, "leadOne", None)
+  legacy_cutin = measured_lead(lead_one) and lead_one.radarTrackId == -1
+  # A corner may have a positive ID and never replace the front leadOne.
+  # leadsCutIn contains confirmed entries, including those not yet in leadTwo.
+  # Ordinary observations and the separate early leadCutInRisk are not entries.
+  return bool(legacy_cutin or any(measured_lead(lead) for lead in getattr(radar_state, "leadsCutIn", ())))
+
 
 def hyundai_crc8(data: bytes) -> int:
   poly = 0x2F
