@@ -100,7 +100,8 @@ class Rig:
   def queue(self):
     self.start()
     self.cross()
-    assert self.press() == LCS.laneChangeStarting
+    # After the crossing, a new released physical tap can bridge immediately.
+    assert self.press() == LCS.preLaneChange
     assert self.h.queued_lane_change == self.number
     assert self.h.blinker_hold_direction == self.direction
 
@@ -112,6 +113,10 @@ class Rig:
     raise AssertionError("did not finish starting phase")
 
   def finish(self):
+    # A queued fast handoff has already ended the old maneuver's FSM phase.
+    # Do not step into the next maneuver on behalf of the caller.
+    if self.h.lane_change_state == LCS.preLaneChange:
+      return self.h.lane_change_state
     self.finishing()
     for _ in range(30):
       if self.step() != LCS.laneChangeFinishing:
@@ -128,13 +133,13 @@ def no_device_params(monkeypatch):
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_second_tap_queues_one_change_after_crossing_and_waits_for_first_completion(side):
+def test_second_tap_bridges_after_crossing_without_waiting_for_first_completion(side):
   rig = Rig(side)
   rig.queue()
-  rig.step(5)
-  assert rig.h.lane_change_state == LCS.laneChangeStarting
+  assert rig.h.lane_change_state == LCS.preLaneChange
+  assert rig.h.fast_lane_change_handoff
+  assert rig.h.lane_change_ll_prob < 1.
   assert rig.h.lane_change_direction == rig.direction
-  assert rig.finish() == LCS.preLaneChange
   assert not rig.h.next_lane_change
   assert rig.step() == LCS.laneChangeStarting
   assert rig.h.queued_lane_change == 0
@@ -153,17 +158,26 @@ def test_second_tap_queues_one_change_after_crossing_and_waits_for_first_complet
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_early_extra_tap_does_not_request_another_lane(side):
+def test_early_extra_tap_queues_but_waits_for_observed_crossing(side):
   rig = Rig(side)
   rig.start()
   rig.press()
+  assert rig.h.queued_lane_change == rig.number
+  assert rig.step(5) == LCS.laneChangeStarting
+  assert not rig.h.fast_lane_change_handoff
+  for left, right in rig.CROSSING:
+    if side == "right":
+      left, right = -right, -left
+    rig.geometry(left, right)
+    if rig.step() == LCS.preLaneChange:
+      break
+  assert rig.h.fast_lane_change_handoff
+  assert rig.h.lane_change_state == LCS.preLaneChange
+  assert rig.step() == LCS.laneChangeStarting
   assert rig.h.queued_lane_change == 0
-  assert rig.finish() == LCS.preLaneChange
-  assert rig.h.next_lane_change
-  assert rig.step(30) == LCS.preLaneChange
 
 
-def test_finishing_guard_can_accept_a_request_when_crossing_geometry_is_missing():
+def test_request_without_crossing_geometry_retains_normal_completion_fallback():
   rig = Rig()
   rig.start()
   rig.md.laneLines[1].y = []
@@ -172,10 +186,12 @@ def test_finishing_guard_can_accept_a_request_when_crossing_geometry_is_missing(
   # the crossing observer's absent-geometry fallback.
   rig.h._process_sides = lambda *args: None
   rig.finishing()
-  rig.step(round((desire.STALK_QUEUE_GUARD_S + .1) / DT_MDL))
+  rig.step(8)
   assert rig.h.crossing.since < 0.
   rig.press()
   assert rig.h.queued_lane_change == 1
+  assert not rig.h.fast_lane_change_handoff
+  assert rig.finish() == LCS.preLaneChange
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -224,7 +240,7 @@ def test_expired_queue_does_not_revive_when_bsd_clears_or_lamp_flashes(flash_aft
   assert rig.h.followup_requires_press
   rig.block_bsd(False)
   rig.step(30)
-  assert rig.h.lane_change_state == LCS.preLaneChange
+  assert rig.h.lane_change_state == LCS.off
   if flash_after_expiry:
     rig.lamps("none")
     rig.step(8)
@@ -412,7 +428,7 @@ def test_unconfirmed_tap_cannot_be_replayed_after_invalid_input(loss):
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
-def test_press_before_crossing_is_not_promoted_when_released_after_crossing(side):
+def test_press_before_crossing_is_confirmed_only_when_released_after_crossing(side):
   rig = Rig(side)
   rig.start()
   near = (-.34, 2.84) if side == "left" else (-2.84, .34)
@@ -425,25 +441,25 @@ def test_press_before_crossing_is_not_promoted_when_released_after_crossing(side
   rig.step(2)
   assert rig.h.crossing.since >= 0.
   rig.cs.blinkerLever = 0
-  rig.step()
-  assert rig.h.queued_lane_change == 0
-  assert rig.finish() == LCS.preLaneChange
-  assert rig.h.next_lane_change
-  assert rig.step(20) == LCS.preLaneChange
+  assert rig.step() == LCS.preLaneChange
+  assert rig.h.queued_lane_change == rig.number
+  assert rig.h.fast_lane_change_handoff
+  assert rig.step() == LCS.laneChangeStarting
 
 
-def test_press_before_finishing_guard_is_not_promoted_by_later_release():
+def test_press_during_finishing_can_queue_without_a_crossing_time_guard():
   rig = Rig()
   rig.start()
   rig.finishing()
   rig.step(2)
-  assert rig.h.finishing_timer < desire.STALK_QUEUE_GUARD_S
+  assert rig.h.finishing_timer < .3
   rig.press(lever=1)
   rig.step(3)
   rig.cs.blinkerLever = 0
   rig.step()
-  assert rig.h.finishing_timer >= desire.STALK_QUEUE_GUARD_S
-  assert rig.h.queued_lane_change == 0
+  assert rig.h.finishing_timer >= .3
+  assert rig.h.queued_lane_change == 1
+  assert not rig.h.fast_lane_change_handoff
 
 
 @pytest.mark.parametrize("loss", ["lateral", "can", "opposite_torque", "opposite_press", "hazards", "latched"])

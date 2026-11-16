@@ -92,3 +92,34 @@ class LaneCrossing:
     if self.closest < self.CROSS_NEAR_M and distance - self.closest > self.CROSS_JUMP_M:
       self.since = 0.
     return self.since
+
+  @classmethod
+  def next_lane_geometry(cls, model, left):
+    """Require a fresh adjacent lane before bypassing the completion phase.
+
+    SideState intentionally averages lane widths for one second. That old
+    width cannot establish a second lane after the model relabels the first.
+    """
+    try:
+      if cls._inner_lines(model) is None:
+        return False
+      inner_index, outer_index, edge_index = (1, 0, 0) if left else (2, 3, 1)
+      probabilities = (model.laneLineProbs[inner_index], model.laneLineProbs[outer_index])
+      if (not all(isinstance(p, Real) and math.isfinite(p) and 0.0 <= p <= 1.0 for p in probabilities)
+          or probabilities[0] < .3 or probabilities[1] < .5):
+        return False
+      inner = model.laneLines[inner_index].y
+      outer = model.laneLines[outer_index].y
+      edge = model.roadEdges[edge_index].y
+      direction = -1.0 if left else 1.0
+      for index in (0, 5, 10):
+        values = (inner[index], outer[index], edge[index])
+        if not all(isinstance(y, Real) and math.isfinite(y) for y in values):
+          return False
+        width = direction * (float(outer[index]) - float(inner[index]))
+        edge_width = direction * (float(edge[index]) - float(inner[index]))
+        if not 2.5 < width <= cls.MAX_LANE_WIDTH_M or edge_width <= 2.5:
+          return False
+      return True
+    except (AttributeError, IndexError, TypeError, ValueError):
+      return False
