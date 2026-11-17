@@ -16,6 +16,7 @@ from openpilot.selfdrive.controls.lib.desire_lib.next_lane import LaneCrossing, 
 
 QUEUED_LANE_WAIT_S = 5.0
 FAST_LANE_CHANGE_MODEL_SETTLE_S = 0.5
+LANE_CHANGE_HOLD_PROB = float(np.float32(0.9))
 
 
 class DesireHelper:
@@ -87,6 +88,7 @@ class DesireHelper:
     self.finishing_timer = 0.0
     self.crossing = LaneCrossing()
     self.blinker_hold_direction = LaneChangeDirection.none
+    self.blinker_hold_cancelled = False
     self.handoff_blinker_hold = BLINKER_NONE
     self.followup_requires_press = False
     self.driver_lane_change = False
@@ -681,6 +683,7 @@ class DesireHelper:
       self.crossing.reset()
     if self.lane_change_state == LaneChangeState.laneChangeStarting and previous_state == LaneChangeState.preLaneChange:
       self.driver_lane_change = driver_enabled
+      self.blinker_hold_cancelled = False
       # The first change's low model confidence must not finish this new request
       # before its fresh pulse has had the usual initial half second to settle.
       self.fast_lane_change_model_wait = self.fast_lane_change_handoff
@@ -695,15 +698,28 @@ class DesireHelper:
       self.fast_lane_change_model_wait = False
     if not self.queued_lane_change:
       self.fast_lane_change_handoff = False
-    if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
+    if (self.lane_change_state != LaneChangeState.laneChangeStarting
+        or self.lane_change_timer >= FAST_LANE_CHANGE_MODEL_SETTLE_S):
       self.handoff_blinker_hold = BLINKER_NONE
+    active_lane_change = (
+      self.lane_change_state in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
+      and self.lane_change_direction in (LaneChangeDirection.left, LaneChangeDirection.right)
+    )
+    if active_lane_change:
+      current_side = BLINKER_LEFT if self.lane_change_direction == LaneChangeDirection.left else BLINKER_RIGHT
+      if (self.stalk_tracker.invalidated or raw_blinker not in (BLINKER_NONE, current_side)
+          or stalk_press not in (BLINKER_NONE, current_side)):
+        # A temporary lamp return to NONE must not revive a cancelled hold.
+        self.blinker_hold_cancelled = True
     hold_side = self.queued_lane_change or self.handoff_blinker_hold
     if hold_side in (BLINKER_LEFT, BLINKER_RIGHT):
       self.blinker_hold_direction = (
         LaneChangeDirection.left if hold_side == BLINKER_LEFT else LaneChangeDirection.right
       )
-    elif (self.lane_change_state in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
-          and self.lane_change_direction in (LaneChangeDirection.left, LaneChangeDirection.right)):
+    elif (active_lane_change and not self.blinker_hold_cancelled and self.crossing.since < 0.0
+          and np.isfinite(lane_change_prob) and lane_change_prob >= LANE_CHANGE_HOLD_PROB):
+      # Match the wire's Float32 0.9 boundary, then release at the observed
+      # crossing even if the model's lane-change probability remains high.
       self.blinker_hold_direction = self.lane_change_direction
     else:
       self.blinker_hold_direction = LaneChangeDirection.none

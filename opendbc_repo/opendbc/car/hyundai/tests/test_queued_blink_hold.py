@@ -12,9 +12,9 @@ from opendbc.car.hyundai.values import HyundaiFlags
 
 @pytest.mark.parametrize('requested,current,expected', [
   ('left', 0, 3), ('right', 0, 4), ('left', 4, 3), ('right', 3, 4),
-  ('none', 3, 3), ('none', 4, 4), ('none', 0, 0), ('none', 1, 0),
+  ('none', 3, 0), ('none', 4, 0), ('none', 0, 0), ('none', 1, 0),
 ])
-def test_request_preference_and_existing_current_change_fallback(requested, current, expected):
+def test_explicit_request_is_authoritative_including_release(requested, current, expected):
   md = NS(meta=NS(laneChangeBlinkerHold=requested))
   assert hyundaicanfd._lane_change_blink_hold(md, current, lateral_active=True, model_valid=True) == expected
 
@@ -41,7 +41,7 @@ def test_real_model_metadata_serialization(side):
   with log.ModelDataV2.from_bytes(md.to_bytes()) as received:
     assert str(received.meta.laneChangeBlinkerHold) == side
     assert hyundaicanfd._lane_change_blink_hold(received, 3, lateral_active=True, model_valid=True) == {
-      'none': 3, 'left': 3, 'right': 4,
+      'none': 0, 'left': 3, 'right': 4,
     }[side]
 
 
@@ -56,6 +56,7 @@ def make_adrv(request, *, current=0, active=True, valid=True, compatibility=Fals
   if current:
     md.meta.desireState[current] = 0.95
   state = structs.CarState()
+  state.canValid = True
   state.vEgo = 25.
   state.gearShifter = 'drive'
   cs = NS(MD=md, out=state, scc_control=None, lfahda_cluster=None, adrv_0x161=None,
@@ -76,7 +77,7 @@ def make_adrv(request, *, current=0, active=True, valid=True, compatibility=Fals
 @pytest.mark.parametrize('requested,current,active,valid,expected', [
   ('left', 0, True, True, (1, 0)), ('right', 0, True, True, (0, 1)),
   ('left', 4, True, True, (1, 0)), ('right', 3, True, True, (0, 1)),
-  ('none', 3, True, True, (1, 0)), ('none', 4, True, True, (0, 1)),
+  ('none', 3, True, True, (0, 0)), ('none', 4, True, True, (0, 0)),
   ('left', 4, False, True, (0, 0)), ('right', 3, True, False, (0, 0)),
 ])
 def test_actual_adrv_message_carries_only_one_valid_hold_side(requested, current, active, valid, expected):

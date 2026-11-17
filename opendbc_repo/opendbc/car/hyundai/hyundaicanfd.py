@@ -716,6 +716,13 @@ def _get_desire_and_lane_changing(md):
   lane_changing = 0
   if md is not None:
     desire = md.meta.desire.raw
+    state = getattr(md.meta, 'laneChangeState', None)
+    if state is not None:
+      if str(state) in ('laneChangeStarting', 'laneChangeFinishing'):
+        direction = str(getattr(md.meta, 'laneChangeDirection', 'none'))
+        desire = {'left': 3, 'right': 4}.get(direction, 0)
+      elif desire in (3, 4):
+        desire = 0
     ds = md.meta.desireState
     if len(ds) > 4:
       #if ds[1] > 0.9: lane_changing = 1
@@ -726,14 +733,14 @@ def _get_desire_and_lane_changing(md):
 
 
 def _lane_change_blink_hold(md, lane_changing, *, lateral_active, model_valid, manual_latched=False):
-  """A fresh driver's queued request wins over the existing model hold side."""
+  """Respect the publisher's hold/release, with legacy probability fallback."""
   if md is None or not lateral_active or not model_valid or manual_latched:
     return 0
-  requested = str(getattr(getattr(md, 'meta', None), 'laneChangeBlinkerHold', 'none'))
-  if requested == 'left':
-    return 3
-  if requested == 'right':
-    return 4
+  requested = getattr(getattr(md, 'meta', None), 'laneChangeBlinkerHold', None)
+  if requested is not None:
+    # NONE is an explicit release from the current publisher, including after
+    # the crossing. A lingering model probability must not re-enable it.
+    return {'left': 3, 'right': 4}.get(str(requested), 0)
   state = getattr(getattr(md, 'meta', None), 'laneChangeState', None)
   if state is not None and str(state) not in ('laneChangeStarting', 'laneChangeFinishing'):
     return 0  # Residual model probability is not an active lane-change request.
@@ -820,8 +827,7 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
     values["LANELINE_CURVATURE_DIRECTION"] = direction if lat_active else 0
-    if desire:
-      _apply_lane_desire(values, desire)
+    _apply_lane_desire(values, desire)
 
   if corner_radar:
     radar_all = [
@@ -897,6 +903,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
     create_ccnc_messages._lane_line_check = Params().get_int("LaneLineCheck")
   lane_line_check = create_ccnc_messages._lane_line_check
   desire, lane_changing = _get_desire_and_lane_changing(md)
+  model_valid = getattr(CS, 'MD_valid', True)
+  manual_latched = getattr(CS.out, 'blinkerLever', 0) == 2
+  if not CC.latActive or not model_valid:
+    desire = lane_changing = 0
+  elif manual_latched:
+    lane_changing = 0
+    if desire in (3, 4):
+      desire = 0
 
   if CP.flags & HyundaiFlags.CAMERA_SCC.value:
     # 💡 [추가] 순정 MAIN 활성화 발동 조건 체크 (GitHub 변경점 반영)
@@ -1053,8 +1067,11 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         alc_msg = 0
         v_ego_kph = CS.out.vEgo * CV.MS_TO_KPH
         
-        # 1. 차선 변경 시작 여부 판단 (오픈파일럿 제어 or 모델 예측)
-        is_changing_lane = (desire in (3, 4)) or (lane_changing in (3, 4))
+        # The published FSM also owns warning-session state. Residual model
+        # probability in OFF/PRE must not masquerade as an active change.
+        is_changing_lane = desire in (3, 4)
+        if getattr(getattr(md, 'meta', None), 'laneChangeState', None) is None:
+          is_changing_lane = is_changing_lane or lane_changing in (3, 4)
         
         # 2. 실선 감지 (계기판 주황색 라인 연동)
         left_raw = getattr(CS.out, 'leftLaneLine', 0)
@@ -1124,8 +1141,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
 
         # blinker hold
         hold_side = _lane_change_blink_hold(md, lane_changing, lateral_active=CC.latActive,
-                                           model_valid=getattr(CS, 'MD_valid', True),
-                                           manual_latched=getattr(CS.out, 'blinkerLever', 0) == 2)
+                                           model_valid=model_valid, manual_latched=manual_latched)
         values['LEFT_BLINK_HOLD'] = 1 if hold_side == 3 else 0
         values['RIGHT_BLINK_HOLD'] = 1 if hold_side == 4 else 0
 

@@ -152,9 +152,9 @@ def test_second_tap_bridges_after_crossing_without_waiting_for_first_completion(
   rig.cross()
   assert rig.h.blinker_hold_direction == LCD.none
   # Continuing to signal is not a third explicit request.
-  assert rig.finish() == LCS.preLaneChange
-  assert rig.h.next_lane_change
-  assert rig.step(30) == LCS.preLaneChange
+  assert rig.finish() == LCS.off
+  assert rig.h.followup_requires_press
+  assert rig.step(30) == LCS.off
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
@@ -198,9 +198,9 @@ def test_request_without_crossing_geometry_retains_normal_completion_fallback():
 def test_held_lamp_alone_never_repeats_automatic_changes(side):
   rig = Rig(side)
   rig.start()
-  assert rig.finish() == LCS.preLaneChange
-  assert rig.h.next_lane_change
-  assert rig.step(80) == LCS.preLaneChange
+  assert rig.finish() == LCS.off
+  assert rig.h.followup_requires_press
+  assert rig.step(80) == LCS.off
   assert rig.h.queued_lane_change == 0
   rig.press()  # The new physical event works without a lamp-off edge.
   assert not rig.h.next_lane_change

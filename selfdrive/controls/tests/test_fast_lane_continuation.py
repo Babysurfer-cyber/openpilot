@@ -245,9 +245,9 @@ def test_a_pending_request_is_one_extra_lane_even_with_repeated_early_taps(side)
   rig.geometry()
   rig.step()
   rig.cross()
-  assert rig.finish() == LCS.preLaneChange
-  assert rig.h.next_lane_change
-  assert rig.step(30) == LCS.preLaneChange
+  assert rig.finish() == LCS.off
+  assert rig.h.followup_requires_press
+  assert rig.step(30) == LCS.off
   assert rig.h.queued_lane_change == 0
   assert rig.h.blinker_hold_direction == LCD.none
 
@@ -264,10 +264,11 @@ def test_a_late_crossing_cannot_revive_an_expired_early_request(side):
   assert rig.h.blinker_hold_direction == LCD.none
   rig.cross()
   assert not rig.h.fast_lane_change_handoff
-  assert rig.finish() == LCS.preLaneChange
-  assert rig.h.next_lane_change
-  assert rig.step(15) == LCS.preLaneChange
-  assert rig.tap() == LCS.laneChangeStarting
+  assert rig.finish() == LCS.off
+  assert rig.h.followup_requires_press
+  assert rig.step(15) == LCS.off
+  assert rig.tap() == LCS.preLaneChange
+  assert rig.step() == LCS.laneChangeStarting
 
 
 @pytest.mark.parametrize("side", ["left", "right"])
