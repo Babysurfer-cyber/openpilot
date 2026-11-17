@@ -640,18 +640,16 @@ class DesireHelper:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
-            if desire_enabled:
+            # 원터치 차로변경 1회 완료 시 잔여 깜빡이가 남아있어도 무조건 off로 종료
+            if self.driver_lane_change:
+              self.one_touch_triggered = False
+              self.followup_requires_press = True
+              self.lane_change_state = LaneChangeState.off
+            elif desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
-              # A lingering lamp is not a second automatic request. A fresh
-              # queued tap removes only this extra confirmation, never the
-              # configured LaneChangeNeedTorque/BSD/line checks above.
-              self.next_lane_change = driver_enabled and self.queued_lane_change != blinker_state
-              if self.driver_lane_change and not self.queued_lane_change:
-                self.followup_requires_press = True
+              self.next_lane_change = False
             else:
               self.lane_change_state = LaneChangeState.off
-              if self.driver_lane_change:
-                self.followup_requires_press = True
     
     # timer
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
