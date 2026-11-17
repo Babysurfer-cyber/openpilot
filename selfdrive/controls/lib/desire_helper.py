@@ -695,9 +695,15 @@ class DesireHelper:
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
       self.handoff_blinker_hold = BLINKER_NONE
     hold_side = self.queued_lane_change or self.handoff_blinker_hold
-    self.blinker_hold_direction = {
-      BLINKER_LEFT: LaneChangeDirection.left, BLINKER_RIGHT: LaneChangeDirection.right,
-    }.get(hold_side, LaneChangeDirection.none)
+    if hold_side in (BLINKER_LEFT, BLINKER_RIGHT):
+      self.blinker_hold_direction = (
+        LaneChangeDirection.left if hold_side == BLINKER_LEFT else LaneChangeDirection.right
+      )
+    elif (self.lane_change_state in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
+          and self.lane_change_direction in (LaneChangeDirection.left, LaneChangeDirection.right)):
+      self.blinker_hold_direction = self.lane_change_direction
+    else:
+      self.blinker_hold_direction = LaneChangeDirection.none
 
     # final desire
     if self.turn_direction != TurnDirection.none:
