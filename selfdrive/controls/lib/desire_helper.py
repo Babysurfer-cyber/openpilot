@@ -395,10 +395,11 @@ class DesireHelper:
     if queued:
       self.queued_wait += DT_MDL
     queue_expired = bool(queued) and self.queued_wait >= QUEUED_LANE_WAIT_S
-    cancel_fast_handoff = self.fast_lane_change_handoff and (
+    waiting_for_queued_change = previous_state == LaneChangeState.preLaneChange and bool(queued)
+    cancel_queued_handoff = (self.fast_lane_change_handoff or waiting_for_queued_change) and (
       not request_allowed or incompatible or queue_expired or self.lane_change_timer > LANE_CHANGE_TIME_MAX
     )
-    if cancel_fast_handoff:
+    if cancel_queued_handoff:
       # Consume an in-flight gesture even when a higher-priority CAN/lateral
       # fault wins below. Releasing it after recovery is not a new request.
       self.stalk_tap_confirmed = True
@@ -527,8 +528,8 @@ class DesireHelper:
           self.turn_direction = TurnDirection.turnLeft if manual_turn_side == BLINKER_LEFT else TurnDirection.turnRight
           self.lane_change_direction = self.turn_direction
 
-    elif cancel_fast_handoff:
-      # An opposite/invalid gesture in the neutral bridge cancels it. It must
+    elif cancel_queued_handoff:
+      # An opposite/invalid gesture while awaiting the next change cancels it. It must
       # not turn the same gesture into a reversal through ordinary pre/start.
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
@@ -640,8 +641,10 @@ class DesireHelper:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
-            # 원터치 차로변경 1회 완료 시 잔여 깜빡이가 남아있어도 무조건 off로 종료
-            if self.driver_lane_change:
+            # Residual lamps cannot repeat a completed driver request. A new
+            # physical tap, however, owns a separate bounded queue that must
+            # survive this completion and recheck the normal start gates.
+            if self.driver_lane_change and not self.queued_lane_change:
               self.one_touch_triggered = False
               self.followup_requires_press = True
               self.lane_change_state = LaneChangeState.off
