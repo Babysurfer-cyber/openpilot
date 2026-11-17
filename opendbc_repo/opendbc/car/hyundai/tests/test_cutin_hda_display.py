@@ -141,9 +141,6 @@ class RadarSubMaster:
 def controller_prefix(monkeypatch, state):
   controller = carcontroller.CarController.__new__(carcontroller.CarController)
   controller.frame = 1  # Avoid the unrelated parameter polling branches.
-  controller.blinker_runtime = None
-  controller.blinker_test_request = 0
-  controller.blinker_test_status = 'unsupported'
   controller.corner_radar_cutin = False
   controller.sm = RadarSubMaster(state)
   cs = NS(out=structs.CarState())
