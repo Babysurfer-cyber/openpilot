@@ -64,6 +64,63 @@ def test_rear_entry_still_releases_when_vehicle_moves_away_ahead(side):
   assert not result[side]
 
 
+@pytest.mark.parametrize("side", ("L", "R"))
+def test_new_rear_vehicle_cannot_reuse_a_previous_front_departure(side):
+  bsd = CornerBsdSupplement()
+  now = START
+  for index in range(10):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, rear=4.0 - index * 0.1))[side]
+  for distance in (1.0, 1.1):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, front=distance))[side]
+  # Another near rear return must own the warning even while the old front
+  # return remains continuous and moves out of its warning area.
+  for index, distance in enumerate((1.9, 2.7, 3.5)):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, front=distance, rear=3.0 - index * 0.1))[side]
+  now += 50_000_000
+  assert bsd.update(now, observations(now, side=side, front=4.3))[side]
+
+
+@pytest.mark.parametrize("side", ("L", "R"))
+@pytest.mark.parametrize("interruption", ("empty", "source", "jump", "stale"))
+def test_rear_entry_cannot_reuse_a_discontinuous_front_departure(side, interruption):
+  bsd = CornerBsdSupplement()
+  now = START
+  for index in range(10):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, rear=4.0 - index * 0.1))[side]
+  now += 50_000_000
+  assert bsd.update(now, observations(now, side=side, front=5.0))[side]
+
+  source = "CCNC_0x162" if interruption == "source" else "ADRV_0x1ea"
+  distance = 8.0 if interruption == "jump" else 6.0
+  if interruption == "empty":
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side))[side]
+  elif interruption == "stale":
+    now += MAX_SAMPLE_AGE_NS + 1
+    assert bsd.update(now, {})[side]
+  for offset in (0.0, 0.1):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, front=distance + offset, source=source))[side]
+
+
+@pytest.mark.parametrize("side", ("L", "R"))
+def test_front_handoff_cannot_be_cleared_by_an_unrelated_far_rear(side):
+  bsd = CornerBsdSupplement()
+  now = START
+  for index in range(10):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, rear=4.0 - index * 0.1))[side]
+  for index in range(5):
+    now += 50_000_000
+    assert bsd.update(now, observations(now, side=side, front=1.0, rear=10.0 + index * 0.1))[side]
+  now += 50_000_000
+  assert bsd.update(now, observations(now, side=side, rear=10.5))[side]
+
+
 @pytest.mark.parametrize("interval_ns", (10_000_000, 50_000_000, 100_000_000))
 def test_velocity_uses_actual_fresh_message_time(interval_ns):
   bsd = CornerBsdSupplement()
@@ -203,6 +260,55 @@ def test_real_can_front_rear_handoff_does_not_drop_bsd(side):
     assert getattr(ret, flag)
   assert feed.state.corner_bsd.sides[side].origin == "front"
   assert not getattr(feed.step(elapsed_ns=4_000_000_000), flag)
+
+
+@pytest.mark.parametrize("side", ("L", "R"))
+@pytest.mark.parametrize("name", CORNER_MESSAGES)
+def test_real_can_rear_entry_ignores_unrelated_far_front_and_then_releases(side, name):
+  feed = CanFeed(stock=False)
+  front, rear = ("LF", "LR") if side == "L" else ("RF", "RR")
+  flag = "leftBlindspot" if side == "L" else "rightBlindspot"
+  for index in range(10):
+    ret = feed.step([(name, 2, {
+      f"{rear}_DETECT_DISTANCE": 4.0 - index * 0.1,
+      f"{front}_DETECT_DISTANCE": 10.0 + index * 0.05,
+    })], 50_000_000)
+    if index > 0:
+      assert getattr(ret, flag)
+  # A separate vehicle already far ahead must not cancel the rear entrant's
+  # hold when its display distance vanishes alongside ego.
+  for index in range(20):
+    ret = feed.step([(name, 2, {f"{front}_DETECT_DISTANCE": 10.5 + index * 0.05})], 50_000_000)
+    assert getattr(ret, flag)
+  # Once the entrant is actually observed near the front and moves clear,
+  # ordinary release must still work without waiting for the blind-zone hold.
+  for index in range(31):
+    ret = feed.step([(name, 2, {f"{front}_DETECT_DISTANCE": 2.0 + index * 0.1})], 50_000_000)
+    if index < 3:
+      assert getattr(ret, flag)
+  assert not getattr(ret, flag)
+
+
+@pytest.mark.parametrize("side", ("L", "R"))
+@pytest.mark.parametrize("name", CORNER_MESSAGES)
+@pytest.mark.parametrize("empty_updates", (False, True))
+def test_real_can_slow_rear_entry_bridges_long_gap_but_expires(side, name, empty_updates):
+  feed = CanFeed(stock=False)
+  rear = "LR" if side == "L" else "RR"
+  flag = "leftBlindspot" if side == "L" else "rightBlindspot"
+  for index in range(15):
+    ret = feed.step([(name, 2, {f"{rear}_DETECT_DISTANCE": 4.0 - index * 0.1})], 100_000_000)
+    if index > 0:
+      assert getattr(ret, flag)
+  # A 1 m/s approach needs more than the old fixed 3 s to bridge a slow pass.
+  assert getattr(feed.step([(name, 2, {})], 100_000_000), flag)
+  specs = [(name, 2, {})] if empty_updates else ()
+  for _ in range(50):
+    assert getattr(feed.step(specs, 100_000_000), flag)
+  # Fresh empty messages and cached observations cannot prolong the gap.
+  for _ in range(11):
+    ret = feed.step(specs, 100_000_000)
+  assert not getattr(ret, flag)
 
 
 @pytest.mark.parametrize("bus", (0, 2))
