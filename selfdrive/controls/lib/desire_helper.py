@@ -75,7 +75,10 @@ class DesireHelper:
     self.prev_right_stalk_count = 0
     self.stalk_press_timer = 2.0  # 새 레버 입력 후 경과 시간(초)
     self.stalk_max_level = 0
+    self.stalk_active_side = BLINKER_NONE
     self.one_touch_triggered = False
+    self.one_touch_count = 0
+    self.one_touch_dir = BLINKER_NONE
     self.stalk_tap_confirmed = True
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -238,12 +241,30 @@ class DesireHelper:
 
     # 새로운 레버 조작(Count 변화)이 감지되면 타이머 및 상태 갱신
     if left_stalk_changed or right_stalk_changed:
+      new_side = BLINKER_LEFT if left_stalk_changed else BLINKER_RIGHT
+      # 매우 빠른 연속 터치(따닥)로 이전 1단 입력이 0으로 복귀하기 전에 재입력된 경우 1회 반영
+      if not self.stalk_tap_confirmed and self.stalk_max_level == 1 and self.stalk_active_side == new_side:
+        self.one_touch_dir = self.stalk_active_side
+        self.one_touch_count = min(self.one_touch_count + 1, 2)
+        self.one_touch_triggered = True
+      elif self.one_touch_dir != BLINKER_NONE and self.one_touch_dir != new_side:
+        # 반대 방향 레버 입력 시 기존 예약 횟수 및 진행 중인 차선변경 초기화
+        self.one_touch_count = 0
+        self.one_touch_dir = BLINKER_NONE
+        self.one_touch_triggered = False
+        if self.lane_change_state != LaneChangeState.off:
+          self.lane_change_state = LaneChangeState.off
+          self.lane_change_direction = LaneChangeDirection.none
+          self.turn_direction = TurnDirection.none
+          self.lane_change_ll_prob = 1.0
+
       self.prev_left_stalk_count = carstate.leftBlinkerStalkCount
       self.prev_right_stalk_count = carstate.rightBlinkerStalkCount
       self.stalk_press_timer = 0.0
       self.stalk_max_level = 0
       self.stalk_tap_confirmed = False
-      if self.lane_change_state == LaneChangeState.off:
+      self.stalk_active_side = new_side
+      if self.lane_change_state == LaneChangeState.off and self.one_touch_count == 0:
         self.one_touch_triggered = False
 
     # 레버가 도달한 최대 깊이(1: 원터치, 2: 완전 체결) 갱신
@@ -259,10 +280,14 @@ class DesireHelper:
                      and self.stalk_max_level == 1 and self.stalk_press_timer > 0)
     if tap_confirmed:
       self.stalk_tap_confirmed = True
+      self.one_touch_dir = self.stalk_active_side
+      self.one_touch_count = min(self.one_touch_count + 1, 2)
       self.one_touch_triggered = True
 
     # 완전 체결(2)이 감지되었다면 원터치 동작은 무조건 취소 (메뉴얼 턴/수동 조향용)
     if self.stalk_max_level == 2:
+      self.one_touch_count = 0
+      self.one_touch_dir = BLINKER_NONE
       self.one_touch_triggered = False
       self.stalk_tap_confirmed = True
     if carstate.blinkerLever == 2 and self.lane_change_state != LaneChangeState.off:
@@ -276,6 +301,8 @@ class DesireHelper:
     # (차선 변경 도중에 깜빡이가 먼저 꺼져도, FSM이 돌아가고 있다면 트리거 유지)
     if carstate.leftBlinker == 0 and carstate.rightBlinker == 0:
       if self.lane_change_state == LaneChangeState.off:
+        self.one_touch_count = 0
+        self.one_touch_dir = BLINKER_NONE
         self.one_touch_triggered = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
@@ -351,6 +378,8 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
       self.turn_direction = TurnDirection.none
       self.maneuver_type = "none"
+      self.one_touch_count = 0
+      self.one_touch_dir = BLINKER_NONE
       self.one_touch_triggered = False
       self.stalk_tap_confirmed = True
 
@@ -359,6 +388,8 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
       self.turn_direction = TurnDirection.none
       self.maneuver_type = "none"
+      self.one_touch_count = 0
+      self.one_touch_dir = BLINKER_NONE
       self.one_touch_triggered = False
       self.stalk_tap_confirmed = True
 
@@ -403,7 +434,7 @@ class DesireHelper:
           if (desire_enabled and (not self.prev_desire_enabled or tap_confirmed)
               and carstate.blinkerLever == 0 and not below_lane_change_speed and side is not None):
             # ▼▼▼ [수정] 원터치 조작이거나, 자동차선변경(ATC)일 때만 차선변경 로직 진입 허용 ▼▼▼
-            if self.one_touch_triggered or atc_enabled or self.carrot_lane_change_count > 0:
+            if self.one_touch_count > 0 or self.one_touch_triggered or atc_enabled or self.carrot_lane_change_count > 0:
               self.lane_change_state = LaneChangeState.preLaneChange
               self.lane_change_ll_prob = 1.0
               self.lane_change_delay = self.laneChangeDelay
@@ -436,7 +467,7 @@ class DesireHelper:
             atc_geometry_release = atc_lane_change_only and auto_lane_change_trigger
             atc_line_release = (atc_driver_confirm or atc_geometry_release) and side_clear_without_line
 
-            if not desire_enabled or below_lane_change_speed or carstate.blinkerLever != 0:
+            if not desire_enabled or below_lane_change_speed or carstate.blinkerLever == 2:
               self.lane_change_state = LaneChangeState.off
               self.lane_change_direction = LaneChangeDirection.none
             else:
@@ -481,17 +512,35 @@ class DesireHelper:
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
             if driver_enabled:
-              self.one_touch_triggered = False
-              self.lane_change_state = LaneChangeState.off
+              self.one_touch_count = max(0, self.one_touch_count - 1)
+              self.one_touch_triggered = self.one_touch_count > 0
+              if self.one_touch_count > 0:
+                self.lane_change_state = LaneChangeState.preLaneChange
+                self.lane_change_ll_prob = 1.0
+                self.lane_change_delay = self.laneChangeDelay
+                self.next_lane_change = False
+              else:
+                self.one_touch_dir = BLINKER_NONE
+                self.lane_change_state = LaneChangeState.off
+                # Completion consumes the physical gesture even if its lamps have
+                # already gone out. Navigation requests retain their own policy.
+                if carstate.blinkerLever == 0:
+                  self.stalk_tap_confirmed = True
             elif desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
               self.next_lane_change = False
+              self.one_touch_count = 0
+              self.one_touch_dir = BLINKER_NONE
+              self.one_touch_triggered = False
+              self.stalk_tap_confirmed = True
             else:
               self.lane_change_state = LaneChangeState.off
-            # Completion consumes the physical gesture even if its lamps have
-            # already gone out. Navigation requests retain their own policy.
-            self.one_touch_triggered = False
-            self.stalk_tap_confirmed = True
+              # Completion consumes the physical gesture even if its lamps have
+              # already gone out. Navigation requests retain their own policy.
+              self.one_touch_count = 0
+              self.one_touch_dir = BLINKER_NONE
+              self.one_touch_triggered = False
+              self.stalk_tap_confirmed = True
 
     
     # timer
@@ -517,8 +566,11 @@ class DesireHelper:
       self.blinker_ignore = True
 
     if previous_state != LaneChangeState.off and self.lane_change_state == LaneChangeState.off:
+      self.one_touch_count = 0
+      self.one_touch_dir = BLINKER_NONE
       self.one_touch_triggered = False
-      self.stalk_tap_confirmed = True
+      if carstate.blinkerLever == 0:
+        self.stalk_tap_confirmed = True
 
     # final desire
     if self.turn_direction != TurnDirection.none:
