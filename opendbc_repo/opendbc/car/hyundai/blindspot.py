@@ -9,7 +9,6 @@ from opendbc.car.hyundai.blindspot_inputs import CORNERS, MAX_SAMPLE_AGE_NS
 @dataclass
 class _SideState:
   origin: str | None = None
-  exit_corner: str | None = None
   last_velocity: float = 0.0
   deadline_ns: int = 0
   lost: bool = False
@@ -72,13 +71,6 @@ class CornerBsdSupplement:
     warnings = {}
     for side, front, rear in (("L", "LF", "LR"), ("R", "RF", "RR")):
       state = self.sides[side]
-      if state.exit_corner is not None:
-        sample = samples.get(state.exit_corner)
-        # The motion history already rejects source changes, gaps and >1.5 m
-        # jumps. A new/far object must not inherit an earlier near departure.
-        if (sample is None or not 0.1 < sample.distance < 20.0
-            or (fresh[state.exit_corner] and len(self.history[state.exit_corner]) < 2)):
-          state.exit_corner = None
       front_limit = self._front_limit(self.velocities[front])
       self.limits[f"{front}_DETECT"] = front_limit
       front_distance = samples[front].distance if front in samples else 0.0
@@ -87,17 +79,12 @@ class CornerBsdSupplement:
       seen_rear = 0.1 < rear_distance < 5.0
       if seen_front or seen_rear:
         active = rear if seen_rear else front
-        if seen_rear and state.exit_corner == front:
-          # A rear target needs a new measured front handoff before a front
-          # departure can end its warning, even if another front stays cached.
-          state.exit_corner = None
         if state.origin is None:
           state.origin = "rear" if seen_rear else "front"
         # The episode's entry direction survives LF->LR / RF->RR handoff.
         # Updating it to 'rear' here used to cancel an ego-overtake warning
         # immediately when the rear distance crossed 5 m.
         if fresh[active]:
-          state.exit_corner = active
           velocity = self.velocities[active]
           if abs(velocity) > 0.1:
             state.last_velocity = velocity
@@ -108,19 +95,13 @@ class CornerBsdSupplement:
 
       if not state.lost:
         if state.last_velocity != 0.0:
-          hold_s = 6.0 / max(abs(state.last_velocity), 0.5)
-          if state.origin == "rear":
-            # A slow pass spends longer beside the car. Bound the extension
-            # and start it only once; empty/cached samples cannot renew it.
-            hold_s = max(3.0, min(6.0, hold_s))
+          hold_s = 6.0 / max(abs(state.last_velocity), 0.5) if state.origin == "front" else 3.0
           state.deadline_ns = now_ns + int(hold_s * 1e9)
           state.last_velocity = 0.0
         state.lost = True
 
-      cancel_front = (state.exit_corner == front and fresh[front]
-                      and 0.1 < front_distance < 20.0 and front_distance >= front_limit and self.velocities[front] > 0.5)
-      cancel_rear = (state.exit_corner == rear and fresh[rear]
-                     and 0.1 < rear_distance < 20.0 and rear_distance >= 5.0 and self.velocities[rear] > 0.5)
+      cancel_front = 0.1 < front_distance < 20.0 and front_distance >= front_limit and self.velocities[front] > 0.5
+      cancel_rear = 0.1 < rear_distance < 20.0 and rear_distance >= 5.0 and self.velocities[rear] > 0.5
       if cancel_front or (state.origin != "front" and cancel_rear):
         state.deadline_ns = 0
       warnings[side] = now_ns < state.deadline_ns

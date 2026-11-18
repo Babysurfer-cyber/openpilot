@@ -105,9 +105,7 @@ public:
       colors |= int(track.color);
       if (track.color != Color::unknown || saved.count(track.id)) continue;
       std::vector<Saved> matches;
-      for (const auto &entry : saved) {
-        const int old_id = entry.first;
-        const auto &old = entry.second;
+      for (const auto &[old_id, old] : saved) {
         const bool old_present = std::any_of(record.tracks.begin(), record.tracks.end(),
                                             [old_id](const Track &t) { return t.id == old_id; });
         if (!old_present && now - old.color_time <= DISPLAY_HOLD && intersection_over_union(old.track, track) >= .5) {
@@ -216,7 +214,7 @@ private:
 
 class SignalDisplayReader {
 public:
-  explicit SignalDisplayReader(std::string source_path = "/dev/shm/carrot_signal_display.json") : path(std::move(source_path)) {}
+  explicit SignalDisplayReader(std::string path = "/dev/shm/carrot_signal_display.json") : path(std::move(path)) {}
   const signal_display::State &read(bool enabled, double now);
 
 private:

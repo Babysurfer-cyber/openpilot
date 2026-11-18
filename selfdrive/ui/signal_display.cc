@@ -56,20 +56,20 @@ bool parse(const QByteArray &bytes, signal_display::Record *record) {
   std::map<int, bool> ids;
   for (const auto &value : tracks) {
     if (!value.isObject()) continue;
-    const auto track_obj = value.toObject();
-    const auto box = track_obj.value("box").toArray();
+    const auto obj = value.toObject();
+    const auto box = obj.value("box").toArray();
     int64_t id, age;
-    if (box.size() != 4 || !integer(track_obj.value("id"), 1, 999999, &id) ||
-        !integer(track_obj.value("age"), 0, 0, &age) || ids.count(int(id))) continue;
+    if (box.size() != 4 || !integer(obj.value("id"), 1, 999999, &id) ||
+        !integer(obj.value("age"), 0, 0, &age) || ids.count(int(id))) continue;
     signal_display::Track track;
     track.id = int(id);
     bool coordinates = true;
     for (int i = 0; i < 4; ++i) coordinates &= number(box[i], &track.box[i]);
     if (!coordinates || !signal_display::valid_track(track)) continue;
-    const auto raw = track_obj.value("raw").toString();
+    const auto raw = obj.value("raw").toString();
     track.color = raw == "red" ? signal_display::Color::red :
                   raw == "green" ? signal_display::Color::green : signal_display::Color::unknown;
-    track.confirmed = track.color != signal_display::Color::unknown && track_obj.value("state").toString() == raw;
+    track.confirmed = track.color != signal_display::Color::unknown && obj.value("state").toString() == raw;
     record->tracks.push_back(track);
     ids[track.id] = true;
   }
