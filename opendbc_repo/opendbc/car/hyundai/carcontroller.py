@@ -171,6 +171,13 @@ class CarController(CarControllerBase):
 
     # ▼▼▼ [추가] canfd.py에서 쓰도록 CS 객체에 레이더와 비전 경로 데이터를 심어줍니다 ▼▼▼
     CS.radarState = self.sm['radarState']
+    # Reevaluate on every control cycle so an interrupted publisher clears the
+    # indication even when no new radarState message arrives.
+    self.corner_radar_cutin = hyundaicanfd.radar_cutin_detected(
+      CS.radarState,
+      valid=CS.out.canValid and self.sm.valid['radarState'] and self.sm.alive['radarState'],
+      received_s=self.sm.recv_time['radarState'], now_s=time.monotonic(),
+    )
     CS.MD = self.sm['modelV2']
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
