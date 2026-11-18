@@ -724,6 +724,57 @@ def _get_desire_and_lane_changing(md):
       if ds[4] > 0.9: lane_changing = 4
   return desire, lane_changing
 
+CLUSTER_ANIMATION_MAX_AGE_S = 0.25
+
+
+class _ClusterLaneAnimation:
+  """Short display-only fallback; never a source for ALC or blinker hold."""
+  def __init__(self):
+    self.seen_received_s = 0.0
+    self.valid_received_s = 0.0
+    self.desire = 0
+    self.now_s = 0.0
+
+  def update(self, desire, *, valid, updated, received_s, now_s, enabled, latched):
+    clock_valid = (math.isfinite(now_s) and math.isfinite(received_s)
+                   and now_s >= self.now_s and 0.0 < received_s <= now_s)
+    fresh = clock_valid and updated and received_s > self.seen_received_s
+    if math.isfinite(received_s):
+      self.seen_received_s = max(self.seen_received_s, received_s)
+    if math.isfinite(now_s):
+      self.now_s = now_s
+
+    if not clock_valid or not enabled or latched:
+      # Consume the observed receipt even when cancelled, so re-enabling
+      # requires a new valid model instead of reviving the old animation.
+      self.valid_received_s, self.desire = 0.0, 0
+      return desire if (clock_valid and enabled and latched and valid and desire in (1, 2)
+                        and now_s - received_s <= CLUSTER_ANIMATION_MAX_AGE_S) else 0
+
+    if fresh and valid:
+      # A valid none/opposite desire is authoritative, including at completion.
+      self.valid_received_s, self.desire = received_s, desire
+    if self.valid_received_s > 0.0 and 0.0 <= now_s - self.valid_received_s <= CLUSTER_ANIMATION_MAX_AGE_S:
+      return self.desire
+    self.valid_received_s, self.desire = 0.0, 0
+    return 0
+
+
+def _cluster_animation_desire(CS, desire, lat_active):
+  valid = CS.MD is not None and getattr(CS, 'MD_valid', True)
+  enabled = lat_active and CS.out.canValid
+  latched = getattr(CS.out, 'blinkerLever', 0) == 2
+  if not all(hasattr(CS, name) for name in ('MD_received_s', 'MD_now_s', 'MD_updated')):
+    # Older direct callers have no receipt clock: use only current valid data.
+    return desire if valid and enabled and (not latched or desire not in (3, 4)) else 0
+  if not hasattr(CS, '_cluster_lane_animation'):
+    CS._cluster_lane_animation = _ClusterLaneAnimation()
+  return CS._cluster_lane_animation.update(
+    desire, valid=valid, updated=CS.MD_updated, received_s=CS.MD_received_s,
+    now_s=CS.MD_now_s, enabled=enabled, latched=latched,
+  )
+
+
 def _apply_lane_desire(values, desire):
   values['LANE_CHANGING'] = 0
 
@@ -880,14 +931,9 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
     create_ccnc_messages._lane_line_check = Params().get_int("LaneLineCheck")
   lane_line_check = create_ccnc_messages._lane_line_check
   desire, lane_changing = _get_desire_and_lane_changing(md)
-  if not hasattr(create_ccnc_messages, '_md_invalid_cnt'):
-    create_ccnc_messages._md_invalid_cnt = 0
-  if getattr(CS, 'MD_valid', True):
-    create_ccnc_messages._md_invalid_cnt = 0
-  else:
-    create_ccnc_messages._md_invalid_cnt += 1
-
-  if not (CC.latActive and CS.out.canValid) or create_ccnc_messages._md_invalid_cnt > 25:
+  cluster_desire = _cluster_animation_desire(CS, desire, CC.latActive)
+  # The display fallback must not prolong ALC, warnings or blinker hold.
+  if not (CC.latActive and CS.out.canValid and getattr(CS, 'MD_valid', True)):
     desire = lane_changing = 0
   elif getattr(CS.out, 'blinkerLever', 0) == 2:
     lane_changing = 0
@@ -1028,8 +1074,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["LCA_LEFT_ICON"] = 1 if CS.out.leftBlindspot else 2
         values["LCA_RIGHT_ICON"] = 1 if CS.out.rightBlindspot else 2
 
-        values["LANE_LEFT"] = 1 if desire in (1, 3) else 0
-        values["LANE_RIGHT"] = 1 if desire in (2, 4) else 0
+        values["LANE_LEFT"] = 1 if cluster_desire in (1, 3) else 0
+        values["LANE_RIGHT"] = 1 if cluster_desire in (2, 4) else 0
 
         ret.append(packer.make_can_msg("ADRV_0x161", CAN.ECAN, values, rx_counter = rx_counter))
 

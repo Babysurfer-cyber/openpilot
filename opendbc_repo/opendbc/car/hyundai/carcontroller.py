@@ -176,6 +176,10 @@ class CarController(CarControllerBase):
     )
     CS.MD = self.sm['modelV2']
     CS.MD_valid = self.sm.valid['modelV2'] and self.sm.alive['modelV2']
+    # SubMaster receive times use this clock, including during log replay.
+    CS.MD_received_s = self.sm.recv_time['modelV2']
+    CS.MD_updated = self.sm.updated['modelV2']
+    CS.MD_now_s = time.monotonic()
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if self.frame % 50 == 0:
