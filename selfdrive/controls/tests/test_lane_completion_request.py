@@ -2,6 +2,14 @@
 import pytest
 
 from cereal import log
+
+if "laneChangeBlinkerHold" not in log.ModelDataV2.MetaData.schema.fields:
+  pytest.skip(
+    "Queued lane-change feature was reverted; current behavior is covered by "
+    "test_rollback_one_touch and test_rollback_lateral_metadata.",
+    allow_module_level=True,
+  )
+
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.lib import desire_helper as desire
 from openpilot.selfdrive.controls.tests.test_desire_continuation import MemoryParams, Rig, LCS, LCD

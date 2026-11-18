@@ -4,6 +4,14 @@ from types import SimpleNamespace as NS
 import pytest
 
 from cereal import log
+
+if "laneChangeBlinkerHold" not in log.ModelDataV2.MetaData.schema.fields:
+  pytest.skip(
+    "Queued lane-change feature was reverted; current behavior is covered by "
+    "test_rollback_one_touch and test_rollback_lateral_metadata.",
+    allow_module_level=True,
+  )
+
 from opendbc.can import CANPacker, CANParser
 from opendbc.car import structs
 from opendbc.car.hyundai import hyundaicanfd

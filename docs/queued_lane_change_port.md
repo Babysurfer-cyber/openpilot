@@ -1,4 +1,8 @@
-# 새 레버 입력으로 이어가는 차선변경
+# 원복 전 연속 차선변경 이식 기록
+
+현재 `ms-xy-radar3`에서는 아래 연속 예약 기능을 원복했다. 이 문서는 과거
+구현 기록이며 현재 활성 기능의 설명이 아니다. 현재 단일 원터치 동작과
+원복 후 예외 수정은 [원복 후 차선변경](one_touch_lane_change_rollback.md)을 참고한다.
 
 기준 브랜치는 `Babysurfer-cyber/openpilot:ms-xy-radar3`의 `30ecfc1`이다.
 joongyu01의 공개 개발 브랜치 보관본

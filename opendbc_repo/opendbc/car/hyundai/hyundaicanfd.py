@@ -804,8 +804,7 @@ def _make_ccnc_values(values, CS, lat_active, frame, hud_control,
     
     values["LANELINE_CURVATURE"] = curv if lat_active else 0
     values["LANELINE_CURVATURE_DIRECTION"] = direction if lat_active else 0
-    if desire:
-      _apply_lane_desire(values, desire)
+    _apply_lane_desire(values, desire)
 
   if corner_radar:
     radar_all = [
@@ -881,6 +880,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
     create_ccnc_messages._lane_line_check = Params().get_int("LaneLineCheck")
   lane_line_check = create_ccnc_messages._lane_line_check
   desire, lane_changing = _get_desire_and_lane_changing(md)
+  # The rolled-back probability-based path still needs fresh model and
+  # control validity; a stale positive sample cannot keep indicators held.
+  if not (getattr(CS, 'MD_valid', True) and CC.latActive and CS.out.canValid):
+    desire = lane_changing = 0
+  elif getattr(CS.out, 'blinkerLever', 0) == 2:
+    lane_changing = 0
+    if desire in (3, 4):
+      desire = 0
 
   if CP.flags & HyundaiFlags.CAMERA_SCC.value:
     # 💡 [추가] 순정 MAIN 활성화 발동 조건 체크 (GitHub 변경점 반영)

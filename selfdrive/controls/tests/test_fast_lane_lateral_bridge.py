@@ -8,6 +8,14 @@ import pytest
 
 from cereal import log
 
+if "laneChangeBlinkerHold" not in log.ModelDataV2.MetaData.schema.fields:
+  pytest.skip(
+    "Queued lane-change feature was reverted; current behavior is covered by "
+    "test_rollback_one_touch and test_rollback_lateral_metadata.",
+    allow_module_level=True,
+  )
+
+
 
 ROOT = Path(__file__).resolve().parents[3]
 PATH = 'selfdrive/controls/lib/lateral_planner.py'

@@ -139,12 +139,6 @@ class LateralPlanner:
       
     if md.meta.desire != log.Desire.none or carrot.atc_active:
       self.LP.lane_change_multiplier = 0.0 #md.meta.laneChangeProb
-    elif (md.meta.laneChangeState == log.LaneChangeState.preLaneChange
-          and md.meta.laneChangeBlinkerHold != log.LaneChangeDirection.none
-          and np.isfinite(md.meta.laneChangeProb) and md.meta.laneChangeProb < 1.0):
-      # A queued handoff briefly clears desire to retrigger the model. Preserve
-      # its lane-line fade through that pulse; a blocked request restores it.
-      self.LP.lane_change_multiplier = float(np.clip(md.meta.laneChangeProb, 0.0, 1.0))
     else:
       self.LP.lane_change_multiplier = 1.0
 
