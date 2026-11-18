@@ -880,9 +880,14 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
     create_ccnc_messages._lane_line_check = Params().get_int("LaneLineCheck")
   lane_line_check = create_ccnc_messages._lane_line_check
   desire, lane_changing = _get_desire_and_lane_changing(md)
-  # The rolled-back probability-based path still needs fresh model and
-  # control validity; a stale positive sample cannot keep indicators held.
-  if not (getattr(CS, 'MD_valid', True) and CC.latActive and CS.out.canValid):
+  if not hasattr(create_ccnc_messages, '_md_invalid_cnt'):
+    create_ccnc_messages._md_invalid_cnt = 0
+  if getattr(CS, 'MD_valid', True):
+    create_ccnc_messages._md_invalid_cnt = 0
+  else:
+    create_ccnc_messages._md_invalid_cnt += 1
+
+  if not (CC.latActive and CS.out.canValid) or create_ccnc_messages._md_invalid_cnt > 25:
     desire = lane_changing = 0
   elif getattr(CS.out, 'blinkerLever', 0) == 2:
     lane_changing = 0
