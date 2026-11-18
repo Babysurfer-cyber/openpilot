@@ -12,6 +12,44 @@ LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 TurnDirection = log.Desire
 
+RADAR_CUTIN_DISPLAY_MAX_AGE_S = 0.25
+
+
+def radar_cutin_detected(radar_state, *, valid, received_s, now_s):
+  """Confirmed CUT-IN indication for the legacy and trajectory radar paths."""
+  if (not valid or radar_state is None
+      or not math.isfinite(now_s) or not math.isfinite(received_s) or received_s <= 0.0
+      or not 0.0 <= now_s - received_s <= RADAR_CUTIN_DISPLAY_MAX_AGE_S):
+    return False
+  errors = getattr(radar_state, "radarErrors", None)
+  if any(getattr(errors, name, False) for name in
+         ("canError", "radarFault", "wrongConfig", "radarUnavailableTemporary")):
+    return False
+
+  def measured_lead(lead):
+    return (lead is not None and lead.status and lead.radar
+            and math.isfinite(lead.dRel) and lead.dRel > 0.2 and math.isfinite(lead.vRel))
+
+  lead_one = getattr(radar_state, "leadOne", None)
+  legacy_cutin = measured_lead(lead_one) and lead_one.radarTrackId == -1
+  # A corner may have a positive ID and never replace the front leadOne.
+  # leadsCutIn contains confirmed entries, including those not yet in leadTwo.
+  # Ordinary observations and the separate early leadCutInRisk are not entries.
+  return bool(legacy_cutin or any(measured_lead(lead) for lead in getattr(radar_state, "leadsCutIn", ())))
+
+
+def camera_scc_activation_allowed(CS):
+  """Automatic recovery must not retry a faulted or parked stock camera."""
+  cluster = CS.lfahda_cluster
+  camera_hud = getattr(CS, "ccnc_0x162", None)
+  return bool(
+    CS.out.canValid and CS.out.gearShifter == "drive" and math.isfinite(CS.out.vEgo)
+    and cluster is not None
+    and cluster.get("HDA_OptUsmSta", 0) != 7
+    and cluster.get("HDA_InfoPUDis", 0) != 4
+    and not (camera_hud is not None and camera_hud.get("FAULT_HDA", 0))
+  )
+
 
 def hyundai_crc8(data: bytes) -> int:
   poly = 0x2F
@@ -858,6 +896,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
     if CS.lfahda_cluster is not None:
       HDA_CntrlModSta = CS.lfahda_cluster["HDA_CntrlModSta"]
       HDA_LFA_SymSta = CS.lfahda_cluster["HDA_LFA_SymSta"]
+    activation_allowed = camera_scc_activation_allowed(CS)
+    moving_activation_allowed = activation_allowed and CS.out.vEgo > 3.0 and not CS.out.brakePressed
 
     if frame % 2 == 0:
       if CS.cruise_buttons_msg is not None:
@@ -873,11 +913,12 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
             values["LFA_BTN"] = 0
         # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-        if HDA_LFA_SymSta == 0 and 0 < frame % 200 < 12:
+        automatic_buttons_allowed = activation_allowed and not CS.out.brakePressed and not driver_pressed
+        if moving_activation_allowed and automatic_buttons_allowed and HDA_LFA_SymSta == 0 and 0 < frame % 200 < 12:
           values["LFA_BTN"] = 1
 
         # 💡 [핵심 수정] CC.enabled(제어 중)이거나 keep_stock_scc_main(대기 중 유지)일 때 MAIN을 켬
-        if CC.enabled or keep_stock_scc_main:
+        if automatic_buttons_allowed and (CC.enabled or keep_stock_scc_main):
           if not CS.MainMode_ACC:
             # 운전자가 직접 버튼을 누르지 않은 상태에서만 가짜 MAIN 신호 송신
             if not driver_pressed and 10 < frame % 200 <= 16 and CS.out.vEgo > 3.:
@@ -1122,8 +1163,10 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
 
         ret.append(packer.make_can_msg("CCNC_0x162", CAN.ECAN, values))
 
-    # --- NEW_MSG_4B9 (corner radar keep-alive?) ---
-    if enable_corner_radar > 0:
+    # Synthetic navigation is only a moving recovery fallback. Never replay it
+    # while parked/faulted or over the vehicle's own navigation stream.
+    if (enable_corner_radar > 0 and moving_activation_allowed
+        and getattr(CS, "navi_segment_4b9", None) is None):
       if HDA_CntrlModSta == 0:
         if frame % 500 in [10, 20, 30]:
           values = {
