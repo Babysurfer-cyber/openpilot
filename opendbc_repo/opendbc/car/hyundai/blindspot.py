@@ -27,7 +27,7 @@ class CornerBsdSupplement:
   @staticmethod
   def _front_limit(velocity):
     if velocity < -0.5:
-      return 6.0 + min(1.0, (-velocity - 0.5) / 4.5) * 6.0
+      return 6.0 + min(1.0, (-velocity - 0.5) / 4.5) * 9.0
     if velocity > 0.5:
       return 6.0 - min(1.0, (velocity - 0.5) / 4.5) * 4.0
     return 6.0
