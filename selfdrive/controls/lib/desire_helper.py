@@ -1,4 +1,5 @@
 from cereal import log
+import math
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.realtime import DT_MDL
 import numpy as np
@@ -12,6 +13,15 @@ from openpilot.selfdrive.controls.lib.desire_lib.constants import (
 )
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import classify_maneuver_type
+
+
+# 모델 기준점과 차선 사이에 여유가 있는 초기 구간에서만 BSD 취소를 허용합니다.
+# 아래 수치는 차체의 실제 차선 통과를 측정하는 값이 아닌 보수적 판정 기준입니다.
+BSD_ABORT_MIN_DISTANCE = 1.2
+BSD_ABORT_MAX_DISTANCE = 2.4
+BSD_ABORT_MIN_LINE_PROB = 0.5
+BSD_ABORT_MAX_DISTANCE_STEP = 0.35
+BSD_ABORT_MAX_FRAME_GAP_NS = 150_000_000
 
 
 class DesireHelper:
@@ -77,6 +87,44 @@ class DesireHelper:
     self.stalk_max_level = 0
     self.one_touch_triggered = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    # BSD로 취소한 입력은 새로운 레버 조작/ATC 요청 전까지 다시 사용하지 않습니다.
+    self.bsd_cancelled = False
+    self.bsd_stalk_cancelled = False
+    self.bsd_abort_allowed = False
+    self.bsd_abort_direction = LaneChangeDirection.none
+    self.bsd_abort_distance = None
+    self.bsd_abort_timestamp = 0
+
+  def _update_bsd_abort_window(self, modeldata, new_start=False):
+    direction = self.lane_change_direction
+    index = 1 if direction == LaneChangeDirection.left else 2 if direction == LaneChangeDirection.right else -1
+    timestamp = int(getattr(modeldata, "timestampEof", 0))
+    distance = None
+    if index >= 0 and len(modeldata.laneLines) > index and len(modeldata.laneLineProbs) > index:
+      line = modeldata.laneLines[index]
+      probability = modeldata.laneLineProbs[index]
+      if len(line.y) > 0 and math.isfinite(probability) and probability > BSD_ABORT_MIN_LINE_PROB:
+        # 모델 좌표는 왼쪽 음수, 오른쪽 양수입니다.
+        y = line.y[0]
+        value = -y if direction == LaneChangeDirection.left else y
+        if math.isfinite(value) and BSD_ABORT_MIN_DISTANCE < value <= BSD_ABORT_MAX_DISTANCE:
+          distance = float(value)
+
+    if new_start:
+      self.bsd_abort_allowed = distance is not None and timestamp > 0
+      self.bsd_abort_direction = direction
+    else:
+      # 가까워짐·인식 소실·좌표 점프·수신 공백이 있으면 이번 변경에서는 다시 열지 않습니다.
+      self.bsd_abort_allowed = bool(
+        self.bsd_abort_allowed and direction == self.bsd_abort_direction
+        and distance is not None and self.bsd_abort_distance is not None
+        and abs(distance - self.bsd_abort_distance) <= BSD_ABORT_MAX_DISTANCE_STEP
+        and 0 < timestamp - self.bsd_abort_timestamp <= BSD_ABORT_MAX_FRAME_GAP_NS
+      )
+    self.bsd_abort_distance = distance
+    self.bsd_abort_timestamp = timestamp
+    return self.bsd_abort_allowed
 
   # ─────────────────────────────────────────────
   # params/model
@@ -226,6 +274,7 @@ class DesireHelper:
   # main update
   # ─────────────────────────────────────────────
   def update(self, carstate, modeldata, lateral_active, lane_change_prob, carrotMan, radarState):
+    previous_lane_change_state = self.lane_change_state
     self.frame += 1
     self._update_params_periodic()
     self._make_model_turn_speed(modeldata)
@@ -236,6 +285,8 @@ class DesireHelper:
 
     # 새로운 레버 조작(Count 변화)이 감지되면 타이머 및 상태 갱신
     if left_stalk_changed or right_stalk_changed:
+      self.bsd_cancelled = False
+      self.bsd_stalk_cancelled = False
       self.prev_left_stalk_count = carstate.leftBlinkerStalkCount
       self.prev_right_stalk_count = carstate.rightBlinkerStalkCount
       self.stalk_press_timer = 0.0
@@ -273,6 +324,16 @@ class DesireHelper:
         self.one_touch_triggered = False
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+    new_atc_command = (carrotMan.carrotCmd == "LANECHANGE"
+                       and carrotMan.carrotCmdIndex != self.carrot_cmd_index_last)
+    new_atc_maneuver = (carrotMan.atcType != self.atc_type and carrotMan.atcType in
+                        ("turn left", "turn right", "fork left", "fork right", "atc left", "atc right"))
+    if new_atc_command or new_atc_maneuver:
+      self.bsd_cancelled = False
+    # 새로운 ATC 요청이 와도 취소된 물리 레버 입력은 새 레버 조작 전까지 소비 상태입니다.
+    if self.bsd_stalk_cancelled:
+      self.one_touch_triggered = False
+
     # counts
     self.carrot_lane_change_count = max(0, self.carrot_lane_change_count - 1)
     self.lane_change_delay = max(0.0, self.lane_change_delay - DT_MDL)
@@ -289,6 +350,12 @@ class DesireHelper:
     # blinkers
     driver_st, driver_changed, driver_enabled = self._update_driver_blinker(carstate)
     atc_st, atc_enabled = self._update_atc_blinker(carrotMan, driver_st)
+
+    # blinker_ignore만으로는 운전자 원터치 입력을 차단할 수 없습니다.
+    if self.bsd_stalk_cancelled and carstate.blinkerLever != 2:
+      driver_enabled = False
+    if self.bsd_cancelled:
+      atc_enabled = False
 
     desire_enabled = driver_enabled or atc_enabled
     blinker_state = driver_st if driver_enabled else atc_st
@@ -464,21 +531,15 @@ class DesireHelper:
           self.lane_change_ll_prob = max(self.lane_change_ll_prob - 2 * DT_MDL, 0.0)
 
           # 차선을 넘기 전 BSD 감지 시 차선변경 자동 취소 및 원래 차선 복귀
+          # 여기서는 차선변경 요청만 해제하며, 반대 방향의 강제 복귀 조향은 만들지 않습니다.
+          before_lane_cross = self._update_bsd_abort_window(modeldata)
           ignore_bsd = (self.laneChangeBsd < 0)
           if not ignore_bsd:
             if self.lane_change_direction == LaneChangeDirection.left:
-              bsd_detected = bool(carstate.leftBlindspot)
-              if len(modeldata.laneLines[1].y) > 0 and modeldata.laneLineProbs[1] > 0.3:
-                before_lane_cross = 0.5 < modeldata.laneLines[1].y[0] < 2.4
-              else:
-                before_lane_cross = self.lane_change_ll_prob > 0.01
+              bsd_detected = self.left.bsd_hold_counter > 0
               torque_override = carstate.steeringPressed and (carstate.steeringTorque > 0) and (self.laneChangeBsd != 1)
             elif self.lane_change_direction == LaneChangeDirection.right:
-              bsd_detected = bool(carstate.rightBlindspot)
-              if len(modeldata.laneLines[2].y) > 0 and modeldata.laneLineProbs[2] > 0.3:
-                before_lane_cross = -2.4 < modeldata.laneLines[2].y[0] < -0.5
-              else:
-                before_lane_cross = self.lane_change_ll_prob > 0.01
+              bsd_detected = self.right.bsd_hold_counter > 0
               torque_override = carstate.steeringPressed and (carstate.steeringTorque < 0) and (self.laneChangeBsd != 1)
             else:
               bsd_detected = False
@@ -490,6 +551,20 @@ class DesireHelper:
               self.lane_change_state = LaneChangeState.off
               self.one_touch_triggered = False
               self.blinker_ignore = True
+              self.bsd_cancelled = True
+              self.bsd_stalk_cancelled = True
+              self.stalk_max_level = 0
+              self.stalk_press_timer = 2.0
+              self.carrot_lane_change_count = 0
+              self.carrot_blinker_state = BLINKER_NONE
+              self.carrot_cmd_index_last = carrotMan.carrotCmdIndex
+              self.auto_lane_change_enable = False
+              self.next_lane_change = False
+              self.turn_direction = TurnDirection.none
+              self.maneuver_type = "none"
+              self.lane_change_ll_prob = 1.0
+              desire_enabled = False
+              self.desireLog = "BSD: lane change cancelled before crossing"
 
           if self.lane_change_state == LaneChangeState.laneChangeStarting:
             if lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:
@@ -526,6 +601,16 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
       self.lane_change_state = LaneChangeState.off
       self.blinker_ignore = True
+
+    # 시작으로 전환된 그 프레임부터 관측합니다. 뒤늦게 정상 차선이 보여도 재무장하지 않습니다.
+    if self.lane_change_state == LaneChangeState.laneChangeStarting:
+      if previous_lane_change_state != LaneChangeState.laneChangeStarting:
+        self._update_bsd_abort_window(modeldata, new_start=True)
+    else:
+      self.bsd_abort_allowed = False
+      self.bsd_abort_direction = LaneChangeDirection.none
+      self.bsd_abort_distance = None
+      self.bsd_abort_timestamp = 0
 
     # final desire
     if self.turn_direction != TurnDirection.none:
