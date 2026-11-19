@@ -462,8 +462,38 @@ class DesireHelper:
 
         elif self.lane_change_state == LaneChangeState.laneChangeStarting:
           self.lane_change_ll_prob = max(self.lane_change_ll_prob - 2 * DT_MDL, 0.0)
-          if lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:
-            self.lane_change_state = LaneChangeState.laneChangeFinishing
+
+          # 차선을 넘기 전 BSD 감지 시 차선변경 자동 취소 및 원래 차선 복귀
+          ignore_bsd = (self.laneChangeBsd < 0)
+          if not ignore_bsd:
+            if self.lane_change_direction == LaneChangeDirection.left:
+              bsd_detected = bool(carstate.leftBlindspot)
+              if len(modeldata.laneLines[1].y) > 0 and modeldata.laneLineProbs[1] > 0.3:
+                before_lane_cross = 0.5 < modeldata.laneLines[1].y[0] < 2.4
+              else:
+                before_lane_cross = self.lane_change_ll_prob > 0.01
+              torque_override = carstate.steeringPressed and (carstate.steeringTorque > 0) and (self.laneChangeBsd != 1)
+            elif self.lane_change_direction == LaneChangeDirection.right:
+              bsd_detected = bool(carstate.rightBlindspot)
+              if len(modeldata.laneLines[2].y) > 0 and modeldata.laneLineProbs[2] > 0.3:
+                before_lane_cross = -2.4 < modeldata.laneLines[2].y[0] < -0.5
+              else:
+                before_lane_cross = self.lane_change_ll_prob > 0.01
+              torque_override = carstate.steeringPressed and (carstate.steeringTorque < 0) and (self.laneChangeBsd != 1)
+            else:
+              bsd_detected = False
+              before_lane_cross = False
+              torque_override = False
+
+            if bsd_detected and before_lane_cross and not torque_override:
+              self.lane_change_direction = LaneChangeDirection.none
+              self.lane_change_state = LaneChangeState.off
+              self.one_touch_triggered = False
+              self.blinker_ignore = True
+
+          if self.lane_change_state == LaneChangeState.laneChangeStarting:
+            if lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:
+              self.lane_change_state = LaneChangeState.laneChangeFinishing
 
         elif self.lane_change_state == LaneChangeState.laneChangeFinishing:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
