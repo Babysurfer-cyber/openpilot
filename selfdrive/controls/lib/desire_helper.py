@@ -17,7 +17,7 @@ from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import clas
 
 # 모델 기준점과 차선 사이에 여유가 있는 초기 구간에서만 BSD 취소를 허용합니다.
 # 아래 수치는 차체의 실제 차선 통과를 측정하는 값이 아닌 보수적 판정 기준입니다.
-BSD_ABORT_MIN_DISTANCE = 1.0
+BSD_ABORT_MIN_DISTANCE = 0.9
 BSD_ABORT_MAX_DISTANCE = 2.4
 BSD_ABORT_MIN_LINE_PROB = 0.5
 BSD_ABORT_MAX_DISTANCE_STEP = 0.35
