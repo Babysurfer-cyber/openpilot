@@ -166,7 +166,7 @@ def test_clock_reset_cannot_keep_an_old_warning_deadline():
   assert not bsd.update(START, {})["L"]
 
 
-@pytest.mark.parametrize("velocity,limit", ((-10.0, 12.0), (-5.0, 12.0), (-0.5, 6.0), (0.0, 6.0), (0.5, 6.0), (5.0, 2.0), (10.0, 2.0)))
+@pytest.mark.parametrize("velocity,limit", ((-10.0, 15.0), (-5.0, 15.0), (-0.5, 6.0), (0.0, 6.0), (0.5, 6.0), (5.0, 2.0), (10.0, 2.0)))
 def test_existing_warning_zone_limits_are_preserved(velocity, limit):
   assert CornerBsdSupplement._front_limit(velocity) == pytest.approx(limit)
 

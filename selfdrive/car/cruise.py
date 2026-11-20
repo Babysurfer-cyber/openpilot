@@ -1,8 +1,11 @@
 import math
+import time
 import numpy as np
 
-from cereal import car
+from cereal import car, log
 from openpilot.common.conversions import Conversions as CV
+from openpilot.selfdrive.car.can_cruise_recovery import CanErrorCruiseRecovery
+from opendbc.car.hyundai.values import HyundaiFlags
 
 from opendbc.car import structs
 GearShifter = structs.CarState.GearShifter
@@ -152,6 +155,8 @@ class VCruiseCarrot:
     self.frame = 0
     self.params_memory = Params("/dev/shm/params")
     self.params = Params()
+    self.can_cruise_recovery = CanErrorCruiseRecovery()
+    self.can_error_cruise_resume = self.params.get_int("CanErrorCruiseResume") > 0
     self.v_cruise_kph = 20 #V_CRUISE_UNSET
     self.v_cruise_cluster_kph = 20 #V_CRUISE_UNSET
     self.v_cruise_kph_last = 20
@@ -245,6 +250,7 @@ class VCruiseCarrot:
     unit_factor = 1.0 if is_metric else CV.MPH_TO_KPH
     if self.frame % 10 == 0:
       self.autoCruiseControl = self.params.get_int("AutoCruiseControl") * unit_factor
+      self.can_error_cruise_resume = self.params.get_int("CanErrorCruiseResume") > 0
       self.autoGasTokSpeed = self.params.get_int("AutoGasTokSpeed") * unit_factor
       self.autoGasSyncSpeed = self.params.get_int("AutoGasSyncSpeed")
       self.applyModelSpeed = self.params.get_float("ApplyModelSpeed") * 0.01
@@ -323,6 +329,8 @@ class VCruiseCarrot:
       self._cruise_ready = False
       
     # 버튼 입력을 처리해서 v_cruise_kph를 가져오는 기존 코드
+    recovery_user_command = (self.carrot_cmd_index != self.carrot_cmd_index_last
+                             and self.carrot_cmd in ("CRUISE", "SPEED"))
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
     if self._activate_cruise > 0:
@@ -355,8 +363,60 @@ class VCruiseCarrot:
       self.v_cruise_kph = np.clip(v_cruise_kph, dynamic_min, self._cruise_speed_max) 
       self.v_cruise_cluster_kph = self.v_cruise_kph 
 
+    self._update_can_cruise_recovery(CS, CC, sm, driver_command=recovery_user_command)
     self.cruise_state_available_last = CS.cruiseState.available
     self.enabled_last = CC.enabled
+
+  def _update_can_cruise_recovery(self, CS, CC, sm, driver_command=False):
+    now_s = time.monotonic()
+    events = sm['onroadEvents']
+    event_name = log.OnroadEvent.EventName
+    transient = (event_name.canError, event_name.commIssue, event_name.commIssueAvgFreq,
+                 event_name.locationdTemporaryError)
+    events_fresh = (sm.valid['onroadEvents'] and sm.alive['onroadEvents']
+                    and 0 <= now_s - sm.recv_time['onroadEvents'] <= 1.5)
+    can_fault = (not CS.canValid and not CS.canTimeout and events_fresh
+                 and any(e.name == event_name.canError for e in events))
+    blocked = (CS.brakePressed or CS.gasPressed or CS.regenBraking or CS.steeringPressed
+               or CS.doorOpen or CS.seatbeltUnlatched or CS.canTimeout
+               or self._cruise_cancel_state or self.autoCruiseControl_cancel_timer > 0
+               or any(e.userDisable or ((e.immediateDisable or e.softDisable) and e.name not in transient)
+                      for e in events))
+    driver_input = (driver_command or self.button_cnt > 0 or any(b.type != ButtonType.unknown for b in CS.buttonEvents)
+                    or self._activate_cruise != 0)
+    manual_enable = any(b.type in (ButtonType.accelCruise, ButtonType.decelCruise,
+                                   ButtonType.resumeCruise, ButtonType.lfaButton)
+                        for b in CS.buttonEvents)
+    allowed = (self.can_error_cruise_resume and self.CP.brand == 'hyundai'
+               and self.CP.flags & HyundaiFlags.CANFD and self.CP.openpilotLongitudinalControl
+               and not self.CP.pcmCruise and not self.CP.passive
+               and CS.gearShifter == GearShifter.drive and not CS.standstill
+               and math.isfinite(CS.vEgo) and CS.vEgo > 0
+               and self._lat_enabled and CS.latEnabled and CC.latActive and CS.cruiseState.available)
+    panda_ok = bool(sm['pandaStates']) and all(not p.safetyRxChecksInvalid and not p.faults and not p.heartbeatLost
+                                             for p in sm['pandaStates'])
+    # onroadEvents is event-driven: a legitimate burst must not fail a 1 Hz frequency check.
+    critical = ('selfdriveState', 'pandaStates', 'carControl', 'longitudinalPlan', 'radarState', 'modelV2')
+    fresh = all(0 <= now_s - sm.recv_time[name] <= (0.25 if name == 'pandaStates' else 0.15)
+                and (self.can_cruise_recovery.pending_since is None
+                     or sm.recv_time[name] >= self.can_cruise_recovery.pending_since)
+                for name in critical)
+    ready = (CS.canValid and not CS.canTimeout and sm.all_checks(critical) and events_fresh and fresh
+             and sm['selfdriveState'].engageable and not any(e.noEntry for e in events) and panda_ok)
+    previous_status = self.can_cruise_recovery.status
+    target = self.can_cruise_recovery.update(
+      now_s=now_s, enabled=CC.enabled, set_speed_kph=self.v_cruise_kph,
+      can_fault=can_fault, blocked=blocked, ready=ready, allowed=bool(allowed),
+      driver_input=driver_input, manual_enable=manual_enable,
+    )
+    if target is not None:
+      # This is a request through carSpecific/StateMachine, never a forced enabled state or a fake + button.
+      self._activate_cruise = 1
+      self._cruise_ready = False
+      self.v_cruise_kph = self.v_cruise_cluster_kph = target
+      self._add_log(f"CAN recovery requested: {target:.0f} km/h")
+    elif self.can_cruise_recovery.status != previous_status:
+      self._add_log(f"CAN recovery: {self.can_cruise_recovery.status}")
 
   def initialize_v_cruise(self, CS, experimental_mode: bool) -> None:
     return
@@ -499,32 +559,6 @@ class VCruiseCarrot:
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
     
     self.button_type_pressed = button_type  # ▼▼▼ [핵심 추가] 오토모드 오프셋 조절을 위해 눌린 버튼 기억 ▼▼▼
-
-    # ▼▼▼ [수정] CAN-FD 오류 시 0.5초(50프레임) 대기 후 +버튼 자동 입력 ▼▼▼
-    if not hasattr(self, 'canfd_restore_timer'):
-      self.canfd_restore_timer = 0
-
-    # 1. 크루즈가 예기치 않게 풀린 순간 감지 -> 즉시 켜지 않고 0.5초 타이머 시작
-    if self.enabled_last and not CC.enabled and getattr(self, '_lat_enabled', False):
-      if not CS.brakePressed and not CS.gasPressed and not getattr(self, '_cruise_cancel_state', False) and CS.cruiseState.available:
-        self.canfd_restore_timer = 50  # 100Hz 기준 50프레임 = 0.5초 대기
-        self._add_log("CAN-FD Fault: Wait 0.5s")
-
-    # 2. 타이머 차감 및 재활성화 트리거
-    if self.canfd_restore_timer > 0:
-      # 대기하는 0.5초 동안 운전자가 브레이크나 엑셀을 밟으면 자동 복구 취소
-      if CS.brakePressed or CS.gasPressed or getattr(self, '_cruise_cancel_state', False) or not CS.cruiseState.available:
-        self.canfd_restore_timer = 0
-        self._add_log("CAN-FD Restore Canceled by User")
-      else:
-        self.canfd_restore_timer -= 1
-        # 0.5초가 정확히 끝나는 순간!
-        if self.canfd_restore_timer == 0:
-          button_type = ButtonType.accelCruise  # + 버튼(RES) 가상 입력
-          long_pressed = False
-          self._cruise_control(1, -1, "Auto Re-enable on CAN-FD Fault") # 차량에 실제 크루즈 ON 명령 하달
-          self._add_log("Auto Re-enable (+ button) FIRED")
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
