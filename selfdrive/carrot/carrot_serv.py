@@ -1212,7 +1212,7 @@ class CarrotServ:
     if turn_cond_met and not is_active:
       self.manual_turn_decel_active = True
       self.manual_turn_start_time = current_time
-      self.manual_turn_start_v_ego = max(0.0, v_ego - (10.0 / 3.6))
+      self.manual_turn_start_v_ego = max(0.0, v_ego - (5.0 / 3.6))
       
     elif not turn_cond_met:
       self.manual_turn_decel_active = False
