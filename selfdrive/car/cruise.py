@@ -846,7 +846,11 @@ class VCruiseCarrot:
 
         # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류 켜기
         if map_source == 2:
-            self.camera_pending = True
+            # 구간단속은 시작 카메라를 지나도 안내가 계속됩니다.
+            # 실제 4B4 구간 평균속도가 활성화되면 끝 카메라까지 기다리지 않고 보류를 해제합니다.
+            section_active = (CS.canValid and getattr(CS, 'navSectionValid', False)
+                              and getattr(CS, 'navSectionActive', False))
+            self.camera_pending = not section_active
             
         # 2. 카메라 통과 후 (map_source가 2에서 0으로 바뀌었을 때!)
         elif map_source != 2 and self.camera_pending:

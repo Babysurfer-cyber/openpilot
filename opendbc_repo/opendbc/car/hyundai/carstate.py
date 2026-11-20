@@ -31,6 +31,7 @@ STANDSTILL_THRESHOLD = 12 * 0.03125 * CV.KPH_TO_MS
 VEHICLE_NAVI_MAX_EVENT_DISTANCE = 2500.0
 VEHICLE_NAVI_PASSED_EVENT_DISTANCE = 30.0
 VEHICLE_NAVI_MAX_EVENTS = 32
+VEHICLE_NAVI_POSITION_TIMEOUT_NS = 1_000_000_000
 # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: ButtonType.decelCruise,
@@ -643,6 +644,19 @@ class CarState(CarStateBase):
       
     ret.speedLimitDistance = self.speedLimitDistance - self.totalDistance
 
+  def _update_vehicle_navi_section(self, cp, ret):
+    # 0x4BE previews and MapSource do not distinguish a section's start/end.
+    # The stock navigation's 0x4B4 average is zero outside, and 1..510 inside.
+    # Missing/stale data is unknown, never evidence that a start camera passed.
+    timestamp = self._vehicle_navi_message_timestamp(cp, "NEW_MSG_4B4")
+    age = cp._last_update_nanos - timestamp
+    average_speed = cp.vl["NEW_MSG_4B4"]["POS_RANGE_AVG_SPEED"] if timestamp > 0 else 511
+    ret.navSectionValid = bool(
+      timestamp > 0 and 0 <= age <= VEHICLE_NAVI_POSITION_TIMEOUT_NS
+      and 0 <= average_speed < 511
+    )
+    ret.navSectionActive = ret.navSectionValid and average_speed > 0
+
   def update_canfd(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
@@ -779,6 +793,8 @@ class CarState(CarStateBase):
       if self.time_zone == "UTC":
         country_code = int(self.hda_info_4a3.get("CountryCode", 0)) # 💡 에러 방지 안전장치!
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
+
+    self._update_vehicle_navi_section(cp, ret)
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
     if 1 <= ret.gearStep <= 8 and ret.gearShifter == GearShifter.unknown:
@@ -936,7 +952,8 @@ class CarState(CarStateBase):
   def get_can_parsers_canfd(self, CP):
     msgs = []
     # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
-    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan)]
+    # Section state is optional: cars without 0x4B4 must not get a CAN fault.
+    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4B4", math.nan)]
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
