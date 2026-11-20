@@ -7,7 +7,7 @@ from openpilot.common.params import Params
 
 from openpilot.selfdrive.controls.lib.desire_lib.constants import (
   LaneChangeState, LaneChangeDirection, TurnDirection,
-  LANE_CHANGE_SPEED_MIN, LANE_CHANGE_TIME_MAX,
+  LANE_CHANGE_SPEED_MIN,
   BLINKER_NONE, BLINKER_LEFT, BLINKER_RIGHT,
   DESIRES, TURN_DESIRES
 )
@@ -17,11 +17,85 @@ from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import clas
 
 # 모델 기준점과 차선 사이에 여유가 있는 초기 구간에서만 BSD 취소를 허용합니다.
 # 아래 수치는 차체의 실제 차선 통과를 측정하는 값이 아닌 보수적 판정 기준입니다.
-BSD_ABORT_MIN_DISTANCE = 0.9
+BSD_ABORT_MIN_DISTANCE = 1.0
 BSD_ABORT_MAX_DISTANCE = 2.4
 BSD_ABORT_MIN_LINE_PROB = 0.5
 BSD_ABORT_MAX_DISTANCE_STEP = 0.35
 BSD_ABORT_MAX_FRAME_GAP_NS = 150_000_000
+
+# 업로드한 EV6 로그의 램프 점멸 주기 약 0.7초 × 5회에 해당하는 시간입니다.
+LANE_CHANGE_TIME_MAX = 0.7 * 5
+
+
+class ManualBoundaryCrossing:
+  MIN_LINE_PROB = 0.5
+  MAX_DISTANCE_STEP = 0.35
+  MAX_FRAME_GAP_NS = 150_000_000
+  CROSS_MARGIN = 0.2
+  CONFIRM_FRAMES = 2
+
+  def __init__(self):
+    self.reset()
+
+  def reset(self):
+    self.direction = None
+    self.previous_y = None
+    self.timestamp_ns = 0
+    self.crossed_frames = 0
+    self.active = False
+
+  @staticmethod
+  def _timestamp(modeldata):
+    try:
+      timestamp = int(getattr(modeldata, "timestampEof", 0))
+    except (TypeError, ValueError, OverflowError):
+      return 0
+    return timestamp if timestamp > 0 else 0
+
+  @classmethod
+  def _line_y(cls, modeldata, index):
+    lines = getattr(modeldata, "laneLines", ())
+    probabilities = getattr(modeldata, "laneLineProbs", ())
+    if len(lines) <= index or len(probabilities) <= index or not len(lines[index].y):
+      return None
+    probability, y = probabilities[index], lines[index].y[0]
+    if not (math.isfinite(probability) and probability > cls.MIN_LINE_PROB and math.isfinite(y)):
+      return None
+    return float(y)
+
+  def begin(self, modeldata, direction):
+    """Start only for a new pending request; direction is 'left' or 'right'."""
+    self.reset()
+    if direction not in ("left", "right"):
+      return
+    self.direction = direction
+    self.timestamp_ns = self._timestamp(modeldata)
+    self.previous_y = self._line_y(modeldata, 1 if direction == "left" else 2)
+    side_sign = -1 if direction == "left" else 1
+    self.active = bool(self.timestamp_ns and self.previous_y is not None and side_sign * self.previous_y > 0.0)
+
+  def update(self, modeldata, direction):
+    """Return True once after two continuous observations beyond the boundary."""
+    if not self.active:
+      return False
+    timestamp = self._timestamp(modeldata)
+    if direction != self.direction or not 0 < timestamp - self.timestamp_ns <= self.MAX_FRAME_GAP_NS:
+      self.active = False
+      return False
+
+    # The same physical boundary can move to another model lane-line index.
+    candidates = [y for index in range(4) if (y := self._line_y(modeldata, index)) is not None]
+    y = min(candidates, key=lambda value: abs(value - self.previous_y), default=None)
+    if y is None or abs(y - self.previous_y) > self.MAX_DISTANCE_STEP:
+      self.active = False
+      return False
+    self.previous_y, self.timestamp_ns = y, timestamp
+    side_sign = -1 if self.direction == "left" else 1
+    self.crossed_frames = self.crossed_frames + 1 if side_sign * y <= -self.CROSS_MARGIN else 0
+    if self.crossed_frames >= self.CONFIRM_FRAMES:
+      self.active = False
+      return True
+    return False
 
 
 class DesireHelper:
@@ -95,6 +169,73 @@ class DesireHelper:
     self.bsd_abort_direction = LaneChangeDirection.none
     self.bsd_abort_distance = None
     self.bsd_abort_timestamp = 0
+
+    # 완료된 원터치는 새 레버 조작 전까지 재사용하지 않습니다.
+    self.stalk_direction = BLINKER_NONE
+    self.one_touch_completed = False
+    self.manual_crossing = ManualBoundaryCrossing()
+    self.manual_crossed = False
+    self.held_crossing = ManualBoundaryCrossing()
+    self.held_crossed = False
+    self.held_model_seen = False
+    self.held_repeat_pending = False
+    self.lane_change_driver_request = False
+    self.lane_change_stalk_counts = None
+
+  def _one_touch_held(self, carstate):
+    return bool(carstate.blinkerLever == 1 and self.stalk_max_level == 1
+                and self.stalk_direction in (BLINKER_LEFT, BLINKER_RIGHT)
+                and self.one_touch_triggered and not self.one_touch_completed
+                and not self.bsd_stalk_cancelled)
+
+  def _consume_lane_change_request(self, carrotMan, reason, bsd=False, preserve_new_stalk=False, carstate=None):
+    current_counts = (self.prev_left_stalk_count, self.prev_right_stalk_count)
+    preserve = (preserve_new_stalk and carstate is not None and self.lane_change_stalk_counts is not None
+                and current_counts != self.lane_change_stalk_counts)
+    saved_level, saved_timer = self.stalk_max_level, self.stalk_press_timer
+    self.lane_change_state = LaneChangeState.off
+    self.lane_change_direction = LaneChangeDirection.none
+    self.turn_direction = TurnDirection.none
+    self.maneuver_type = "none"
+    self.lane_change_ll_prob = 1.0
+    self.one_touch_triggered = False
+    self.one_touch_completed = True
+    self.bsd_cancelled = True
+    self.bsd_stalk_cancelled = self.bsd_stalk_cancelled or bsd
+    self.stalk_max_level = 0
+    self.stalk_press_timer = 2.0
+    self.blinker_ignore = True
+    self.carrot_lane_change_count = 0
+    self.carrot_blinker_state = BLINKER_NONE
+    self.carrot_cmd_index_last = carrotMan.carrotCmdIndex
+    self.auto_lane_change_enable = False
+    self.next_lane_change = False
+    self.manual_crossing.reset()
+    self.manual_crossed = False
+    self.held_repeat_pending = False
+    self.desireLog = reason
+    # 이전 1회 완료 시점에 이미 들어온 새 원터치는 그 이전 요청과 함께 지우지 않습니다.
+    if preserve:
+      self.one_touch_completed = self.bsd_stalk_cancelled = False
+      self.stalk_max_level, self.stalk_press_timer = saved_level, saved_timer
+      self.one_touch_triggered = bool(saved_level == 1 and (carstate.blinkerLever == 0 or saved_timer >= 0.3))
+
+  def _held_next_lane_ready(self, carstate, modeldata):
+    if (self.laneChangeNeedTorque < 0 or not carstate.canValid or not math.isfinite(carstate.vEgo)
+        or carstate.vEgo < LANE_CHANGE_SPEED_MIN):
+      return False
+    side = self.left if self.lane_change_direction == LaneChangeDirection.left else self.right
+    torque_sign = 1 if self.lane_change_direction == LaneChangeDirection.left else -1
+    torque_applied = carstate.steeringPressed and carstate.steeringTorque * torque_sign > 0
+    if self.laneChangeNeedTorque > 0 and not torque_applied:
+      return False
+    if not side.lane_change_available_geom or side.side_object_detected:
+      return False
+    # 다음 차로도 BSD와 원래의 차선 허용 조건을 다시 만족해야 새 요청을 보냅니다.
+    if self.laneChangeBsd >= 0 and side.bsd_hold_counter > 0:
+      if self.laneChangeBsd == 1 or not torque_applied:
+        return False
+    return self._update_bsd_abort_window(modeldata, new_start=True)
 
   def _update_bsd_abort_window(self, modeldata, new_start=False):
     direction = self.lane_change_direction
@@ -287,6 +428,11 @@ class DesireHelper:
     if left_stalk_changed or right_stalk_changed:
       self.bsd_cancelled = False
       self.bsd_stalk_cancelled = False
+      self.one_touch_completed = False
+      self.stalk_direction = BLINKER_LEFT if left_stalk_changed and not right_stalk_changed else \
+                             BLINKER_RIGHT if right_stalk_changed and not left_stalk_changed else BLINKER_NONE
+      self.manual_crossing.reset()
+      self.manual_crossed = False
       self.prev_left_stalk_count = carstate.leftBlinkerStalkCount
       self.prev_right_stalk_count = carstate.rightBlinkerStalkCount
       self.stalk_press_timer = 0.0
@@ -331,7 +477,7 @@ class DesireHelper:
     if new_atc_command or new_atc_maneuver:
       self.bsd_cancelled = False
     # 새로운 ATC 요청이 와도 취소된 물리 레버 입력은 새 레버 조작 전까지 소비 상태입니다.
-    if self.bsd_stalk_cancelled:
+    if self.bsd_stalk_cancelled or self.one_touch_completed:
       self.one_touch_triggered = False
 
     # counts
@@ -349,10 +495,14 @@ class DesireHelper:
 
     # blinkers
     driver_st, driver_changed, driver_enabled = self._update_driver_blinker(carstate)
+    # 1단을 실제로 누르는 중에는 램프의 순간 소등과 무관하게 그 방향 입력을 유지합니다.
+    if self._one_touch_held(carstate) and driver_st == BLINKER_NONE:
+      driver_st = self.stalk_direction
+      driver_enabled = self.laneChangeNeedTorque >= 0
     atc_st, atc_enabled = self._update_atc_blinker(carrotMan, driver_st)
 
     # blinker_ignore만으로는 운전자 원터치 입력을 차단할 수 없습니다.
-    if self.bsd_stalk_cancelled and carstate.blinkerLever != 2:
+    if (self.bsd_stalk_cancelled or self.one_touch_completed) and carstate.blinkerLever != 2:
       driver_enabled = False
     if self.bsd_cancelled:
       atc_enabled = False
@@ -362,6 +512,26 @@ class DesireHelper:
 
     # 선택된 side (FSM은 이 side만 참고)
     side = self._get_selected_side(blinker_state) if blinker_state in (BLINKER_LEFT, BLINKER_RIGHT) else None
+
+    # 자동 시작 전 수동 횡단도 같은 원터치의 1회 완료로 처리합니다.
+    pending_driver = (self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange)
+                      and self.one_touch_triggered and not self.one_touch_completed
+                      and carstate.blinkerLever != 2
+                      and self.stalk_direction in (BLINKER_LEFT, BLINKER_RIGHT))
+    if pending_driver:
+      direction = "left" if self.stalk_direction == BLINKER_LEFT else "right"
+      if self.manual_crossing.direction is None:
+        self.manual_crossing.begin(modeldata, direction)
+      else:
+        self.manual_crossed = self.manual_crossing.update(modeldata, direction) or self.manual_crossed
+      # 계속 누르고 있는 입력은 다음 차로까지 진행하려는 의도이므로 놓을 때만 소비합니다.
+      if self.manual_crossed and not self._one_touch_held(carstate):
+        self._consume_lane_change_request(carrotMan, "Manual lane change completed")
+        driver_enabled = atc_enabled = desire_enabled = False
+        blinker_state, side = BLINKER_NONE, None
+    elif self.lane_change_state not in (LaneChangeState.off, LaneChangeState.preLaneChange):
+      self.manual_crossing.reset()
+      self.manual_crossed = False
     atc_lane_change_requested = (
       atc_enabled and
       self.atc_type in ("fork left", "fork right", "atc left", "atc right")
@@ -412,6 +582,9 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
       self.turn_direction = TurnDirection.none
       self.maneuver_type = "none"
+      if self.lane_change_timer > LANE_CHANGE_TIME_MAX and (self.one_touch_triggered or self.lane_change_driver_request):
+        self._consume_lane_change_request(carrotMan, "Lane change timeout")
+        desire_enabled = False
 
     elif self.desire_disable_count > 0:
       self.lane_change_state = LaneChangeState.off
@@ -529,11 +702,17 @@ class DesireHelper:
 
         elif self.lane_change_state == LaneChangeState.laneChangeStarting:
           self.lane_change_ll_prob = max(self.lane_change_ll_prob - 2 * DT_MDL, 0.0)
+          direction = "left" if self.lane_change_direction == LaneChangeDirection.left else "right"
+          held_same_direction = (self._one_touch_held(carstate)
+                                 and self.stalk_direction == (BLINKER_LEFT if direction == "left" else BLINKER_RIGHT))
+          self.held_crossed = self.held_crossing.update(modeldata, direction) or self.held_crossed
+          self.held_model_seen = self.held_model_seen or lane_change_prob > 0.5
 
           # 차선을 넘기 전 BSD 감지 시 차선변경 자동 취소 및 원래 차선 복귀
           # 여기서는 차선변경 요청만 해제하며, 반대 방향의 강제 복귀 조향은 만들지 않습니다.
           before_lane_cross = self._update_bsd_abort_window(modeldata)
           ignore_bsd = (self.laneChangeBsd < 0)
+          bsd_detected = torque_override = False
           if not ignore_bsd:
             if self.lane_change_direction == LaneChangeDirection.left:
               bsd_detected = self.left.bsd_hold_counter > 0
@@ -547,34 +726,42 @@ class DesireHelper:
               torque_override = False
 
             if bsd_detected and before_lane_cross and not torque_override:
-              self.lane_change_direction = LaneChangeDirection.none
-              self.lane_change_state = LaneChangeState.off
-              self.one_touch_triggered = False
-              self.blinker_ignore = True
-              self.bsd_cancelled = True
-              self.bsd_stalk_cancelled = True
-              self.stalk_max_level = 0
-              self.stalk_press_timer = 2.0
-              self.carrot_lane_change_count = 0
-              self.carrot_blinker_state = BLINKER_NONE
-              self.carrot_cmd_index_last = carrotMan.carrotCmdIndex
-              self.auto_lane_change_enable = False
-              self.next_lane_change = False
-              self.turn_direction = TurnDirection.none
-              self.maneuver_type = "none"
-              self.lane_change_ll_prob = 1.0
+              self._consume_lane_change_request(carrotMan, "BSD: lane change cancelled before crossing", bsd=True)
               desire_enabled = False
-              self.desireLog = "BSD: lane change cancelled before crossing"
 
           if self.lane_change_state == LaneChangeState.laneChangeStarting:
-            if lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:
-              self.lane_change_state = LaneChangeState.laneChangeFinishing
+            if self.held_repeat_pending:
+              if not held_same_direction:
+                # None 출력을 낸 뒤 놓았을 때 3/4를 되살리면 새 모델 요청이 되므로 바로 끝냅니다.
+                self._consume_lane_change_request(carrotMan, "Held lane change completed",
+                                                  preserve_new_stalk=True, carstate=carstate)
+                desire_enabled = False
+              elif bsd_detected and not ignore_bsd and not torque_override:
+                self._consume_lane_change_request(carrotMan, "BSD: next lane blocked", bsd=True)
+                desire_enabled = False
+              elif self._held_next_lane_ready(carstate, modeldata):
+                self.held_repeat_pending = False
+                self.lane_change_ll_prob = 1.0
+                self.held_crossed = self.held_model_seen = False
+                self.held_crossing.begin(modeldata, direction)
+                self.lane_change_stalk_counts = (self.prev_left_stalk_count, self.prev_right_stalk_count)
+            elif lane_change_prob < 0.02 and self.lane_change_ll_prob < 0.01:
+              if held_same_direction:
+                # 모델은 rising edge만 받으므로 실제 1회 완료 후 None 한 프레임으로 다음 요청을 준비합니다.
+                if self.held_crossed and self.held_model_seen:
+                  self.held_repeat_pending = True
+              else:
+                self.lane_change_state = LaneChangeState.laneChangeFinishing
 
         elif self.lane_change_state == LaneChangeState.laneChangeFinishing:
           self.lane_change_ll_prob = min(self.lane_change_ll_prob + DT_MDL, 1.0)
           if self.lane_change_ll_prob > 0.99:
             self.lane_change_direction = LaneChangeDirection.none
-            if desire_enabled:
+            if self.lane_change_driver_request:
+              self._consume_lane_change_request(carrotMan, "Lane change completed",
+                                                preserve_new_stalk=True, carstate=carstate)
+              desire_enabled = False
+            elif desire_enabled:
               self.lane_change_state = LaneChangeState.preLaneChange
               self.next_lane_change = False
             else:
@@ -602,15 +789,32 @@ class DesireHelper:
       self.lane_change_state = LaneChangeState.off
       self.blinker_ignore = True
 
+    # 대기 입력이 끝난 뒤 남은 램프만으로 같은 원터치를 다시 시작하지 않습니다.
+    if (previous_lane_change_state == LaneChangeState.preLaneChange
+        and self.lane_change_state == LaneChangeState.off and self.one_touch_triggered
+        and not driver_enabled and not atc_enabled):
+      self._consume_lane_change_request(carrotMan, "Lane change request ended")
+      self.prev_desire_enabled = False
+
     # 시작으로 전환된 그 프레임부터 관측합니다. 뒤늦게 정상 차선이 보여도 재무장하지 않습니다.
     if self.lane_change_state == LaneChangeState.laneChangeStarting:
       if previous_lane_change_state != LaneChangeState.laneChangeStarting:
         self._update_bsd_abort_window(modeldata, new_start=True)
+        direction = "left" if self.lane_change_direction == LaneChangeDirection.left else "right"
+        self.held_crossing.begin(modeldata, direction)
+        self.held_crossed = self.held_model_seen = self.held_repeat_pending = False
+        self.lane_change_driver_request = driver_enabled and self.one_touch_triggered
+        self.lane_change_stalk_counts = (self.prev_left_stalk_count, self.prev_right_stalk_count)
     else:
       self.bsd_abort_allowed = False
       self.bsd_abort_direction = LaneChangeDirection.none
       self.bsd_abort_distance = None
       self.bsd_abort_timestamp = 0
+      self.held_crossing.reset()
+      self.held_crossed = self.held_model_seen = self.held_repeat_pending = False
+      if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
+        self.lane_change_driver_request = False
+        self.lane_change_stalk_counts = None
 
     # final desire
     if self.turn_direction != TurnDirection.none:
@@ -618,6 +822,9 @@ class DesireHelper:
       self.lane_change_direction = self.turn_direction
     else:
       self.desire = DESIRES[self.lane_change_direction][self.lane_change_state]
+
+    if self.lane_change_state == LaneChangeState.laneChangeStarting and self.held_repeat_pending:
+      self.desire = log.Desire.none
 
     # keep pulse
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.laneChangeStarting):
