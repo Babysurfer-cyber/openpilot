@@ -21,11 +21,17 @@ def auto_drive(integrated_drive, monkeypatch):
   helper.v_cruise_kph = helper.v_cruise_cluster_kph = 110.
   helper.auto_prev_limit = 100.
   helper.auto_speed_offset = 10.
+  drive.state.navDataValid = drive.state.speedLimitDataValid = True
+  drive.state.navSpeedLimit = drive.state.speedLimit = 100.
+  drive.state.navLinkClass = 1
+  drive.state.navTollExist = 0
+  drive.state.mapSource = 0
+  # Start the real mode-5 session before introducing the new camera warning.
+  # This isolates camera gating from the separate mode-entry synchronization.
+  update(drive, .5)
   drive.state.navSpeedLimit = 80.
   drive.state.speedLimit = 50.
-  drive.state.navLinkClass = 1
   drive.state.mapSource = 2
-  drive.state.navTollExist = 0
   return drive
 
 
@@ -141,7 +147,7 @@ def test_non_auto_mode_does_not_apply_section_camera_speed_change(auto_drive):
   drive.helper.current_driving_mode = 3
   drive.state.navSectionValid = drive.state.navSectionActive = True
   assert update(drive, 1.) == 110.
-  assert drive.helper.auto_prev_limit == 100.
+  assert drive.helper.auto_prev_limit == 0.
 
 
 @pytest.mark.parametrize(('average_speed', 'age_ns', 'valid', 'active'), (

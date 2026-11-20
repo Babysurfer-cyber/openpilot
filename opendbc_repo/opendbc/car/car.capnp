@@ -277,6 +277,8 @@ struct CarState {
 
   navSectionActive @91 :Bool;  # stock 0x4B4 reports a current section-camera average speed
   navSectionValid @92 :Bool;   # 0x4B4 is recent and its average-speed value is valid
+  navDataValid @93 :Bool;      # current 0x4A3 road/camera metadata was received within one second
+  speedLimitDataValid @94 :Bool;  # the source of speedLimit was received within one second
 
   struct Tpms {
     fl @0 :Float32;

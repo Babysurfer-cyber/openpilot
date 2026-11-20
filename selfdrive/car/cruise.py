@@ -227,6 +227,11 @@ class VCruiseCarrot:
     self.autoCruiseControl_cancel_timer = 0
     self.AutoSpeedUptoRoadSpeedLimit = 0.0
 
+    self.current_driving_mode = self.params.get_int("MyDrivingMode")
+    self.auto_speed_offset = 10.0
+    self._auto_mode_active_last = False
+    self._reset_auto_mode_session()
+
     self.useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed")
     self.useLaneLineSpeedApply = self.useLaneLineSpeed
 
@@ -539,7 +544,7 @@ class VCruiseCarrot:
 
       elif self.carrot_cmd == "SPEED":
         if self.carrot_arg == "UP":
-          v_cruise_kph = self._auto_speed_up(v_cruise_kph)
+          v_cruise_kph = v_cruise_kph + 5 if self.current_driving_mode == 5 else self._auto_speed_up(v_cruise_kph)
           self._add_log("Cruise speed up (carrot command)")
         elif self.carrot_arg == "DOWN":
           if v_cruise_kph > 20: #이부분 20에서 10으로 수정
@@ -554,7 +559,16 @@ class VCruiseCarrot:
     return v_cruise_kph, button_type, long_pressed
 
   def _update_cruise_buttons(self, CS, CC, v_cruise_kph):
+    if self.frame % 10 == 0:
+      self.current_driving_mode = self.params.get_int("MyDrivingMode")
     button_kph, button_type, long_pressed = self._prepare_buttons(CS, v_cruise_kph)
+
+    # Preserve the physical input before remote commands and restore actions
+    # translate buttons. Only a real +/- action may teach the auto offset.
+    physical_speed_button = button_type in (ButtonType.accelCruise, ButtonType.decelCruise)
+    remote_speed_command = (self.carrot_cmd_index != self.carrot_cmd_index_last
+                            and (self.carrot_cmd == "SPEED" or (self.carrot_cmd == "CRUISE" and self.carrot_arg == "GO")))
+    auto_restore_speed = None
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
     
@@ -563,6 +577,7 @@ class VCruiseCarrot:
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
       if getattr(self, 'carrot_cruise_active', False):
+        auto_restore_speed = v_cruise_kph
         
         # 1. 금고에 저장된 기존 속도(100 등)를 꺼내서 복구합니다.
         if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
@@ -591,6 +606,7 @@ class VCruiseCarrot:
         if self._soft_hold_active > 0:
           self._soft_hold_active = 0
         elif self._v_cruise_kph_at_brake > 0 and v_cruise_kph < self._v_cruise_kph_at_brake:
+          auto_restore_speed = v_cruise_kph
           v_cruise_kph = self._v_cruise_kph_at_brake
           self._v_cruise_kph_at_brake = 0
           self.carrot_cruise_active = False  
@@ -685,6 +701,7 @@ class VCruiseCarrot:
         current_mode = self.params.get_int("MyDrivingMode")
         new_mode = 5 if current_mode == 3 else 3
         self.params.put_int_nonblocking("MyDrivingMode", new_mode)
+        self.current_driving_mode = new_mode
 
       elif button_type == ButtonType.lfaButton:
         useLaneLineSpeed = max(1, self.useLaneLineSpeed)
@@ -772,12 +789,11 @@ class VCruiseCarrot:
         
           # ▼▼▼ [버그 픽스] 금고 복귀 로직은 실제로 당근크루즈가 완전히 '해제'될 때만 꺼내오도록 안으로 이동! ▼▼▼
           if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+            auto_restore_speed = v_cruise_kph
             v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
             self._v_cruise_kph_at_brake = 0
-            
-            # ★ 핵심: 오토모드(5번)가 이 복귀 속도를 무시하지 않고 즉시 동기화하도록 가짜 +버튼 신호 발생!
-            button_type = ButtonType.accelCruise 
-            button_kph = v_cruise_kph  
+
+            # Re-synchronize auto mode explicitly; a restore is not a driver + press.
             
           self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
     else:
@@ -785,188 +801,221 @@ class VCruiseCarrot:
       self.target_speed_reach_timer = 0
     # ==============================================================
 
-    # ==============================================================
-    # ▼ [궁극의 오토모드 5번] 90 분리 + 카메라 통과 시점 완벽 동기화
-    # ==============================================================
+    # Apply mode 5 after the ordinary button/pedal handling so learning uses
+    # the actual selected speed, and legacy auto-speed calculations cannot
+    # overwrite camera/toll decisions afterwards.
+    before_state_speed = v_cruise_kph
+    v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
+    if self.current_driving_mode == 5:
+      pedal_speed_change = CS.gasPressed and v_cruise_kph != before_state_speed
+      return self._update_auto_mode(
+        CS, CC, v_cruise_kph, physical_speed_button=physical_speed_button,
+        manual_speed_change=physical_speed_button or remote_speed_command or pedal_speed_change,
+        restore_speed=auto_restore_speed,
+      )
+    self._auto_mode_active_last = False
+    self._reset_auto_mode_session()
+    return self._auto_speed_up(v_cruise_kph)
+
+  def _reset_auto_mode_session(self):
+    self.auto_prev_limit = 0
+    self.auto_source_high = None
+    self.auto_mode_needs_sync = True
+    self.auto_sync_speed = None
+    self.auto_baseline_pending = False
+    self.auto_can_resume = False
+    self.camera_pending = False
+    self.auto_camera_override = False
+    self.auto_engage_timer = 0
+    self.memorized_nav_limit = 0
+    self.nav_limit_timer = 0
+    self.prev_is_tollgate = False
+    self.v_cruise_before_tollgate = 0
+    self.expected_tollgate_speed = 0
+    self.tollgate_speed_changed = False
+    self.tollgate_nav_limit = 0
+
+  @staticmethod
+  def _auto_road_limit(value):
+    return float(value) if math.isfinite(value) and 30 <= value <= 160 else 0.0
+
+  @staticmethod
+  def _auto_mode_prompt(text):
     try:
-      if self.frame % 10 == 0:
-        self.current_driving_mode = self.params.get_int("MyDrivingMode")
+      with open("/dev/shm/carrot_prompt_text", "w") as f:
+        f.write(text)
+    except OSError:
+      pass
 
-      if getattr(self, 'current_driving_mode', 3) == 5:
-        if not hasattr(self, 'auto_prev_limit'): self.auto_prev_limit = 0
-        if not hasattr(self, 'auto_blinker_timer'): self.auto_blinker_timer = 0
-        if not hasattr(self, 'auto_speed_offset'): self.auto_speed_offset = 10.0
+  def _update_auto_mode(self, CS, CC, v_cruise_kph, *, physical_speed_button,
+                        manual_speed_change, restore_speed):
+    cancel_held = ((self.button_prev == ButtonType.cancel and self.button_cnt > 0)
+                   or any(b.type == ButtonType.cancel and b.pressed for b in CS.buttonEvents))
+    if (not CC.enabled or CS.gearShifter != GearShifter.drive or not CS.cruiseState.available
+        or CS.brakePressed or CS.regenBraking or cancel_held or self._cruise_cancel_state or self._activate_cruise < 0):
+      self._auto_mode_active_last = False
+      self._reset_auto_mode_session()
+      return v_cruise_kph
 
-        left_blinker = getattr(CS, 'leftBlinker', False)
-        right_blinker = getattr(CS, 'rightBlinker', False)
+    if not self._auto_mode_active_last or not self.enabled_last:
+      self._reset_auto_mode_session()
+      self._auto_mode_active_last = True
+      self.auto_engage_timer = 150 if not self.enabled_last else 0
+      # CAN recovery has already chosen the prior trusted set speed. Keep
+      # that contract; a later road-limit change can resume normal tracking.
+      self.auto_can_resume = self.can_cruise_recovery.status == "requested"
+    elif self.auto_engage_timer > 0:
+      self.auto_engage_timer -= 1
 
-        if right_blinker and not left_blinker:
-          self.auto_blinker_timer = 2000
-        else:
-          self.auto_blinker_timer = max(0, self.auto_blinker_timer - 1)
-          
-        # 3. 통신망에서 데이터 추출
-        speed_limit_mixed = getattr(CS, 'speedLimit', 0)      # 4BE
-        speed_limit_pure = getattr(CS, 'navSpeedLimit', 0)    # 4A3
-        map_source = getattr(CS, 'mapSource', 0)              # 💡 카메라 플래그 (2 = 안내 중)
+    if restore_speed is not None:
+      self.auto_mode_needs_sync = True
+      self.auto_sync_speed = restore_speed
 
-        nav_link_class = getattr(CS, 'navLinkClass', 0)
-        is_ic_jc = (nav_link_class in [2, 3])
-        
-        is_blinker_valid = (getattr(CS, 'rightBlinker', False) or self.auto_blinker_timer > 0) and (nav_link_class == 1)
-        
-        nav_toll_exist = getattr(CS, 'navTollExist', 0)
-        is_tollgate = (nav_toll_exist == 1 and nav_link_class == 1)  
+    # Physical input remains authoritative even when navigation is unknown.
+    if manual_speed_change and restore_speed is None:
+      self.auto_mode_needs_sync = False
+      self.auto_sync_speed = None
+      self.auto_baseline_pending = True
+    if manual_speed_change and self.prev_is_tollgate:
+      self.tollgate_speed_changed = True
+    if physical_speed_button and CS.mapSource == 2:
+      self.auto_camera_override = True
+    self.nav_limit_timer = max(0, self.nav_limit_timer - 1)
 
-        # ==============================================================
-        # ▼ [추가] 4A3(순정 내비) 제한속도 1초(100프레임) 기억 로직 ▼
-        # ==============================================================
-        if not hasattr(self, 'memorized_nav_limit'): self.memorized_nav_limit = 0
-        if not hasattr(self, 'nav_limit_timer'): self.nav_limit_timer = 0
+    # canValid alone does not validate optional cached navigation messages.
+    # Unknown navigation must neither change speed nor consume a road event.
+    if not CS.canValid or not getattr(CS, 'navDataValid', False):
+      self.camera_pending = True
+      if not getattr(CS, 'navDataValid', False):
+        self.nav_limit_timer = 0
+        self.memorized_nav_limit = 0
+      return min(v_cruise_kph, self.auto_sync_speed) if self.auto_sync_speed is not None else v_cruise_kph
 
-        if map_source == 2:
-            if speed_limit_pure > 0:
-                self.memorized_nav_limit = speed_limit_pure
-            self.nav_limit_timer = 100  
-        else:
-            if self.nav_limit_timer > 0:
-                self.nav_limit_timer -= 1
-                
-        # map_source가 0이 되어도 1초간 4A3 값 부활
-        if speed_limit_pure == 0 and self.nav_limit_timer > 0:
-            speed_limit_pure = self.memorized_nav_limit
-        # ==============================================================
+    map_source = CS.mapSource
+    if map_source != 2:
+      self.auto_camera_override = False
+    elif physical_speed_button:
+      self.auto_camera_override = True
+    section_active = getattr(CS, 'navSectionValid', False) and getattr(CS, 'navSectionActive', False)
+    self.camera_pending = map_source == 2 and not (section_active or self.auto_camera_override)
 
-        target_raw_limit = 0
-        
-        # ==============================================================        
-        # ▼ [핵심] 멀리서 카메라 안내 시 즉시 감속 방지 (보류 로직) ▼
-        # ==============================================================
-        if not hasattr(self, 'camera_pending'): self.camera_pending = False
+    speed_limit_pure = self._auto_road_limit(CS.navSpeedLimit)
+    # Remember only received valid values. A zero stream must not keep an
+    # obsolete nonzero limit alive for an entire camera announcement.
+    if speed_limit_pure > 0:
+      self.memorized_nav_limit = speed_limit_pure
+      self.nav_limit_timer = 100
+    elif self.nav_limit_timer > 0:
+      speed_limit_pure = self.memorized_nav_limit
 
-        # 1. 카메라 안내 구간(map_source == 2) 진입 시 보류 켜기
-        if map_source == 2:
-            # 구간단속은 시작 카메라를 지나도 안내가 계속됩니다.
-            # 실제 4B4 구간 평균속도가 활성화되면 끝 카메라까지 기다리지 않고 보류를 해제합니다.
-            section_active = (CS.canValid and getattr(CS, 'navSectionValid', False)
-                              and getattr(CS, 'navSectionActive', False))
-            self.camera_pending = not section_active
-            
-        # 2. 카메라 통과 후 (map_source가 2에서 0으로 바뀌었을 때!)
-        elif map_source != 2 and self.camera_pending:
-            # 💡 [치명적 버그 수정] 카메라 통과 찰나에 0이 들어오더라도 
-            # 영원히 락업(Lock-up)되는 것을 막기 위해 조건 없이 무조건 보류를 해제합니다.
-            # (해제되더라도 하단 최종 적용부의 target_raw_limit >= 30 방어막 덕분에 0으로 감속되지 않습니다.)
-            self.camera_pending = False
+    is_tollgate = CS.navTollExist == 1 and CS.navLinkClass == 1
+    if CS.navLinkClass == 1:
+      self.auto_source_high = True
+    elif CS.navLinkClass in (2, 3):
+      self.auto_source_high = False
+    elif self.auto_source_high is None or manual_speed_change:
+      self.auto_source_high = v_cruise_kph >= 90
+    # A mainline stays on 4A3 even in congestion or after an auto reduction.
+    # For unknown road classes, retain the driver's reference rather than
+    # reclassifying the road from this function's own output. A right lane
+    # change alone is not proof that the vehicle has taken an exit.
+    use_pure = not is_tollgate and CS.navLinkClass not in (2, 3) and (
+      CS.navLinkClass == 1 or self.auto_source_high
+    )
+    target_raw_limit = (speed_limit_pure if use_pure else
+                        self._auto_road_limit(CS.speedLimit) if getattr(CS, 'speedLimitDataValid', False) else 0.0)
 
-        # 4. 90km/h 분리 (고속주행 시 철저히 4A3만 신뢰, 4BE 백업 금지)
-        if v_cruise_kph >= 90 and not is_blinker_valid and not is_ic_jc and not is_tollgate:
-          if speed_limit_pure > 0:
-            target_raw_limit = speed_limit_pure
-          # 💡 [핵심] 고속 주행 시 4A3가 없다고 해서 옆 국도 정보가 섞인 4BE를 끌어쓰면
-          # 고속도로 한복판에서 30/50으로 급감속하는 대참사가 발생합니다. 따라서 elif 백업 삭제!
-        else:
-          # 90 미만(국도, 시내)에서는 4A3와 4BE가 혼합된 speed_limit_mixed 사용 허용
-          if speed_limit_mixed > 0:
-            target_raw_limit = speed_limit_mixed
+    if self.auto_can_resume:
+      self.auto_mode_needs_sync = False
+      self.auto_baseline_pending = True
+      self.auto_can_resume = False
+      if is_tollgate:
+        # A restart inside the toll is not another physical entry. The old
+        # session's pre-toll backup is unknown; never guess a restore speed.
+        self.prev_is_tollgate = True
+        self.v_cruise_before_tollgate = self.expected_tollgate_speed = v_cruise_kph
+        self.tollgate_speed_changed = True
+    if self.auto_baseline_pending and target_raw_limit > 0:
+      self.auto_prev_limit = target_raw_limit
+      self.auto_baseline_pending = False
 
-        # ==============================================================
-        # ▼ [최종] 톨게이트 진입 감속 및 통과 후 자동 복귀 로직 ▼
-        # ==============================================================
-        if not hasattr(self, 'prev_is_tollgate'): self.prev_is_tollgate = False
-        if not hasattr(self, 'v_cruise_before_tollgate'): self.v_cruise_before_tollgate = 0
-        if not hasattr(self, 'tollgate_speed_changed'): self.tollgate_speed_changed = False
-        if not hasattr(self, 'expected_tollgate_speed'): self.expected_tollgate_speed = 0
-
-        if is_tollgate and self.prev_is_tollgate:
-          if v_cruise_kph != self.expected_tollgate_speed:
-            self.tollgate_speed_changed = True
-
+    if manual_speed_change:
+      if (physical_speed_button and restore_speed is None and self.auto_engage_timer == 0
+          and not self.carrot_cruise_active and target_raw_limit > 0):
+        self.auto_speed_offset = float(np.clip(v_cruise_kph - target_raw_limit, 0.0, 10.0))
+        self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
+      if restore_speed is None:
+        # An explicit speed selection also cancels a toll entry on this frame.
         if is_tollgate and not self.prev_is_tollgate:
           self.v_cruise_before_tollgate = v_cruise_kph
-          self.tollgate_speed_changed = False
-          
-          reduced_speed = v_cruise_kph * 0.8
-          rounded_speed = float(math.floor((reduced_speed / 5.0) + 0.5) * 5.0)
-          
-          v_cruise_kph = max(30.0, rounded_speed)
-          self.expected_tollgate_speed = v_cruise_kph   
-          
-          self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
-          try:
-            with open("/dev/shm/carrot_prompt_text", "w") as f:
-              f.write(f"톨게이트 진입: {int(v_cruise_kph)}km/h 🔔")
-          except Exception:
-            pass
-          
-        elif not is_tollgate and self.prev_is_tollgate:
-          if not self.tollgate_speed_changed and self.v_cruise_before_tollgate > 0:
-            if v_cruise_kph < self.v_cruise_before_tollgate:
-              v_cruise_kph = self.v_cruise_before_tollgate
-              self._add_log(f"Tollgate OUT: Restore Speed ({v_cruise_kph}km/h)")
-          self.v_cruise_before_tollgate = 0
-          self.tollgate_speed_changed = False
-          self.expected_tollgate_speed = 0
-
+          self.expected_tollgate_speed = v_cruise_kph
+          self.tollgate_speed_changed = True
+          self.tollgate_nav_limit = speed_limit_pure
         self.prev_is_tollgate = is_tollgate
+        return v_cruise_kph
 
-        # ==============================================================
-        # ▼ 5. 최종 속도 즉시 적용 (단, 카메라 통과 시점에만 동기화) ▼
-        # ==============================================================
-        if not hasattr(self, 'auto_engage_timer'): self.auto_engage_timer = 0
-        if CC.enabled and not getattr(self, 'enabled_last', False):
-          self.auto_engage_timer = 150  
-        elif self.auto_engage_timer > 0:
-          self.auto_engage_timer -= 1
+    if is_tollgate and not self.prev_is_tollgate:
+      self.v_cruise_before_tollgate = v_cruise_kph
+      self.tollgate_speed_changed = False
+      reduced = math.floor(v_cruise_kph * 0.8 / 5.0 + 0.5) * 5.0
+      v_cruise_kph = min(v_cruise_kph, max(30.0, reduced), 110.0)
+      self.expected_tollgate_speed = v_cruise_kph
+      self.tollgate_nav_limit = speed_limit_pure
+      self.prev_is_tollgate = True
+      self._add_log(f"Tollgate IN: Speed -20% ({v_cruise_kph}km/h)")
+      self._auto_mode_prompt(f"톨게이트 진입: {int(v_cruise_kph)}km/h 🔔")
+      return v_cruise_kph
+    if is_tollgate:
+      # Neither ordinary limit updates nor synthetic restores may undo the
+      # toll reduction. Only an actual driver speed choice cancels its hold.
+      return v_cruise_kph if self.tollgate_speed_changed else min(v_cruise_kph, self.expected_tollgate_speed)
+    if self.prev_is_tollgate:
+      deferred_restore = self.auto_sync_speed is not None
+      road_changed = (not self.tollgate_speed_changed and target_raw_limit > 0
+                      and self.tollgate_nav_limit > 0 and target_raw_limit != self.tollgate_nav_limit)
+      if road_changed:
+        # A genuinely changed road limit takes precedence over an old backup.
+        self.auto_mode_needs_sync = True
+        if self.auto_sync_speed is None:
+          self.auto_sync_speed = v_cruise_kph
+      elif not self.tollgate_speed_changed:
+        v_cruise_kph = min(110.0, max(v_cruise_kph, self.v_cruise_before_tollgate))
+        if self.carrot_cruise_active:
+          v_cruise_kph = min(v_cruise_kph, self.v_ego_kph_set)
+        self._add_log(f"Tollgate OUT: Restore Speed ({v_cruise_kph}km/h)")
+      self.prev_is_tollgate = False
+      self.v_cruise_before_tollgate = self.expected_tollgate_speed = 0
+      self.tollgate_nav_limit = 0
+      self.tollgate_speed_changed = False
+      if not deferred_restore and not road_changed:
+        self.auto_mode_needs_sync = False
+        self.auto_baseline_pending = target_raw_limit <= 0
+        if target_raw_limit > 0:
+          self.auto_prev_limit = target_raw_limit
+        return v_cruise_kph
+      # The toll held an explicit coast-restore synchronization request.
+      # Complete it now instead of silently consuming it as a road baseline.
 
-        is_engaging = (not CC.enabled or self.auto_engage_timer > 0) and (button_type in [ButtonType.accelCruise, ButtonType.decelCruise])
+    if self.camera_pending or self.carrot_cruise_active or CS.gasPressed or target_raw_limit <= 0:
+      return min(v_cruise_kph, self.auto_sync_speed) if self.auto_sync_speed is not None else v_cruise_kph
 
-        if button_type in [ButtonType.accelCruise, ButtonType.decelCruise] and not is_engaging:
-          if target_raw_limit > 0:
-            self.auto_prev_limit = target_raw_limit
-            new_offset = button_kph - target_raw_limit
-            self.auto_speed_offset = float(max(0.0, min(10.0, new_offset)))
-            self._add_log(f"Auto Offset Saved: +{self.auto_speed_offset}")
-          
-          # 💡 사용자가 직접 수동 조작을 하면 카메라 보류(Pending) 방어막 즉시 강제 해제
-          self.camera_pending = False
-        else:
-          # 💡 [핵심] 카메라 안내 중(보류 상태)이 아닐 때만! 크루즈 설정 속도를 변경합니다.
-          if target_raw_limit >= 30 and not getattr(self, 'camera_pending', False):
-            
-            # 💡 [통과 시점 동기화] 값이 이전 도로와 달라졌다면 조건 없이 즉시 업데이트!
-            if target_raw_limit != getattr(self, 'auto_prev_limit', 0) or is_engaging:
-              if target_raw_limit < v_cruise_kph:
-                raw_offset = (v_cruise_kph - target_raw_limit) / 2.0
-              else:
-                raw_offset = getattr(self, 'auto_speed_offset', 10.0)
-
-              calculated_offset = float(math.floor((raw_offset / 5.0) + 0.5) * 5.0)
-              offset = max(getattr(self, 'auto_speed_offset', 0.0), calculated_offset)
-
-              expected_target = target_raw_limit + offset
-              
-              # ▼▼▼ [추가] 오토모드 최대 110km/h 속도 상한 방어막 ▼▼▼
-              expected_target = min(110.0, expected_target)
-              # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-              
-              if int(round(expected_target)) != int(round(v_cruise_kph)) or is_engaging:
-                try:
-                  with open("/dev/shm/carrot_prompt_text", "w") as f:
-                    f.write(f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔")
-                except Exception:
-                  pass
-
-              v_cruise_kph = expected_target
-              self.auto_prev_limit = target_raw_limit
-              
-    except Exception as e:
-      self._add_log(f"Auto Mode Error: {e}")
-    # ==============================================================
-
-    # 🚨 기존 시스템 호출 유지
-    v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
-    return self._auto_speed_up(v_cruise_kph)
+    if target_raw_limit != self.auto_prev_limit or self.auto_mode_needs_sync:
+      # A coast restore synchronizes from the pre-restore speed rather than
+      # treating the backup target as fresh evidence for a larger offset.
+      reference = self.auto_sync_speed if self.auto_sync_speed is not None else v_cruise_kph
+      raw_offset = (reference - target_raw_limit) / 2.0 if target_raw_limit < reference else self.auto_speed_offset
+      rounded_offset = math.floor(raw_offset / 5.0 + 0.5) * 5.0
+      target = min(110.0, target_raw_limit + max(self.auto_speed_offset, rounded_offset))
+      if target_raw_limit < reference:
+        target = min(reference, target)
+      self.auto_prev_limit = target_raw_limit
+      self.auto_mode_needs_sync = False
+      self.auto_sync_speed = None
+      if target != v_cruise_kph:
+        self._add_log(f"Auto speed: {target_raw_limit:g} -> {target:g} km/h")
+        self._auto_mode_prompt(f"오토 속도 변경: {int(target_raw_limit)}km/h 🔔")
+      return target
+    return v_cruise_kph
 
   ## desiredSpeed :
   #   leadCar_distance, leadCar_speed, leadCar_accel,
@@ -992,6 +1041,12 @@ class VCruiseCarrot:
     return v_cruise_kph
 
   def _auto_speed_up(self, v_cruise_kph):
+    if self.current_driving_mode == 5:
+      # Mode 5 owns its target. Lead/model/road auto-speed paths must not
+      # bypass its camera hold, toll priority or automatic speed ceiling.
+      self.road_limit_kph = self.nRoadLimitSpeed * self.autoSpeedUptoRoadSpeedLimit
+      self.nRoadLimitSpeed_last = self.nRoadLimitSpeed
+      return v_cruise_kph
     #if self._pause_auto_speed_up:
     #  return v_cruise_kph
     if not self._pause_auto_speed_up and self.applyModelSpeed != 0.0:

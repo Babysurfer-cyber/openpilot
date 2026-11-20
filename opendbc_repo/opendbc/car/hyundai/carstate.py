@@ -507,6 +507,18 @@ class CarState(CarStateBase):
     return max(cp.ts_nanos.get(name, {}).values(), default=0)
 
   @staticmethod
+  def _vehicle_navi_message_recent(cp, name):
+    timestamp = CarState._vehicle_navi_message_timestamp(cp, name)
+    return timestamp > 0 and 0 <= cp._last_update_nanos - timestamp <= VEHICLE_NAVI_POSITION_TIMEOUT_NS
+
+  def _update_vehicle_navi_freshness(self, cp, ret, *, mixed_source=False):
+    # Navigation messages are optional, so canValid alone does not establish
+    # that cached road metadata or a cached camera/profile limit is current.
+    ret.navDataValid = self.hda_info_4a3 is not None and self._vehicle_navi_message_recent(cp, "HDA_INFO_4A3")
+    ret.speedLimitDataValid = (self._vehicle_navi_message_recent(cp, "NEW_MSG_4BE")
+                               if mixed_source else ret.navDataValid)
+
+  @staticmethod
   def _decode_vehicle_navi_segment(values):
     raw = sum(int(values.get(f"BYTE_{i + 1}", 0)) << (i * 8) for i in range(8))
     return {"offset": raw & 0x1fff, "calculated_route": (raw >> 22) & 0x3}
@@ -794,6 +806,7 @@ class CarState(CarStateBase):
         country_code = int(self.hda_info_4a3.get("CountryCode", 0)) # 💡 에러 방지 안전장치!
         self.time_zone = ZoneInfo(NUMERIC_TO_TZ.get(country_code, "UTC"))
 
+    self._update_vehicle_navi_freshness(cp, ret)
     self._update_vehicle_navi_section(cp, ret)
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
@@ -897,6 +910,7 @@ class CarState(CarStateBase):
     # ▼▼▼ [수정] 카메라, 톨게이트, 4A3없음 + 우측깜빡이(20초) 또는 IC/JC 진입 시 4BE를 통과시킵니다! ▼▼▼
     if cam_limit > 0 and (cam_dist > 0 or nav_toll_exist != 0 or ret.speedLimit == 0 or self.right_blinker_timer > 0 or is_ic_jc):
       ret.speedLimit = cam_limit
+      self._update_vehicle_navi_freshness(cp, ret, mixed_source=True)
       if cam_dist > 0:
         speed_limit_cam = True
         self.speedLimitDistance = self.totalDistance + cam_dist
@@ -952,8 +966,10 @@ class CarState(CarStateBase):
   def get_can_parsers_canfd(self, CP):
     msgs = []
     # ▼▼▼ [수정] 4B9, 4BE 등록 ▼▼▼
-    # Section state is optional: cars without 0x4B4 must not get a CAN fault.
-    msgs = [("NEW_MSG_4B9", math.nan), ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4B4", math.nan)]
+    # Navigation is optional and may start after fingerprint capture ends.
+    # Register 4A3 up front so its cached dictionary also receives late data.
+    msgs = [("HDA_INFO_4A3", math.nan), ("NEW_MSG_4B9", math.nan),
+            ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4B4", math.nan)]
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
