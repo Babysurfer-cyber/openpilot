@@ -113,6 +113,11 @@ class CanBus(CanBusBase):
 
 
 def create_steering_messages_camera_scc(frame, packer, CP, CAN, CC, lat_active, apply_steer, CS, apply_angle, max_torque, angle_control):
+  # Start command replacement and MDPS feedback forwarding together. Before
+  # actual samples are ready, leave the existing Panda stock forwarding in
+  # place rather than replacing an active LFA with an unpaired idle command.
+  if not CS.camera_scc_steering_ready:
+    return []
 
   emergency_steering = False
   if CS.adrv_0x161 is not None:

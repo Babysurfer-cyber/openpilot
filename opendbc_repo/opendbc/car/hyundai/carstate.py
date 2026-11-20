@@ -26,6 +26,7 @@ ButtonType = structs.CarState.ButtonEvent.Type
 PREV_BUTTON_SAMPLES = 8
 CLUSTER_SAMPLE_RATE = 20  # frames
 STANDSTILL_THRESHOLD = 12 * 0.03125 * CV.KPH_TO_MS
+CAMERA_SCC_STEERING_START_MAX_AGE_NS = 100_000_000
 
 # ▼▼▼ [추가] 방지턱 전용 상수 ▼▼▼
 VEHICLE_NAVI_MAX_EVENT_DISTANCE = 2500.0
@@ -124,6 +125,7 @@ class CarState(CarStateBase):
 
     self.tcs = None    
     self.mdps = None
+    self.camera_scc_steering_ready = False
     self.steer_touch_2af = None
     self.cruise_buttons_msg = None
     self.cam_0x362 = None
@@ -295,6 +297,36 @@ class CarState(CarStateBase):
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
                
     
+  def _update_camera_scc_steering(self, cp, cp_cam):
+    if not self.CP.flags & HyundaiFlags.CAMERA_SCC:
+      return
+
+    # MDPS is already parsed for steering feedback, but the old startup
+    # sequence did not bind its forwarding cache until ready-count 121.
+    # Bind it alongside the camera commands, including late arrivals after
+    # fingerprint discovery ends. Keep the existing parser checks intact.
+    for parser, name, attr in ((cp, "MDPS", "mdps"), (cp_cam, "LFA", "lfa"),
+                               (cp_cam, "LFA_ALT", "lfa_alt")):
+      message = parser.dbc.name_to_msg.get(name)
+      if message is not None and message.address in parser.seen_addresses and message.address not in parser.addresses:
+        parser._add_message(name)
+      timestamp = self._vehicle_navi_message_timestamp(parser, name)
+      setattr(self, attr, parser.vl[name] if timestamp > 0 else None)
+
+    if self.camera_scc_steering_ready:
+      # Admission is startup-only. A transient gap after takeover must not
+      # silently release the Panda override back to stock steering.
+      return
+
+    command = "LFA_ALT" if self.CP.flags & HyundaiFlags.ANGLE_CONTROL else "LFA"
+    now = max(cp._last_update_nanos, cp_cam._last_update_nanos)
+    timestamps = (self._vehicle_navi_message_timestamp(cp, "MDPS"),
+                  self._vehicle_navi_message_timestamp(cp_cam, command))
+    self.camera_scc_steering_ready = all(
+      timestamp > 0 and 0 <= now - timestamp <= CAMERA_SCC_STEERING_START_MAX_AGE_NS
+      for timestamp in timestamps
+    )
+
   def update(self, can_parsers) -> structs.CarState:
     self.monitor_fingerprint(can_parsers, self.CP.flags & HyundaiFlags.CANFD)
     cp = can_parsers[Bus.pt]
@@ -730,6 +762,7 @@ class CarState(CarStateBase):
     ret.steeringTorqueEps = cp.vl["MDPS"]["STEERING_OUT_TORQUE"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
     ret.steerFaultTemporary = cp.vl["MDPS"]["LKA_FAULT"] != 0 or cp.vl["MDPS"]["LFA2_FAULT"] != 0
+    self._update_camera_scc_steering(cp, cp_cam)
     #ret.steerFaultTemporary = False
 
     # ▼▼▼ 레버 상태 업데이트 함수 호출 추가 ▼▼▼
