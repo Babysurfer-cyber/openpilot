@@ -153,6 +153,7 @@ class DesireHelper:
     # externally readable flags
     self.lane_change_available_left = False
     self.lane_change_available_right = False
+    self.lane_change_blocked = 0  # 0: none, 1: BSD, 2: lane line
 
     # ▼▼▼ [추가] 레버 원터치 판단용 변수 ▼▼▼
     self.prev_left_stalk_count = 0
@@ -411,10 +412,38 @@ class DesireHelper:
   def _get_selected_side(self, blinker_state: int) -> SideState:
     return self.left if blinker_state == BLINKER_LEFT else self.right
 
+  def _update_lane_change_blocked(self, carstate, side, driver_enabled, blinker_state):
+    # Export a wait reason only for a released physical one-touch request.
+    # This observes the final FSM state and does not change its start gates.
+    if (self.lane_change_state != LaneChangeState.preLaneChange or side is None
+        or not driver_enabled or not self.one_touch_triggered or self.one_touch_completed
+        or self.bsd_stalk_cancelled or carstate.blinkerLever != 0 or self.stalk_max_level != 1
+        or self.stalk_direction != blinker_state
+        or blinker_state not in (BLINKER_LEFT, BLINKER_RIGHT)
+        or carstate.vEgo < LANE_CHANGE_SPEED_MIN
+        or not (side.lane_available or side.edge_available)
+        or self.lane_change_delay > 0):
+      return
+
+    torque_cond = carstate.steeringTorque > 0 if blinker_state == BLINKER_LEFT else carstate.steeringTorque < 0
+    torque_applied = carstate.steeringPressed and torque_cond
+    if (self.laneChangeNeedTorque > 0 or self.next_lane_change) and not torque_applied:
+      return
+    bsd_blocked = (self.laneChangeBsd >= 0 and side.bsd_hold_counter > 0
+                   and (self.laneChangeBsd == 1 or not torque_applied))
+    if bsd_blocked:
+      self.lane_change_blocked = 1
+    elif not side.side_object_detected:
+      line_blocked = (side.lane_line_info_mod not in (0, 5) if self.laneLineCheck >= 1
+                      else side.lane_line_info_raw >= 20)
+      if line_blocked and not (self.laneLineCheck >= 2 and torque_applied):
+        self.lane_change_blocked = 2
+
   # ─────────────────────────────────────────────
   # main update
   # ─────────────────────────────────────────────
   def update(self, carstate, modeldata, lateral_active, lane_change_prob, carrotMan, radarState):
+    self.lane_change_blocked = 0
     previous_lane_change_state = self.lane_change_state
     self.frame += 1
     self._update_params_periodic()
@@ -836,4 +865,5 @@ class DesireHelper:
       elif self.desire in (log.Desire.keepLeft, log.Desire.keepRight):
         self.desire = log.Desire.none
 
+    self._update_lane_change_blocked(carstate, side, driver_enabled, blinker_state)
     return self.desire

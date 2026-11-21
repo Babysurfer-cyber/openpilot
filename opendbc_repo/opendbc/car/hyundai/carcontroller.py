@@ -7,6 +7,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.hyundaicanfd import CanBus
+from opendbc.car.hyundai.blocked_lane_change_blinker import BlockedLaneChangeBlinker
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.vehicle_model import VehicleModel
@@ -25,6 +26,29 @@ from openpilot.common.params import Params
 MAX_ANGLE = 85
 MAX_ANGLE_FRAMES = 89
 MAX_ANGLE_CONSECUTIVE_FRAMES = 2
+
+BLINKER_FEEDBACK_MAX_AGE_NS = 250_000_000
+
+
+def read_blinker_feedback(CS, now_nanos):
+  """Read actual lamp phases, not the half-second carState lamp debounce."""
+  parser = getattr(CS, "cp", None)
+  if parser is None:
+    return False, False, False, None
+
+  def fresh(name):
+    timestamp = max(parser.ts_nanos.get(name, {}).values(), default=0)
+    return timestamp > 0 and 0 <= now_nanos - timestamp <= BLINKER_FEEDBACK_MAX_AGE_NS
+
+  if not fresh("BLINKER_STALKS"):
+    return False, False, False, None
+  for name in ("BLINKERS", "BLINKERS_ALT"):
+    if fresh(name):
+      values = parser.vl[name]
+      left = bool(values.get("LEFT_LAMP", 0) or values.get("LEFT_LAMP_ALT", 0))
+      right = bool(values.get("RIGHT_LAMP", 0) or values.get("RIGHT_LAMP_ALT", 0))
+      return left, right, True, name
+  return False, False, False, None
 
 vibrate_intervals = [
   (0.0, 0.5),
@@ -158,9 +182,28 @@ class CarController(CarControllerBase):
     # 💡 [수정] radarState와 modelV2를 모두 수신하도록 변경
     self.sm = messaging.SubMaster(['radarState', 'modelV2'])
     self.corner_radar_cutin = False
+    self.blocked_lane_change_blinker = BlockedLaneChangeBlinker()
+    self.blocked_blinker_source = None
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
+
+  def _update_blocked_blinker_hold(self, CC, CS, now_nanos):
+    now_s = now_nanos / 1e9
+    model_valid = (self.sm.seen['modelV2'] and self.sm.valid['modelV2'] and self.sm.alive['modelV2']
+                   and 0 <= time.monotonic() - self.sm.recv_time['modelV2'] <= 0.25)
+    left_lamp, right_lamp, lamp_valid, source = read_blinker_feedback(CS, now_nanos)
+    # Switching lamp sources mid-request could count an artificial edge.
+    if self.blocked_blinker_source is not None and source != self.blocked_blinker_source:
+      lamp_valid = False
+    self.blocked_blinker_source = source
+    supported = bool(self.CP.flags & HyundaiFlags.CANFD and self.CP.flags & HyundaiFlags.CAMERA_SCC
+                     and self.CP.openpilotLongitudinalControl and CS.adrv_0x1ea is not None)
+    CS.blocked_blinker_hold = self.blocked_lane_change_blinker.update(
+      now_s, CS.out, model_meta=CS.MD.meta, model_valid=model_valid,
+      left_lamp=left_lamp, right_lamp=right_lamp, lamp_valid=lamp_valid,
+      lateral_active=CC.latActive and supported,
+    )
 
   def update(self, CC, CS, now_nanos):
     
@@ -338,6 +381,7 @@ class CarController(CarControllerBase):
         can_sends.append(make_tester_present_msg(0x7b1, self.CAN.ECAN, suppress_response=True))
 
     camera_scc = self.CP.flags & HyundaiFlags.CAMERA_SCC
+    self._update_blocked_blinker_hold(CC, CS, now_nanos)
     # CAN-FD platforms
     if self.CP.flags & HyundaiFlags.CANFD:
       hda2 = self.CP.flags & HyundaiFlags.CANFD_HDA2

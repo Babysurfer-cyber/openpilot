@@ -1186,6 +1186,7 @@ struct ModelDataV2 {
     modelTurnSpeed @17 :Float32;
     laneChangeAvailableLeft @18 :Bool;
     laneChangeAvailableRight @19 :Bool;
+    laneChangeBlocked @20 :UInt8;  # 0: none, 1: BSD, 2: lane line
 
     # deprecated
     brakeDisengageProbDEPRECATED @2 :Float32;

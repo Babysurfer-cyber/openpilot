@@ -1096,8 +1096,9 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values['AUTOLANECHANGE_MSG'] = alc_msg
 
         # blinker hold
-        values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 else 0
-        values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 else 0
+        blocked_hold = getattr(CS, 'blocked_blinker_hold', 0)
+        values['LEFT_BLINK_HOLD'] = 1 if lane_changing == 3 or (lane_changing == 0 and blocked_hold == 1) else 0
+        values['RIGHT_BLINK_HOLD'] = 1 if lane_changing == 4 or (lane_changing == 0 and blocked_hold == 2) else 0
 
         # BSD 위험 경고(HDA_MODE2=2) 역시 차선 변경 전 경고 유효 상태에서만 띄움
         bsd_warning_active = blinker_valid and (
