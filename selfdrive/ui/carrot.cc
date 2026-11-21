@@ -1055,6 +1055,7 @@ public:
         if(show_lane_info > 1) drawRoadEdge(s);
     }
 };
+extern bool _blinker_pulse;
 class TurnInfoDrawer : ModelDrawer {
 private:
     int icon_size = 256;
@@ -1071,6 +1072,7 @@ private:
 
     QString szSdiDescr = "";
     QString atc_type;
+    bool atc_decel_active = false;
     QString szPosRoadName = "";
     QString szTBTMainText = "";
 
@@ -1190,23 +1192,57 @@ protected:
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             int bx = tbt_x + 100;
             int by = tbt_y + 85;
-            if (atc_type.length() > 0) {
-              stroke_color = COLOR_BLACK;
-              ui_fill_rect(s->vg, { bx - 80, by - 90, 160, 230 }, atc_type.contains("prepare")?COLOR_GREEN_ALPHA(100) : COLOR_GREEN, 15, 1.0f, &stroke_color);
+
+            // ATC 상태에 따른 아이콘 투명도 결정 (0.0f: 투명, 0.5f: 반투명, 1.0f: 불투명)
+            float icon_alpha = 0.0f;
+            if (atc_type.length() > 0 || atc_decel_active) {
+              bool is_prepare = (atc_type.length() > 0 && atc_type.contains("prepare", Qt::CaseInsensitive) && !atc_decel_active);
+              icon_alpha = is_prepare ? 0.5f : 1.0f;
             }
-            switch (xTurnInfo) {
-            case 1: ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_l", 1.0f); break;
-            case 2: ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_r", 1.0f); break;
-            case 3: ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_lane_change_l", 1.0f); break;
-            case 4: ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_lane_change_r", 1.0f); break;
-            case 7: ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_u", 1.0f); break;
-            case 6: ui_draw_text(s, bx, by + 20, "TG", 35, COLOR_WHITE, BOLD); break;
-            case 8: ui_draw_text(s, bx, by + 20, "목적지", 35, COLOR_WHITE, BOLD); break;
-            default:
-                sprintf(str, "감속:%d", xTurnInfo);
-                ui_draw_text(s, bx, by + 20, str, 35, COLOR_WHITE, BOLD);
-                break;
+
+            if (icon_alpha > 0.01f) {
+              int off_x = 0;
+              int off_y = 0;
+              int sz = icon_size; // 256 유지
+              NVGcolor turn_text_color = COLOR_WHITE_ALPHA((int)(255 * icon_alpha));
+
+              switch (xTurnInfo) {
+              case 1: // 좌회전 (turn_l.png) - 우측 치우침 보정 (-60)
+                  off_x = -60; off_y = 0; sz = 256;
+                  ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_turn_l", icon_alpha);
+                  break;
+              case 2: // 우회전 (turn_r.png) - 좌측 치우침 보정 (+60)
+                  off_x = 60; off_y = 0; sz = 256;
+                  ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_turn_r", icon_alpha);
+                  break;
+              case 3: // 좌측 분기 / 차선 변경 (lane_change_l.png) - 깜빡이 주기 동기화 점멸
+                  off_x = -60; off_y = 0; sz = 256;
+                  if (_blinker_pulse) {
+                      ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_lane_change_l", icon_alpha);
+                  }
+                  break;
+              case 4: // 우측 분기 / 차선 변경 (lane_change_r.png) - 깜빡이 주기 동기화 점멸
+                  off_x = 60; off_y = 0; sz = 256;
+                  if (_blinker_pulse) {
+                      ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_lane_change_r", icon_alpha);
+                  }
+                  break;
+              case 7: // 유턴 (turn_u.png) - 보정 제외
+                  ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_u", icon_alpha);
+                  break;
+              case 6:
+                  ui_draw_text(s, bx, by + 20, "TG", 35, turn_text_color, BOLD);
+                  break;
+              case 8:
+                  ui_draw_text(s, bx, by + 20, "목적지", 35, turn_text_color, BOLD);
+                  break;
+              default:
+                  sprintf(str, "감속:%d", xTurnInfo);
+                  ui_draw_text(s, bx, by + 20, str, 35, turn_text_color, BOLD);
+                  break;
+              }
             }
+
             if (s->scene.is_metric) {
               if (xDistToTurn < 1000) sprintf(str, "%d m", xDistToTurn);
               else  sprintf(str, "%.1f km", xDistToTurn / 1000.f);
@@ -1279,6 +1315,11 @@ public:
             atc_type = "";
           }
 
+          QString desired_src = QString::fromStdString(carrot_man.getDesiredSource()).trimmed();
+          float desired_spd = carrot_man.getDesiredSpeed();
+          float v_cruise_cluster = sm["carState"].getCarState().getVCruiseCluster();
+          atc_decel_active = (desired_src.compare("atc", Qt::CaseInsensitive) == 0 && desired_spd < v_cruise_cluster);
+
           nGoPosDist = carrot_man.getNGoPosDist();
           nGoPosTime = carrot_man.getNGoPosTime();
           szSdiDescr = QString::fromStdString(carrot_man.getSzSdiDescr());
@@ -1291,6 +1332,7 @@ public:
           //xDistToTurn = 0;
           //nRoadLimitSpeed = 20;
           atc_type = "";
+          atc_decel_active = false;
           nGoPosDist = 0;
           nGoPosTime = 0;
           szSdiDescr = "";
@@ -1312,6 +1354,7 @@ public:
 };
 bool _right_blinker = false;
 bool _left_blinker = false;
+bool _blinker_pulse = false;
 
 class DesireDrawer : ModelDrawer {
 protected:
@@ -1323,6 +1366,7 @@ public:
         blinker_timer = (blinker_timer + 1) % 14;
         lc_blinker_timer = (lc_blinker_timer + 1) % 14;
         bool lc_blink_state = (lc_blinker_timer < 6);
+        _blinker_pulse = (blinker_timer < 6);
 
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         SubMaster& sm = *(s->sm);
