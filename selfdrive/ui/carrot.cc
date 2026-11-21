@@ -1168,8 +1168,8 @@ protected:
         //if (xDistToTurn <= 0 || nGoPosDist <= 0) return;
         char str[128] = "";
 
-        int tbt_x = s->fb_w - 800;
-        int tbt_y = s->fb_h - 250;
+        int tbt_x = 20;
+        int tbt_y = 80;
         NVGcolor stroke_color = COLOR_WHITE;
         if (s->scene._current_carrot_display == 3) {
           ui_fill_rect(s->vg, { tbt_x, 5, 790, s->fb_h - 15 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
@@ -2836,9 +2836,9 @@ public:
     }
     void drawDateTime(const UIState* s) {
         char str[128];
-        // 시간표시
+        // 시간표시 (목적지 안내 중에는 좌측 상단 내비 HUD와 겹치지 않도록 숨김)
         int show_datetime = params.getInt("ShowDateTime");
-        if (show_datetime) {
+        if (show_datetime && nGoPosDist <= 0) {
             time_t now = time(nullptr);
             struct tm* local = localtime(&now);
 
