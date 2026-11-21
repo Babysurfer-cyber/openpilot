@@ -1272,7 +1272,12 @@ public:
         xDistToTurn = carrot_man.getXDistToTurn();
         nRoadLimitSpeed = carrot_man.getNRoadLimitSpeed();
         if (active_carrot > 1 || carrot_man.getNGoPosDist() > 0) {
-          atc_type = QString::fromStdString(carrot_man.getAtcType());
+          atc_type = QString::fromStdString(carrot_man.getAtcType()).trimmed();
+          if (atc_type.compare("none", Qt::CaseInsensitive) == 0 ||
+              atc_type.compare("null", Qt::CaseInsensitive) == 0 ||
+              atc_type == "0") {
+            atc_type = "";
+          }
 
           nGoPosDist = carrot_man.getNGoPosDist();
           nGoPosTime = carrot_man.getNGoPosTime();
