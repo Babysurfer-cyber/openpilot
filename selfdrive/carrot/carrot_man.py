@@ -26,10 +26,12 @@ import cereal.messaging as messaging
 from openpilot.common.realtime import Ratekeeper, set_core_affinity
 from openpilot.common.params import Params
 from openpilot.system.hardware import PC, TICI
-from openpilot.selfdrive.navd.helpers import Coordinate
 from opendbc.car.common.conversions import Conversions as CV
 
 from openpilot.selfdrive.carrot.carrot_serv import CarrotServ
+from openpilot.selfdrive.carrot.carrot_navi_control import get_carrot_navi_control
+from openpilot.selfdrive.carrot.carrot_navi_route import MAX_ROUTE_POINTS, RouteSource, coordinates as route_coordinates
+from openpilot.selfdrive.carrot.carrot_navi import detect_advertise_ip
 
 from openpilot.common.gps import get_gps_location_service
 
@@ -296,7 +298,7 @@ class CarrotMan:
     self.params = Params()
     self.params_memory = Params("/dev/shm/params")
     self.gps_location_service = get_gps_location_service(self.params)
-    self.sm = messaging.SubMaster(['deviceState', 'carState', 'controlsState', 'radarState', 'longitudinalPlan', 'modelV2', 'selfdriveState', 'carControl', 'navRouteNavd', self.gps_location_service, 'navInstruction'])
+    self.sm = messaging.SubMaster(['deviceState', 'carState', 'controlsState', 'radarState', 'longitudinalPlan', 'modelV2', 'selfdriveState', 'carControl', 'navRouteNavd', self.gps_location_service, 'navInstruction', 'carrotNavi'])
     self.pm = messaging.PubMaster(['carrotMan', "navRoute", "navInstructionCarrot"])
 
     self.carrot_serv = CarrotServ()
@@ -309,6 +311,15 @@ class CarrotMan:
 
     self.ip_address = "0.0.0.0"
     self.remote_addr = None
+
+    # Initialize route ownership before starting any producer/broadcast threads.
+    self.route_source = RouteSource()
+    self.navi_points = []
+    self.navi_points_start_index = 0
+    self.navi_points_active = False
+    self.navd_active = False
+    self.nav_route_next = 0.0
+    self.active_carrot_last = False
 
     # ▼▼▼ 구형 지우고 최신 vision_curve_speed 적용 ▼▼▼
     self.vision_curve_speed = VisionCurveSpeed()
@@ -328,13 +339,6 @@ class CarrotMan:
 
     self.is_running = True
     threading.Thread(target=self.broadcast_version_info).start()
-
-    self.navi_points = []
-    self.navi_points_start_index = 0
-    self.navi_points_active = False
-    self.navd_active = False
-
-    self.active_carrot_last = False
 
     self._rgdata_ts_lock = threading.Lock()
     self._last_rgdata_timestamp_ms = 0
@@ -357,14 +361,17 @@ class CarrotMan:
     except (OSError, Exception):
       return None
 
-  def get_local_ip(self):
+  def get_local_ip(self, target="8.8.8.8"):
       try:
           # 외부 서버와의 연결을 통해 로컬 IP 확인
           with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-              s.connect(("8.8.8.8", 80))  # Google DNS로 연결 시도
+              s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+              # Use the interface that reaches this phone/broadcast network;
+              # the default internet route may instead use the cellular modem.
+              s.connect((target, self.broadcast_port))
               return s.getsockname()[0]
-      except Exception as e:
-          return f"Error: {e}"
+      except OSError:
+          return detect_advertise_ip("0.0.0.0")
 
     
   # 브로드캐스트 메시지 전송
@@ -381,6 +388,7 @@ class CarrotMan:
         self.sm.update(0)
         if self.sm.updated['navRouteNavd']:
           self.send_routes(self.sm['navRouteNavd'].coordinates, True)
+        self._select_navigation_route(get_carrot_navi_control(self.sm))
         remote_addr = self.remote_addr
         remote_ip = remote_addr[0] if remote_addr is not None else ""
         vturn_speed = self.carrot_curve_speed(self.sm)
@@ -393,10 +401,9 @@ class CarrotMan:
         if frame % 20 == 0 or remote_addr is not None:
           try:
             self.broadcast_ip = self.get_broadcast_address() if remote_addr is None else remote_addr[0]
-            if not PC:
-              ip_address = socket.gethostbyname(socket.gethostname())
-            else:
-              ip_address = self.get_local_ip()
+            # A hostname can resolve to loopback; both discovery beacons must
+            # advertise a reachable LAN address for the latest phone app.
+            ip_address = self.get_local_ip(self.broadcast_ip or "8.8.8.8")
             if ip_address != self.ip_address:
               self.ip_address = ip_address
               self.remote_addr = None
@@ -411,13 +418,6 @@ class CarrotMan:
             #  new_ip = ip_tuple[:-1] + bytes([i])
             #  address = (socket.inet_ntoa(new_ip), self.broadcast_port)
             #  sock.sendto(dat, address)
-
-            if remote_addr is None:
-              #print(f"Broadcasting: {self.broadcast_ip}") #:{msg}")
-              if not self.navd_active:
-                #print("clear path_points: navd_active: ", self.navd_active)
-                self.navi_points = []
-                self.navi_points_active = False
 
           except Exception as e:
             if self.connection:
@@ -434,6 +434,25 @@ class CarrotMan:
         time.sleep(1)
 
   
+  def _select_navigation_route(self, carrot_navi):
+    # Do not mistake last frame's v2 ownership for a live legacy sender when
+    # the new control socket has just disconnected.
+    legacy_active = (not self.carrot_serv.carrot_navi_active
+                     and self.carrot_serv._external_navigation_connected())
+    selected = self.route_source.select(legacy_active, carrot_navi)
+    if selected is not None:
+      self.navi_points = [(c['longitude'], c['latitude']) for c in selected]
+      self.navi_points_start_index = 0
+      self.navi_points_active = bool(selected)
+      self.navd_active = bool(selected)
+      self.nav_route_next = time.monotonic() + 2.0
+      self.send_routes(selected, selected=True)
+    elif time.monotonic() >= self.nav_route_next:
+      # Republish geometry for consumers that start or restart after the app.
+      self.nav_route_next = time.monotonic() + 2.0
+      self.send_routes([{'latitude': lat, 'longitude': lon}
+                        for lat, lon in self.route_source.selected[1]], selected=True)
+
   def carrot_navi_route(self):
 
     if self.carrot_serv.active_carrot > 1:
@@ -442,16 +461,8 @@ class CarrotMan:
         self.params.remove("NavDestination")
     is_onroad = self.params.get_bool("IsOnroad")
     if not is_onroad or not self.navi_points_active or not SHAPELY_AVAILABLE or (self.carrot_serv.active_carrot <= 1 and not self.navd_active):
-      #print(f"navi_points_active: {self.navi_points_active}, active_carrot: {self.carrot_serv.active_carrot}")
-      if self.navi_points_active:
-        print("navi_points_active: ", self.navi_points_active, "active_carrot: ", self.carrot_serv.active_carrot, "navd_active: ", self.navd_active)
-        #haversine_cache.clear()
-        #curvature_cache.clear()
-        self.navi_points = []
-        self.navi_points_active = False
-        if self.active_carrot_last > 1:
-          #self.params.remove("NavDestination")
-          pass
+      # RouteSource owns geometry lifetime; receiving a route offroad must not
+      # consume it before the car starts moving.
       self.active_carrot_last = self.carrot_serv.active_carrot
       return [],[],300
 
@@ -898,27 +909,14 @@ class CarrotMan:
     return struct.unpack('!f', float_data)[0]
 
 
-  def send_routes(self, coords, from_navd=False):
-    if from_navd:
-      if len(coords) > 0:
-        self.navi_points = [(c.longitude, c.latitude) for c in coords]
-        self.navi_points_start_index = 0
-        self.navi_points_active = True
-        print("Received points from navd:", len(self.navi_points))
-        self.navd_active = True
-
-        # 경로수신 -> carrotman active되고 약간의 시간지연이 발생함..
-        if not from_navd:
-          self.carrot_serv.active_count = 80
-          self.carrot_serv.active_sdi_count = self.carrot_serv.active_sdi_count_max
-          self.carrot_serv.active_carrot = 2
-
-        coords = [{"latitude": c.latitude, "longitude": c.longitude} for c in coords]
-        #print("navdNaviPoints=", self.navi_points)
+  def send_routes(self, coords, from_navd=False, selected=False):
+    if not selected:
+      route = route_coordinates(coords)
+      if from_navd:
+        self.route_source.mapbox = route
       else:
-        print("Received points from navd: 0")
-        self.navd_active = False
-
+        self.route_source.legacy = route
+      return
     msg = messaging.new_message('navRoute', valid=True)
     msg.navRoute.coordinates = coords
     self.pm.send('navRoute', msg)
@@ -946,23 +944,19 @@ class CarrotMan:
               continue
             try:
               total_size = struct.unpack('!I', total_size_bytes)[0]
+              if total_size > MAX_ROUTE_POINTS * 8 or total_size % 8:
+                raise ValueError("invalid legacy route size")
               # 전체 데이터를 한 번에 수신
               all_data = self.recvall(conn, total_size)
               if all_data is None:
                   print("Connection closed or incomplete data received")
                   continue
 
-              self.navi_points = []
-              points = []
+              coords = []
               for i in range(0, len(all_data), 8):
                 x, y = struct.unpack('!ff', all_data[i:i+8])
-                self.navi_points.append((x, y))
-                coord = Coordinate.from_mapbox_tuple((x, y))
-                points.append(coord)
-              coords = [c.as_dict() for c in points]
-              self.navi_points_start_index = 0
-              self.navi_points_active = True
-              print("Received points:", len(self.navi_points))
+                coords.append({'longitude': x, 'latitude': y})
+              print("Received points:", len(coords))
               #print("Received points:", self.navi_points)
 
               self.send_routes(coords)
@@ -1020,25 +1014,18 @@ class CarrotMan:
     if not arr:
       print("Received route: 0")
       # navd route가 비어오면 비활성 처리
-      self.navi_points = []
-      self.navi_points_start_index = 0
-      self.navi_points_active = False
-      self.navd_active = False
+      self.send_routes([])
       return
 
     # valid만 필터 (필요 없으면 제거)
     valid_pts = [p for p in arr if isinstance(p, dict) and p.get("valid", True)]
     if not valid_pts:
       print("Received route: 0 valid")
-      self.navi_points = []
-      self.navi_points_start_index = 0
-      self.navi_points_active = False
-      self.navd_active = False
+      self.send_routes([])
       return
 
     # x=lon, y=lat
     coords = []
-    navi_points = []
 
     for p in valid_pts:
       try:
@@ -1047,15 +1034,8 @@ class CarrotMan:
       except Exception:
         continue
 
-      navi_points.append((lon, lat))
       coords.append({"latitude": lat, "longitude": lon})
-
-    self.navi_points = navi_points
-    self.navi_points_start_index = 0
-    self.navi_points_active = True
-    self.navd_active = True
-
-    print("Received points:", len(self.navi_points))
+    print("Received points:", len(coords))
 
     self.send_routes(coords)
 
