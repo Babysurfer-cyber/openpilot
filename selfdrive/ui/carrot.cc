@@ -1231,10 +1231,10 @@ protected:
                   ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_u", icon_alpha);
                   break;
               case 6:
-                  ui_draw_text(s, bx, by + 20, "TG", 35, turn_text_color, BOLD);
+                  ui_draw_text(s, bx, by + 20, "TG", 60, turn_text_color, BOLD);
                   break;
               case 8:
-                  ui_draw_text(s, bx, by + 20, "목적지", 35, turn_text_color, BOLD);
+                  ui_draw_text(s, bx, by + 20, "목적지", 60, turn_text_color, BOLD);
                   break;
               default:
                   sprintf(str, "감속:%d", xTurnInfo);
