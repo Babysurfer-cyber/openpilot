@@ -1346,7 +1346,7 @@ public:
         xSpdDist = 12345;
         nRoadLimitSpeed = 110;
 #endif
-        drawTurnInfo(s);
+        // drawTurnInfo(s);   // 도로 위 AR 핀 및 방면 텍스트 비활성화
         drawSpeedLimit(s);
         return drawTurnInfoHud(s);
 
