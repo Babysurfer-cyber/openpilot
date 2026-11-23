@@ -1293,26 +1293,49 @@ protected:
             ui_draw_text(s, bx, by + 110, str, 40, COLOR_WHITE, BOLD);
         }
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        if (szSdiDescr.length() > 0) {
-            float bounds[4];  // [xmin, ymin, xmax, ymax]를 저장하는 배열
+        // The TBT location is also used for ATC's turn/fork decision.
+        // Display that guidance here, instead of the road name + "route=" debug text.
+        const QString atc_location = (xTurnInfo > 0) ? szTBTMainText.trimmed() : QString();
+        if (!atc_location.isEmpty()) {
+            const std::string location_text = atc_location.toStdString();
+            const float label_x = tbt_x + 200;
+            const float label_y = tbt_y + 165;
+            const float max_width = 790 - (label_x - tbt_x) - 20;
+            nvgFontFace(s->vg, BOLD);
             nvgFontSize(s->vg, 40);
-            nvgTextBounds(s->vg, tbt_x + 200, tbt_y + 165, szSdiDescr.toStdString().c_str(), NULL, bounds);
+            const float text_width = nvgTextBounds(s->vg, label_x, label_y, location_text.c_str(), nullptr, nullptr);
+            const float font_size = (text_width > max_width && text_width > 0)
+                ? std::max(26.0f, 40.0f * max_width / text_width) : 40.0f;
+            // Protect the rest of the HUD if an unusually long direction is received.
+            nvgSave(s->vg);
+            nvgScissor(s->vg, label_x, label_y - 43, max_width, 54);
+            ui_draw_text(s, label_x, label_y, location_text.c_str(), font_size, COLOR_WHITE, BOLD);
+            nvgRestore(s->vg);
+        }
+        else if (!szSdiDescr.isEmpty()) {
+            // Keep SDI alert descriptions when no turn/ATC location is available.
+            const std::string sdi_text = szSdiDescr.toStdString();
+            nvgFontFace(s->vg, BOLD);
+            nvgFontSize(s->vg, 40);
+            float bounds[4];
+            nvgTextBounds(s->vg, tbt_x + 200, tbt_y + 165, sdi_text.c_str(), NULL, bounds);
             float text_width = bounds[2] - bounds[0];
             float text_height = bounds[3] - bounds[1];
             ui_fill_rect(s->vg, { (int)bounds[0] - 10, (int)bounds[1] - 2, (int)text_width + 20, (int)text_height + 13 }, COLOR_BLACK_ALPHA(90), 10);
-            ui_draw_text(s, tbt_x + 200, tbt_y + 165, szSdiDescr.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
-        }
-        else if (szPosRoadName.length() > 0) {
-          ui_draw_text(s, tbt_x + 200, tbt_y + 165, szPosRoadName.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
-          //ui_draw_text(s, tbt_x + 190, tbt_y - 5, szPosRoadName.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+            ui_draw_text(s, tbt_x + 200, tbt_y + 165, sdi_text.c_str(), 40, COLOR_WHITE, BOLD);
         }
 
         if (nGoPosDist > 0 && nGoPosTime > 0) {
             bool is_kor = s->language == "main_ko";
-            // Show time remaining only; suppress the clock-based ETA (HH:MM).
-            sprintf(str, "%s: %.1f%s", (is_kor)?"도착":"ETA",
-                    (float)nGoPosTime / 60., (is_kor)?"분":"MIN");
-            ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
+            // Arrival clock time: local device time plus remaining route seconds.
+            const time_t arrival_time = time(nullptr) + static_cast<time_t>(nGoPosTime);
+            struct tm arrival_local = {};
+            if (localtime_r(&arrival_time, &arrival_local) != nullptr) {
+                snprintf(str, sizeof(str), "%s: %02d:%02d",
+                         is_kor ? "도착시간" : "Arrival",
+                         arrival_local.tm_hour, arrival_local.tm_min);
+                ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
+            }
             sprintf(str, "%s: %.1f%s", is_kor ? "남은거리" : "Remaining",
                     nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
                     (s->scene.is_metric) ? "km" : "mile");
