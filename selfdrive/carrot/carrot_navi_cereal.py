@@ -6,6 +6,8 @@ import threading
 import time
 from typing import Any, TYPE_CHECKING
 
+from openpilot.selfdrive.carrot.route_traffic import extract_route_traffic
+
 if TYPE_CHECKING:
   from openpilot.selfdrive.carrot.carrot_navi import CarrotNaviReceiver
 
@@ -184,6 +186,7 @@ def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | N
 
   route_record = _record(snapshot, "route")
   route = _dict(route_record.get("value")) if route_record.get("present") else {}
+  traffic_present, traffic_sections = extract_route_traffic(route)
   polyline = []
   for point_value in _list(route.get("polyline"))[:MAX_ROUTE_POINTS]:
     point = _dict(point_value)
@@ -296,6 +299,8 @@ def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | N
       "movedTimeSec": _integer(route.get("moved_time_sec"), minimum=0, maximum=604_800),
       "totalDistanceM": _integer(route.get("total_distance_m"), minimum=0, maximum=2_000_000),
       "polyline": polyline,
+      "trafficPresent": traffic_present,
+      "trafficSections": traffic_sections,
     },
     "navigationStatus": {
       "meta": status_meta,
