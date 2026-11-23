@@ -1222,13 +1222,10 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 330 : 278 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 320 : 278 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
-        if (szTBTMainText.length() > 0) {
-          nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-          ui_draw_text(s, tbt_x + 20, tbt_y - 15, szTBTMainText.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
-          //ui_draw_text(s, tbt_x + 190, tbt_y - 5, szPosRoadName.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
-        }
+        // Upper guidance title intentionally hidden for a cleaner, more compact
+        // navigation HUD. TBT direction/distance and lower road-name stay shown.
 
         if(xTurnInfo > 0) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
@@ -1319,7 +1316,9 @@ protected:
             bool is_kor = s->language == "main_ko";
             sprintf(str, "%s: %.1f%s(%02d:%02d)", (is_kor)?"도착":"ETA", (float)nGoPosTime / 60., (is_kor)?"분":"MIN", local->tm_hour, local->tm_min);
             ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
-            sprintf(str, "%.1f%s", nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE), (s->scene.is_metric) ? "km" : "mile");
+            sprintf(str, "%s: %.1f%s", is_kor ? "남은거리" : "Remaining",
+                    nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
+                    (s->scene.is_metric) ? "km" : "mile");
             ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 115, str, 50, COLOR_WHITE, BOLD);
         }
         if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 230, 716);
