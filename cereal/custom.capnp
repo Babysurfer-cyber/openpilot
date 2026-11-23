@@ -190,6 +190,14 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 		movedTimeSec @4 :Int32;
 		totalDistanceM @5 :Int32;
 		polyline @6 :List(Coordinate);
+		trafficPresent @7 :Bool;
+		trafficSections @8 :List(TrafficSection);
+	}
+
+	struct TrafficSection {
+		startDistanceM @0 :Int32;
+		lengthM @1 :Int32;
+		congestionCode @2 :UInt8;  # 0 unknown, 1 good, 2 bad, 3 very_bad
 	}
 
 	struct NavigationStatus {
