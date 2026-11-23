@@ -1223,7 +1223,7 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 750, 295 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 35, 660, 270 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         // Upper guidance title intentionally hidden for a cleaner, more compact
         // navigation HUD. Keep turn direction, distance, ETA and route progress only.
@@ -1310,6 +1310,9 @@ protected:
 
         if (nGoPosDist > 0 && nGoPosTime > 0) {
             bool is_kor = s->language == "main_ko";
+            // Align both information rows at the same left edge.
+            constexpr int info_x_offset = 190;
+            const int info_x = tbt_x + info_x_offset;
             // Arrival clock time: local device time plus remaining route seconds.
             const time_t arrival_time = time(nullptr) + static_cast<time_t>(nGoPosTime);
             struct tm arrival_local = {};
@@ -1317,14 +1320,14 @@ protected:
                 snprintf(str, sizeof(str), "%s  %02d:%02d",
                          is_kor ? "도착시간" : "Arrival",
                          arrival_local.tm_hour, arrival_local.tm_min);
-                ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
+                ui_draw_text(s, info_x, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
             }
             sprintf(str, "%s  %.1f%s", is_kor ? "남은거리" : "Remaining",
                     nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
                     (s->scene.is_metric) ? "km" : "mile");
-            ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 115, str, 50, COLOR_WHITE, BOLD);
+            ui_draw_text(s, info_x, tbt_y + 130, str, 50, COLOR_WHITE, BOLD);
         }
-        drawRouteProgress(s, tbt_x + 37, tbt_y + 205, 676);
+        drawRouteProgress(s, tbt_x + 37, tbt_y + 205, 586);
         return 0;
     }
 public:
