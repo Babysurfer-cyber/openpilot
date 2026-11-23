@@ -3061,11 +3061,9 @@ public:
       int car_x = bx - (car_size / 2);
       int car_y = by - (car_size / 2) - 5; 
       
-      // Blink between the red and white car icons every 500 ms while any
-      // of the four doors is open. All closed: show the original white icon.
-      // Use monotonic time so the flash rate is independent of UI frame rate.
-      const bool show_red_door_icon = car_state.getDoorOpenAny() &&
-                                     ((nanos_monotonic() / 500000000LL) % 2 == 0);
+      // Match the existing on-screen turn-indicator blink phase.
+      // Red during its lit phase, white during its unlit phase; all closed: white.
+      const bool show_red_door_icon = car_state.getDoorOpenAny() && _blinker_pulse;
       ui_draw_image(s, { car_x, car_y, car_size, car_size },
                     show_red_door_icon ? "ic_car_door_open" : "ic_car", 1.0f);
       // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
