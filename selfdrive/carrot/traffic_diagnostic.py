@@ -26,6 +26,10 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
   status_record = _object(items.get("navigation_status"))
   route = _object(route_record.get("value")) if route_record.get("present") else {}
   status = _object(status_record.get("value")) if status_record.get("present") else {}
+  speed_record = _object(items.get("speed"))
+  speed = _object(speed_record.get("value")) if speed_record.get("present") else {}
+  camera = _object(speed.get("sdi"))
+  secondary_camera = _object(speed.get("sdi_secondary"))
   total = _distance(route.get("total_distance_m"))
   remaining = _distance(route.get("remain_distance_m"))
   connected = snapshot.get("connected") is True
@@ -79,6 +83,17 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
     "remain_distance_m": remaining,
     "traffic_source": route.get("traffic_source", "(not sent)"),
     "traffic_probe": route.get("traffic_probe", "(not sent)"),
+    # Input-side SDI values for diagnosing repeated fixed-camera warnings.
+    # These are read-only app messages, not the car's CAN camera signals.
+    "speed_item_present": speed_record.get("present") is True,
+    "sdi_present": bool(camera),
+    "sdi_type": camera.get("type"),
+    "sdi_distance_m": camera.get("distance_m"),
+    "sdi_speed_limit_kph": camera.get("speed_limit_kph"),
+    "secondary_sdi_present": bool(secondary_camera),
+    "secondary_sdi_type": secondary_camera.get("type"),
+    "secondary_sdi_distance_m": secondary_camera.get("distance_m"),
+    "road_limit_kph": speed.get("road_limit_kph"),
     "traffic_sections_received": len(raw_traffic) if traffic_received else None,
     "traffic_sections_valid": len(sections) if traffic_valid else 0,
     "cereal_publish_count": publisher_count,
