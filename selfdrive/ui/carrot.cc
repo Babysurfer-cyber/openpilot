@@ -3061,9 +3061,13 @@ public:
       int car_x = bx - (car_size / 2);
       int car_y = by - (car_size / 2) - 5; 
       
-      // The UI-only four-door flag controls the icon; size and TPMS layout stay unchanged.
+      // Blink between the red and white car icons every 500 ms while any
+      // of the four doors is open. All closed: show the original white icon.
+      // Use monotonic time so the flash rate is independent of UI frame rate.
+      const bool show_red_door_icon = car_state.getDoorOpenAny() &&
+                                     ((nanos_monotonic() / 500000000LL) % 2 == 0);
       ui_draw_image(s, { car_x, car_y, car_size, car_size },
-                    car_state.getDoorOpenAny() ? "ic_car_door_open" : "ic_car", 1.0f);
+                    show_red_door_icon ? "ic_car_door_open" : "ic_car", 1.0f);
       // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       auto tpms = car_state.getTpms();
