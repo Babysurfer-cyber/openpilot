@@ -1,4 +1,5 @@
 #include "selfdrive/ui/carrot.h"
+#include "selfdrive/ui/route_progress.h"
 
 #include <cassert>
 #include <cmath>
@@ -1069,6 +1070,7 @@ private:
 
     int nGoPosDist = 0;
     int nGoPosTime = 0;
+    route_progress::Snapshot route_state;
 
     QString szSdiDescr = "";
     QString atc_type;
@@ -1152,6 +1154,54 @@ protected:
         // (UI를 깔끔하게 유지하기 위해 그리기 로직을 모두 삭제함)
     }
 
+    // The stock CarrotNM app already publishes a route snapshot via carrotNavi.
+    // Use only current, matching route/status data; never retain stale UI progress.
+    void updateRouteProgress(const SubMaster &sm) {
+        route_state = {};
+        if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
+        const auto nav = sm["carrotNavi"].getCarrotNavi();
+        const auto status = nav.getNavigationStatus();
+        const auto route = nav.getRoute();
+        route_state = route_progress::calculate(
+            nav.getConnected(), status.getMeta().getPresent(),
+            status.getGuidanceActive(), status.getOffRoute(),
+            status.getRoutePresent(), route.getMeta().getPresent(),
+            route.getTotalDistanceM(), route.getRemainingDistanceM());
+    }
+
+    // Neutral route progress, NOT live traffic congestion. No vehicle control.
+    void drawRouteProgress(const UIState* s, int x, int y, int width) {
+        if (!route_state.visible) return;
+        nvgSave(s->vg);
+        nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+        ui_draw_text(s, x, y - 17, "경로 진행 · 교통정보 미수신", 29, COLOR_GREY, BOLD);
+
+        constexpr int height = 20;
+        ui_fill_rect(s->vg, {x, y, width, height}, COLOR_GREY_ALPHA(130), 8);
+        const int traveled_width = static_cast<int>(std::lround(width * route_state.fraction));
+        if (traveled_width > 0) {
+            ui_fill_rect(s->vg, {x, y, traveled_width, height}, nvgRGBA(55, 174, 193, 235), 8);
+        }
+        const int marker_x = x + traveled_width;
+        nvgBeginPath(s->vg);
+        nvgMoveTo(s->vg, marker_x, y - 9);
+        nvgLineTo(s->vg, marker_x - 11, y - 25);
+        nvgLineTo(s->vg, marker_x + 11, y - 25);
+        nvgClosePath(s->vg);
+        nvgFillColor(s->vg, COLOR_WHITE);
+        nvgFill(s->vg);
+
+        char label[80];
+        const float unit_m = s->scene.is_metric ? 1000.0f : 1609.344f;
+        const char* unit = s->scene.is_metric ? "km" : "mi";
+        snprintf(label, sizeof(label), "진행 %.1f %s", route_state.traveled_m / unit_m, unit);
+        ui_draw_text(s, x, y + 58, label, 31, COLOR_WHITE, BOLD);
+        nvgTextAlign(s->vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
+        snprintf(label, sizeof(label), "남은 %.1f %s", route_state.remaining_m / unit_m, unit);
+        ui_draw_text(s, x + width, y + 58, label, 31, COLOR_WHITE, BOLD);
+        nvgRestore(s->vg);
+    }
+
     int  drawTurnInfoHud(const UIState* s) {
       if (s->fb_w < 1200) return -1;
 #ifdef __UI_TEST
@@ -1180,7 +1230,7 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, 240 + 60 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 425 : 300 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         if (szTBTMainText.length() > 0) {
           nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
@@ -1280,6 +1330,7 @@ protected:
             sprintf(str, "%.1f%s", nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE), (s->scene.is_metric) ? "km" : "mile");
             ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 130, str, 50, COLOR_WHITE, BOLD);
         }
+        if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 275, 716);
         return 0;
     }
 public:
@@ -1291,6 +1342,7 @@ public:
             return -1;
         }
         const auto carrot_man = sm["carrotMan"].getCarrotMan();
+        updateRouteProgress(sm);
           
         active_carrot = carrot_man.getActiveCarrot();
 
