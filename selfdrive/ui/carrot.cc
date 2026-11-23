@@ -1171,25 +1171,26 @@ protected:
 
     // Neutral route progress, NOT live traffic congestion. No vehicle control.
     void drawRouteProgress(const UIState* s, int x, int y, int width) {
-        if (!route_state.visible) return;
         nvgSave(s->vg);
-        // Route bar and current-position marker only; no bottom text labels.
-        // Cyan is distance traveled, not an inferred traffic congestion state.
+        // The neutral bar always appears when the navigation HUD is visible.
+        // Draw progress and marker only for current, validated route data.
+        // Cyan shows distance traveled, not traffic congestion.
         constexpr int height = 20;
         ui_fill_rect(s->vg, {x, y, width, height}, COLOR_GREY_ALPHA(130), 8);
-        const int traveled_width = static_cast<int>(std::lround(width * route_state.fraction));
-        if (traveled_width > 0) {
-            ui_fill_rect(s->vg, {x, y, traveled_width, height}, nvgRGBA(55, 174, 193, 235), 8);
+        if (route_state.visible) {
+            const int traveled_width = static_cast<int>(std::lround(width * route_state.fraction));
+            if (traveled_width > 0) {
+                ui_fill_rect(s->vg, {x, y, traveled_width, height}, nvgRGBA(55, 174, 193, 235), 8);
+            }
+            const int marker_x = x + traveled_width;
+            nvgBeginPath(s->vg);
+            nvgMoveTo(s->vg, marker_x, y - 9);
+            nvgLineTo(s->vg, marker_x - 11, y - 25);
+            nvgLineTo(s->vg, marker_x + 11, y - 25);
+            nvgClosePath(s->vg);
+            nvgFillColor(s->vg, COLOR_WHITE);
+            nvgFill(s->vg);
         }
-        const int marker_x = x + traveled_width;
-        nvgBeginPath(s->vg);
-        nvgMoveTo(s->vg, marker_x, y - 9);
-        nvgLineTo(s->vg, marker_x - 11, y - 25);
-        nvgLineTo(s->vg, marker_x + 11, y - 25);
-        nvgClosePath(s->vg);
-        nvgFillColor(s->vg, COLOR_WHITE);
-        nvgFill(s->vg);
-
         nvgRestore(s->vg);
     }
 
@@ -1222,7 +1223,7 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 295 : 250 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 750, 295 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         // Upper guidance title intentionally hidden for a cleaner, more compact
         // navigation HUD. Keep turn direction, distance, ETA and route progress only.
@@ -1313,17 +1314,17 @@ protected:
             const time_t arrival_time = time(nullptr) + static_cast<time_t>(nGoPosTime);
             struct tm arrival_local = {};
             if (localtime_r(&arrival_time, &arrival_local) != nullptr) {
-                snprintf(str, sizeof(str), "%s %02d:%02d",
+                snprintf(str, sizeof(str), "%s  %02d:%02d",
                          is_kor ? "도착시간" : "Arrival",
                          arrival_local.tm_hour, arrival_local.tm_min);
                 ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
             }
-            sprintf(str, "%s %.1f%s", is_kor ? "남은거리" : "Remaining",
+            sprintf(str, "%s  %.1f%s", is_kor ? "남은거리" : "Remaining",
                     nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
                     (s->scene.is_metric) ? "km" : "mile");
             ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 115, str, 50, COLOR_WHITE, BOLD);
         }
-        if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 205, 716);
+        drawRouteProgress(s, tbt_x + 37, tbt_y + 205, 676);
         return 0;
     }
 public:
