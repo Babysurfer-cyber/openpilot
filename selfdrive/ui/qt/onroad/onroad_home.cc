@@ -23,9 +23,9 @@ class OverlayDialog : public QWidget {
 
 public:
   explicit OverlayDialog(QWidget* parent = nullptr) : QWidget(parent) {
-    setWindowFlags(Qt::Window | Qt::FramelessWindowHint); // ´ÙÀÌ¾ó·Î±×Ã³·³ µ¿ÀÛ
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint); // ë‹¤ì´ì–¼ë¡œê·¸ì²˜ëŸ¼ ë™ìž‘
     setStyleSheet("background-color: rgba(0, 0, 0, 0.8); border-radius: 10px;");
-    resize(400, 300); // ±âº» Å©±â ¼³Á¤
+    resize(400, 300); // ê¸°ë³¸ í¬ê¸° ì„¤ì •
   }
 
   void setContent(QWidget* content) {
@@ -204,60 +204,56 @@ void OnroadWindow::updateState(const UIState &s) {
 }
 
 void OnroadWindow::mousePressEvent(QMouseEvent* e) {
-  //printf("uiState()->scene.navigate_on_openpilot = %d\n", uiState()->scene.navigate_on_openpilot);
-//#ifdef ENABLE_MAPS
-//  if (map != nullptr) {
-    // Switch between map and sidebar when using navigate on openpilot
-    //bool sidebarVisible = geometry().x() > 0;
-    //bool show_map = uiState()->scene.navigate_on_openpilot ? sidebarVisible : !sidebarVisible;
-    //map->setVisible(show_map && !map->isVisible());
-//  }
-//#endif
-  // propagation event to parent(HomeWindow)
-  int x = e->x();   // 430 - 500 : gap window
-  int y = height() - e->y();  // 60 - 180 : gap window
-  int ey = e->y();
-  printf("x=%d, y=%d, ey=%d\n", x, y, ey);
-  double now = millis_since_boot();
-  static double last_click_time = 0;
-  static int _click_count = 0;
-  // 40,150, 200, 150
-  Params	params;
-  if (x > 40 && x < 370 && ey > 30 && ey < 240) {   // date & time
-    int show_date_time = params.getInt("ShowDateTime");
-    params.putIntNonBlocking("ShowDateTime", (show_date_time + 1) % 3);
-  }
-  else if (x > 40 && x < 500 && y > 400 && y < 530) {   // device info
-    int show_device_state = params.getInt("ShowDeviceState");
-    params.putIntNonBlocking("ShowDeviceState", (show_device_state + 1) % 2);
-  }
-  else if (x > 40 && x < 200 && y > 20 && y < 150) {   // driving mode
-    int my_driving_mode = params.getInt("MyDrivingMode");
-    params.putIntNonBlocking("MyDrivingMode", (my_driving_mode) % 4 + 1);
-  }
-  else if (x > 350 && x < 550 && y > 20 && y < 250) { // gap control
-    int longitudinalPersonalityMax = params.getInt("LongitudinalPersonalityMax");
-    int personality = (params.getInt("LongitudinalPersonality") - 1 + longitudinalPersonalityMax) % longitudinalPersonalityMax;
-    params.putIntNonBlocking("LongitudinalPersonality", personality);
+  const QPoint pos = e->pos();  // Top-left origin in OnroadWindow coordinates.
 
+  // Right-hand diagnostic text column (CPU / DISK / MEM / VOLT).
+  // Keep this hit target usable even when the diagnostics are hidden.
+  // Stay below the separate top-right experimental button and above
+  // the bottom-right screen-recording button.
+  const QRect device_info_rect(width() - 280, 255, 250, 550);
+
+  // Only the open, central camera view switches display modes.
+  // Leave the compact navigation HUD (top-left), driving HUD
+  // (bottom-left), diagnostic column and standalone Qt buttons alone.
+  const QRect display_mode_rect(
+      700, 90,
+      std::max(0, width() - 1010),
+      std::max(0, height() - 260));
+
+  if (device_info_rect.contains(pos)) {
+    Params params;
+    const int show_device_state = params.getInt("ShowDeviceState");
+    params.putIntNonBlocking("ShowDeviceState", (show_device_state + 1) % 2);
+    e->accept();
+    return;
   }
-  else {
+
+  if (display_mode_rect.contains(pos)) {
+    // Preserve the existing rapid-tap soft-restart behavior, but restrict
+    // it to this intentional camera-view interaction region.
+    const double now = millis_since_boot();
+    static double last_click_time = 0;
+    static int click_count = 0;
     if (now - last_click_time < 500) {
-      _click_count++;
-    }
-    else {
-      _click_count = 0;
+      ++click_count;
+    } else {
+      click_count = 0;
     }
     last_click_time = now;
-    if (_click_count == 3) {
-      params.putIntNonBlocking("SoftRestartTriggered", 1);
+
+    if (click_count == 3) {
+      Params().putIntNonBlocking("SoftRestartTriggered", 1);
+      click_count = 0;
     }
-    
+
     UIState* s = uiState();
-    s->scene._current_carrot_display = (s->scene._current_carrot_display % 3) + 1;  // 4¹ø: full mapÀº ¾Èº¸¿©ÁÜ.
-    printf("_current_carrot_display1=%d\n", s->scene._current_carrot_display);
-    QWidget::mousePressEvent(e);
+    s->scene._current_carrot_display = (s->scene._current_carrot_display % 3) + 1;
+    e->accept();
+    return;
   }
+
+  // Outside the defined touch areas: no settings change or display toggle.
+  QWidget::mousePressEvent(e);
 }
 //OverlayDialog* mapDialog = nullptr;
 void OnroadWindow::offroadTransition(bool offroad) {
@@ -280,15 +276,15 @@ void OnroadWindow::offroadTransition(bool offroad) {
       mapDialog->setAttribute(Qt::WA_TranslucentBackground);
       mapDialog->setAttribute(Qt::WA_NoSystemBackground);
 
-      // MapPanel Ãß°¡
+      // MapPanel ì¶”ê°€
       auto m = new MapPanel(get_mapbox_settings(), mapDialog);
       map = m;
       mapDialog->setContent(m);
 
-      // Æ¯Á¤ À§Ä¡¿¡ ¹èÄ¡ (¿À¸¥ÂÊ ÇÏ´Ü)
+      // íŠ¹ì • ìœ„ì¹˜ì— ë°°ì¹˜ (ì˜¤ë¥¸ìª½ í•˜ë‹¨)
       mapDialog->setGeometry(topWidget(this)->width() - 790 - UI_BORDER_SIZE, UI_BORDER_SIZE + 15, 775, topWidget(this)->height() - 400);
 
-      //mapDialog->hide(); // ±âº»ÀûÀ¸·Î ¼û±è »óÅÂ
+      //mapDialog->hide(); // ê¸°ë³¸ì ìœ¼ë¡œ ìˆ¨ê¹€ ìƒíƒœ
       mapDialog->show();
       mapDialog->raise();
       uiState()->scene._current_carrot_display = 1;
@@ -310,11 +306,11 @@ void OnroadWindow::paintEvent(QPaintEvent *event) {
 }
 
 
-// OnroadWindow.cpp¿¡¼­ OpenGL ÃÊ±âÈ­ ¹× ±×¸®±â ±¸Çö
+// OnroadWindow.cppì—ì„œ OpenGL ì´ˆê¸°í™” ë° ê·¸ë¦¬ê¸° êµ¬í˜„
 void OnroadWindow::initializeGL() {
-    initializeOpenGLFunctions(); // QOpenGLFunctions ÃÊ±âÈ­
+    initializeOpenGLFunctions(); // QOpenGLFunctions ì´ˆê¸°í™”
 
-    // Parent widgetÀ» À§ÇÑ NanoVG ÄÁÅØ½ºÆ® »ý¼º
+    // Parent widgetì„ ìœ„í•œ NanoVG ì»¨í…ìŠ¤íŠ¸ ìƒì„±
     //s->vg = nvgCreate(NVG_ANTIALIAS | NVG_STENCIL_STROKES | NVG_DEBUG);
     //if (s->vg == nullptr) {
     //    printf("Could not init nanovg.\n");
