@@ -1250,6 +1250,9 @@ protected:
 
         int tbt_x = 20;
         int tbt_y = 80;
+        // Keep equal horizontal margins around the progress bar in compact HUD.
+        constexpr int compact_hud_width = 640;
+        constexpr int compact_bar_side_margin = 37;
         NVGcolor stroke_color = COLOR_WHITE;
         // Height is shortened only for the compact HUD mode (not full-height mode).
         if (s->scene._current_carrot_display == 3) {
@@ -1259,7 +1262,7 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 35, 660, 270 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 35, compact_hud_width, 270 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         // Upper guidance title intentionally hidden for a cleaner, more compact
         // navigation HUD. Keep turn direction, distance, ETA and route progress only.
@@ -1330,19 +1333,8 @@ protected:
             ui_draw_text(s, bx, by + 95, str, 40, COLOR_WHITE, BOLD);
         }
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        // Hide the lower-right TBT/ATC location description to compact the HUD.
-        // SDI warning descriptions remain available independently.
-        if (!szSdiDescr.isEmpty()) {
-            const std::string sdi_text = szSdiDescr.toStdString();
-            nvgFontFace(s->vg, BOLD);
-            nvgFontSize(s->vg, 40);
-            float bounds[4];
-            nvgTextBounds(s->vg, tbt_x + 200, tbt_y + 165, sdi_text.c_str(), NULL, bounds);
-            float text_width = bounds[2] - bounds[0];
-            float text_height = bounds[3] - bounds[1];
-            ui_fill_rect(s->vg, { (int)bounds[0] - 10, (int)bounds[1] - 2, (int)text_width + 20, (int)text_height + 13 }, COLOR_BLACK_ALPHA(90), 10);
-            ui_draw_text(s, tbt_x + 200, tbt_y + 165, sdi_text.c_str(), 40, COLOR_WHITE, BOLD);
-        }
+        // Do not render any description below the remaining-distance text.
+        // SDI/camera data remain available to navigation control and other UI areas.
 
         if (nGoPosDist > 0 && nGoPosTime > 0) {
             bool is_kor = s->language == "main_ko";
@@ -1361,9 +1353,10 @@ protected:
             sprintf(str, "%s  %.1f%s", is_kor ? "남은거리" : "Remaining",
                     nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
                     (s->scene.is_metric) ? "km" : "mile");
-            ui_draw_text(s, info_x, tbt_y + 130, str, 50, COLOR_WHITE, BOLD);
+            ui_draw_text(s, info_x, tbt_y + 145, str, 50, COLOR_WHITE, BOLD);
         }
-        drawRouteProgress(s, tbt_x + 37, tbt_y + 205, 586);
+        drawRouteProgress(s, tbt_x + compact_bar_side_margin, tbt_y + 205,
+                          compact_hud_width - 2 * compact_bar_side_margin);
         return 0;
     }
 public:
