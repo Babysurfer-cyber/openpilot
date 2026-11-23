@@ -1174,8 +1174,8 @@ protected:
         if (!route_state.visible) return;
         nvgSave(s->vg);
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, x, y - 17, "경로 진행 · 교통정보 미수신", 29, COLOR_GREY, BOLD);
-
+        // Compact two-row layout: route bar + distances/unknown-traffic label.
+        // Preserve icon size and readability; do not represent progress as traffic.
         constexpr int height = 20;
         ui_fill_rect(s->vg, {x, y, width, height}, COLOR_GREY_ALPHA(130), 8);
         const int traveled_width = static_cast<int>(std::lround(width * route_state.fraction));
@@ -1195,10 +1195,12 @@ protected:
         const float unit_m = s->scene.is_metric ? 1000.0f : 1609.344f;
         const char* unit = s->scene.is_metric ? "km" : "mi";
         snprintf(label, sizeof(label), "진행 %.1f %s", route_state.traveled_m / unit_m, unit);
-        ui_draw_text(s, x, y + 58, label, 31, COLOR_WHITE, BOLD);
+        ui_draw_text(s, x, y + 49, label, 31, COLOR_WHITE, BOLD);
+        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+        ui_draw_text(s, x + width / 2, y + 49, "교통 미수신", 26, COLOR_GREY, BOLD);
         nvgTextAlign(s->vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
         snprintf(label, sizeof(label), "남은 %.1f %s", route_state.remaining_m / unit_m, unit);
-        ui_draw_text(s, x + width, y + 58, label, 31, COLOR_WHITE, BOLD);
+        ui_draw_text(s, x + width, y + 49, label, 31, COLOR_WHITE, BOLD);
         nvgRestore(s->vg);
     }
 
@@ -1223,6 +1225,7 @@ protected:
         int tbt_x = 20;
         int tbt_y = 80;
         NVGcolor stroke_color = COLOR_WHITE;
+        // Height is shortened only for the compact HUD mode (not full-height mode).
         if (s->scene._current_carrot_display == 3) {
           ui_fill_rect(s->vg, { tbt_x, 5, 790, s->fb_h - 15 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
@@ -1230,7 +1233,7 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 425 : 300 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 360 : 278 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         if (szTBTMainText.length() > 0) {
           nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
@@ -1241,7 +1244,7 @@ protected:
         if(xTurnInfo > 0) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             int bx = tbt_x + 100;
-            int by = tbt_y + 85;
+            int by = tbt_y + 67;
 
             // ATC 상태에 따른 아이콘 투명도 결정 (0.0f: 투명, 0.5f: 반투명, 1.0f: 불투명)
             float icon_alpha = 0.0f;
@@ -1301,20 +1304,20 @@ protected:
               if (xDistToTurn < 1609) sprintf(str, "%d ft", (int)(xDistToTurn * 3.28084));
               else sprintf(str, "%.1f mi", xDistToTurn / 1609.344f);
             }
-            ui_draw_text(s, bx, by + 120, str, 40, COLOR_WHITE, BOLD);
+            ui_draw_text(s, bx, by + 110, str, 40, COLOR_WHITE, BOLD);
         }
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
         if (szSdiDescr.length() > 0) {
             float bounds[4];  // [xmin, ymin, xmax, ymax]를 저장하는 배열
             nvgFontSize(s->vg, 40);
-            nvgTextBounds(s->vg, tbt_x + 200, tbt_y + 200, szSdiDescr.toStdString().c_str(), NULL, bounds);
+            nvgTextBounds(s->vg, tbt_x + 200, tbt_y + 165, szSdiDescr.toStdString().c_str(), NULL, bounds);
             float text_width = bounds[2] - bounds[0];
             float text_height = bounds[3] - bounds[1];
             ui_fill_rect(s->vg, { (int)bounds[0] - 10, (int)bounds[1] - 2, (int)text_width + 20, (int)text_height + 13 }, COLOR_BLACK_ALPHA(90), 10);
-            ui_draw_text(s, tbt_x + 200, tbt_y + 200, szSdiDescr.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+            ui_draw_text(s, tbt_x + 200, tbt_y + 165, szSdiDescr.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
         }
         else if (szPosRoadName.length() > 0) {
-          ui_draw_text(s, tbt_x + 200, tbt_y + 200, szPosRoadName.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
+          ui_draw_text(s, tbt_x + 200, tbt_y + 165, szPosRoadName.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
           //ui_draw_text(s, tbt_x + 190, tbt_y - 5, szPosRoadName.toStdString().c_str(), 40, COLOR_WHITE, BOLD);
         }
 
@@ -1326,11 +1329,11 @@ protected:
             mktime(local);
             bool is_kor = s->language == "main_ko";
             sprintf(str, "%s: %.1f%s(%02d:%02d)", (is_kor)?"도착":"ETA", (float)nGoPosTime / 60., (is_kor)?"분":"MIN", local->tm_hour, local->tm_min);
-            ui_draw_text(s, tbt_x + 190, tbt_y + 80, str, 50, COLOR_WHITE, BOLD);
+            ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
             sprintf(str, "%.1f%s", nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE), (s->scene.is_metric) ? "km" : "mile");
-            ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 130, str, 50, COLOR_WHITE, BOLD);
+            ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 115, str, 50, COLOR_WHITE, BOLD);
         }
-        if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 275, 716);
+        if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 230, 716);
         return 0;
     }
 public:
