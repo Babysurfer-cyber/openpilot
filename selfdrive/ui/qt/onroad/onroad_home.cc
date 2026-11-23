@@ -1,7 +1,5 @@
 #include "selfdrive/ui/qt/onroad/onroad_home.h"
 
-#include <algorithm>
-
 #include <QPainter>
 #include <QRect>
 #include <QStackedLayout>
@@ -207,22 +205,11 @@ void OnroadWindow::updateState(const UIState &s) {
 }
 
 void OnroadWindow::mousePressEvent(QMouseEvent* e) {
-  const QPoint pos = e->pos();  // Top-left origin in OnroadWindow coordinates.
+  const QPoint pos = e->pos();  // OnroadWindow coordinates (top-left origin).
 
-  // Right-hand diagnostic text column (CPU / DISK / MEM / VOLT).
-  // Keep this hit target usable even when the diagnostics are hidden.
-  // Stay below the separate top-right experimental button and above
-  // the bottom-right screen-recording button.
+  // CPU / DISK / MEM / VOLT text column: tap to show or hide diagnostics.
+  // The same hit region stays active while diagnostic text is hidden.
   const QRect device_info_rect(width() - 280, 255, 250, 550);
-
-  // Only the open, central camera view switches display modes.
-  // Leave the compact navigation HUD (top-left), driving HUD
-  // (bottom-left), diagnostic column and standalone Qt buttons alone.
-  const QRect display_mode_rect(
-      700, 90,
-      std::max(0, width() - 1010),
-      std::max(0, height() - 260));
-
   if (device_info_rect.contains(pos)) {
     Params params;
     const int show_device_state = params.getInt("ShowDeviceState");
@@ -231,31 +218,35 @@ void OnroadWindow::mousePressEvent(QMouseEvent* e) {
     return;
   }
 
-  if (display_mode_rect.contains(pos)) {
-    // Preserve the existing rapid-tap soft-restart behavior, but restrict
-    // it to this intentional camera-view interaction region.
-    const double now = millis_since_boot();
-    static double last_click_time = 0;
-    static int click_count = 0;
-    if (now - last_click_time < 500) {
-      ++click_count;
-    } else {
-      click_count = 0;
-    }
-    last_click_time = now;
-
-    if (click_count == 3) {
-      Params().putIntNonBlocking("SoftRestartTriggered", 1);
-      click_count = 0;
-    }
-
-    UIState* s = uiState();
-    s->scene._current_carrot_display = (s->scene._current_carrot_display % 3) + 1;
+  // The former experimental-mode button is now an indicator only.
+  // Tapping its former area must not accidentally switch display modes.
+  const QRect experimental_indicator_rect(width() - 250, 0, 250, 255);
+  if (experimental_indicator_rect.contains(pos)) {
     e->accept();
     return;
   }
 
-  // Outside the defined touch areas: no settings change or display toggle.
+  // Restore the original behavior: tapping elsewhere on the onroad view
+  // cycles the display mode, rather than requiring a central rectangle.
+  // Standalone Qt controls (e.g. screen recording) retain their own events.
+  const double now = millis_since_boot();
+  static double last_click_time = 0;
+  static int click_count = 0;
+  if (now - last_click_time < 500) {
+    ++click_count;
+  } else {
+    click_count = 0;
+  }
+  last_click_time = now;
+
+  // Preserve the existing rapid-tap restart gesture.
+  if (click_count == 3) {
+    Params().putIntNonBlocking("SoftRestartTriggered", 1);
+    click_count = 0;
+  }
+
+  UIState* s = uiState();
+  s->scene._current_carrot_display = (s->scene._current_carrot_display % 3) + 1;
   QWidget::mousePressEvent(e);
 }
 //OverlayDialog* mapDialog = nullptr;
