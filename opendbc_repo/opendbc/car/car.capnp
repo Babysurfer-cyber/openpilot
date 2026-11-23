@@ -222,6 +222,7 @@ struct CarState {
   # lock info
   doorOpen @24 :Bool;
   seatbeltUnlatched @25 :Bool;
+  doorOpenAny @95 :Bool;  # UI-only: any of the four doors is open; does not affect doorOpen
 
   # clutch (manual transmission only)
   clutchPressed @28 :Bool;
