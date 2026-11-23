@@ -1173,9 +1173,8 @@ protected:
     void drawRouteProgress(const UIState* s, int x, int y, int width) {
         if (!route_state.visible) return;
         nvgSave(s->vg);
-        nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        // Compact two-row layout: route bar + distances/unknown-traffic label.
-        // Preserve icon size and readability; do not represent progress as traffic.
+        // Route bar and current-position marker only; no bottom text labels.
+        // Cyan is distance traveled, not an inferred traffic congestion state.
         constexpr int height = 20;
         ui_fill_rect(s->vg, {x, y, width, height}, COLOR_GREY_ALPHA(130), 8);
         const int traveled_width = static_cast<int>(std::lround(width * route_state.fraction));
@@ -1191,16 +1190,6 @@ protected:
         nvgFillColor(s->vg, COLOR_WHITE);
         nvgFill(s->vg);
 
-        char label[80];
-        const float unit_m = s->scene.is_metric ? 1000.0f : 1609.344f;
-        const char* unit = s->scene.is_metric ? "km" : "mi";
-        snprintf(label, sizeof(label), "진행 %.1f %s", route_state.traveled_m / unit_m, unit);
-        ui_draw_text(s, x, y + 49, label, 31, COLOR_WHITE, BOLD);
-        nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, x + width / 2, y + 49, "교통 미수신", 26, COLOR_GREY, BOLD);
-        nvgTextAlign(s->vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
-        snprintf(label, sizeof(label), "남은 %.1f %s", route_state.remaining_m / unit_m, unit);
-        ui_draw_text(s, x + width, y + 49, label, 31, COLOR_WHITE, BOLD);
         nvgRestore(s->vg);
     }
 
@@ -1233,7 +1222,7 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 360 : 278 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 330 : 278 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         if (szTBTMainText.length() > 0) {
           nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
