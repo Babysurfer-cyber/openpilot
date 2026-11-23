@@ -475,6 +475,12 @@ async def latest(request: web.Request) -> web.Response:
   return web.json_response(request.app[RECEIVER_KEY].latest())
 
 
+async def traffic_diagnostic(request: web.Request) -> web.Response:
+  # Display-only: no coordinates or route names are exposed in this summary.
+  from openpilot.selfdrive.carrot.traffic_diagnostic import summarize_traffic
+  return web.json_response(summarize_traffic(request.app[RECEIVER_KEY].latest()))
+
+
 async def _close_websockets(app: web.Application) -> None:
   await asyncio.gather(*(ws.close(code=1001, message=b"receiver shutdown")
                          for ws in tuple(app[WEBSOCKETS_KEY])), return_exceptions=True)
@@ -488,6 +494,7 @@ def create_app(receiver: CarrotNaviReceiver | None = None) -> web.Application:
   app.router.add_get("/", index)
   app.router.add_get("/health", health)
   app.router.add_get("/api/navi/latest", latest)
+  app.router.add_get("/api/navi/traffic-diagnostic", traffic_diagnostic)
   app.router.add_get("/api/navi/ws/v2/control/{version}", ws_control)
   app.router.add_get("/api/navi/ws/v2/json/{session_id}/{name}", ws_json)
   app.on_shutdown.append(_close_websockets)
