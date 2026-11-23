@@ -1222,10 +1222,10 @@ protected:
         else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
-          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 320 : 278 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
+          ui_fill_rect(s->vg, { tbt_x, tbt_y - 60, 790, route_state.visible ? 295 : 250 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
         // Upper guidance title intentionally hidden for a cleaner, more compact
-        // navigation HUD. TBT direction/distance and lower road-name stay shown.
+        // navigation HUD. Keep turn direction, distance, ETA and route progress only.
 
         if(xTurnInfo > 0) {
             nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
@@ -1290,30 +1290,12 @@ protected:
               if (xDistToTurn < 1609) sprintf(str, "%d ft", (int)(xDistToTurn * 3.28084));
               else sprintf(str, "%.1f mi", xDistToTurn / 1609.344f);
             }
-            ui_draw_text(s, bx, by + 110, str, 40, COLOR_WHITE, BOLD);
+            ui_draw_text(s, bx, by + 95, str, 40, COLOR_WHITE, BOLD);
         }
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        // The TBT location is also used for ATC's turn/fork decision.
-        // Display that guidance here, instead of the road name + "route=" debug text.
-        const QString atc_location = (xTurnInfo > 0) ? szTBTMainText.trimmed() : QString();
-        if (!atc_location.isEmpty()) {
-            const std::string location_text = atc_location.toStdString();
-            const float label_x = tbt_x + 200;
-            const float label_y = tbt_y + 165;
-            const float max_width = 790 - (label_x - tbt_x) - 20;
-            nvgFontFace(s->vg, BOLD);
-            nvgFontSize(s->vg, 40);
-            const float text_width = nvgTextBounds(s->vg, label_x, label_y, location_text.c_str(), nullptr, nullptr);
-            const float font_size = (text_width > max_width && text_width > 0)
-                ? std::max(26.0f, 40.0f * max_width / text_width) : 40.0f;
-            // Protect the rest of the HUD if an unusually long direction is received.
-            nvgSave(s->vg);
-            nvgScissor(s->vg, label_x, label_y - 43, max_width, 54);
-            ui_draw_text(s, label_x, label_y, location_text.c_str(), font_size, COLOR_WHITE, BOLD);
-            nvgRestore(s->vg);
-        }
-        else if (!szSdiDescr.isEmpty()) {
-            // Keep SDI alert descriptions when no turn/ATC location is available.
+        // Hide the lower-right TBT/ATC location description to compact the HUD.
+        // SDI warning descriptions remain available independently.
+        if (!szSdiDescr.isEmpty()) {
             const std::string sdi_text = szSdiDescr.toStdString();
             nvgFontFace(s->vg, BOLD);
             nvgFontSize(s->vg, 40);
@@ -1331,17 +1313,17 @@ protected:
             const time_t arrival_time = time(nullptr) + static_cast<time_t>(nGoPosTime);
             struct tm arrival_local = {};
             if (localtime_r(&arrival_time, &arrival_local) != nullptr) {
-                snprintf(str, sizeof(str), "%s: %02d:%02d",
+                snprintf(str, sizeof(str), "%s %02d:%02d",
                          is_kor ? "도착시간" : "Arrival",
                          arrival_local.tm_hour, arrival_local.tm_min);
                 ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
             }
-            sprintf(str, "%s: %.1f%s", is_kor ? "남은거리" : "Remaining",
+            sprintf(str, "%s %.1f%s", is_kor ? "남은거리" : "Remaining",
                     nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
                     (s->scene.is_metric) ? "km" : "mile");
             ui_draw_text(s, tbt_x + 190 + 120, tbt_y + 115, str, 50, COLOR_WHITE, BOLD);
         }
-        if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 230, 716);
+        if (route_state.visible) drawRouteProgress(s, tbt_x + 37, tbt_y + 205, 716);
         return 0;
     }
 public:
