@@ -78,6 +78,7 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
     "total_distance_m": total,
     "remain_distance_m": remaining,
     "traffic_source": route.get("traffic_source", "(not sent)"),
+    "traffic_probe": route.get("traffic_probe", "(not sent)"),
     "traffic_sections_received": len(raw_traffic) if traffic_received else None,
     "traffic_sections_valid": len(sections) if traffic_valid else 0,
     "cereal_publish_count": publisher_count,
