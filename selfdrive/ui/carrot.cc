@@ -1272,14 +1272,10 @@ protected:
             int bx = tbt_x + 100;
             int by = tbt_y + 67;
 
-            // ATC 상태에 따른 아이콘 투명도 결정 (0.0f: 투명, 0.5f: 반투명, 1.0f: 불투명)
-            float icon_alpha = 0.0f;
-            if (atc_type.length() > 0 || atc_decel_active) {
-              bool is_prepare = (atc_type.length() > 0 && atc_type.contains("prepare", Qt::CaseInsensitive) && !atc_decel_active);
-              icon_alpha = is_prepare ? 0.5f : 1.0f;
-            }
-
-            if (icon_alpha > 0.01f) {
+            // Keep supported turn icons visible at full opacity regardless of ATC phase.
+            // Only the distance label below the icon fades as the turn approaches.
+            constexpr float icon_alpha = 1.0f;
+            {
               int off_x = 0;
               int off_y = 0;
               int sz = icon_size; // 256 유지
@@ -1330,7 +1326,17 @@ protected:
               if (xDistToTurn < 1609) sprintf(str, "%d ft", (int)(xDistToTurn * 3.28084));
               else sprintf(str, "%.1f mi", xDistToTurn / 1609.344f);
             }
-            ui_draw_text(s, bx, by + 95, str, 40, COLOR_WHITE, BOLD);
+            // Fade the upcoming turn/ATC distance, not the maneuver icon.
+            // >= 2000 m: 25% opacity; 1000 m: 62.5%; 0 m: 100%.
+            // Keep distant warnings legible rather than fully transparent.
+            float distance_alpha = 0.25f;
+            if (xDistToTurn <= 0) {
+              distance_alpha = 1.0f;
+            } else if (xDistToTurn < 2000) {
+              distance_alpha = 1.0f - (0.75f * static_cast<float>(xDistToTurn) / 2000.0f);
+            }
+            ui_draw_text(s, bx, by + 95, str, 40,
+                         COLOR_WHITE_ALPHA(static_cast<int>(255.0f * distance_alpha + 0.5f)), BOLD);
         }
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
         // Do not render any description below the remaining-distance text.
