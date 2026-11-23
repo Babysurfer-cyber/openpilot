@@ -1273,13 +1273,13 @@ protected:
             int by = tbt_y + 67;
 
             // Keep maneuver visibility independent of the ATC phase.
-            // > 1000 m: invisible. At 1000 m: 25% opacity.
-            // Fade linearly up to 100% at the maneuver (0 m).
+            // > 1000 m: invisible; 1000 m: 25%; <= 100 m: 100%.
+            // Interpolate opacity smoothly between 1000 m and 100 m.
             float icon_alpha = 0.0f;
-            if (xDistToTurn <= 0) {
+            if (xDistToTurn <= 100) {
               icon_alpha = 1.0f;
             } else if (xDistToTurn <= 1000) {
-              icon_alpha = 1.0f - (0.75f * static_cast<float>(xDistToTurn) / 1000.0f);
+              icon_alpha = 0.25f + 0.75f * (1000.0f - static_cast<float>(xDistToTurn)) / 900.0f;
             }
             {
               int off_x = 0;
