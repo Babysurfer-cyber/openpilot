@@ -1308,13 +1308,10 @@ protected:
         }
 
         if (nGoPosDist > 0 && nGoPosTime > 0) {
-            time_t now = time(NULL);  // 현재 시간 얻기
-            struct tm* local = localtime(&now);
-            int remaining_minutes = (int)nGoPosTime / 60;
-            local->tm_min += remaining_minutes;
-            mktime(local);
             bool is_kor = s->language == "main_ko";
-            sprintf(str, "%s: %.1f%s(%02d:%02d)", (is_kor)?"도착":"ETA", (float)nGoPosTime / 60., (is_kor)?"분":"MIN", local->tm_hour, local->tm_min);
+            // Show time remaining only; suppress the clock-based ETA (HH:MM).
+            sprintf(str, "%s: %.1f%s", (is_kor)?"도착":"ETA",
+                    (float)nGoPosTime / 60., (is_kor)?"분":"MIN");
             ui_draw_text(s, tbt_x + 190, tbt_y + 70, str, 50, COLOR_WHITE, BOLD);
             sprintf(str, "%s: %.1f%s", is_kor ? "남은거리" : "Remaining",
                     nGoPosDist / 1000. * ((s->scene.is_metric)?1:KM_TO_MILE),
