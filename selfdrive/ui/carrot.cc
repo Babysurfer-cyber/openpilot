@@ -1316,8 +1316,8 @@ protected:
                   ui_draw_text(s, bx, by + 20, "목적지", 60, turn_text_color, BOLD);
                   break;
               default:
-                  sprintf(str, "감속:%d", xTurnInfo);
-                  ui_draw_text(s, bx, by + 20, str, 35, turn_text_color, BOLD);
+                  // Unknown maneuver types must not add diagnostic text to the HUD.
+                  // Keep TG (case 6) and destination (case 8) labels above.
                   break;
               }
             }
