@@ -49,3 +49,28 @@ def test_invalid_lengths_are_not_displayed_as_real_traffic():
   assert r["bar_position_expected"] and not r["bar_traffic_colors_expected"]
   assert r["traffic_sections_received"] == 1
   assert r["traffic_sections_valid"] == 0
+
+def test_app_sdi_camera_fields_exposed_without_location_data():
+  s = snapshot()
+  s["items"]["speed"] = {"present": True, "value": {
+    "road_limit_kph": 60,
+    "sdi": {"type": 1, "distance_m": 800, "speed_limit_kph": 60},
+    "sdi_secondary": None,
+  }}
+  result = summarize_traffic(s)
+  assert result["speed_item_present"] is True
+  assert result["sdi_present"] is True
+  assert result["sdi_type"] == 1
+  assert result["sdi_distance_m"] == 800
+  assert result["sdi_speed_limit_kph"] == 60
+  assert result["road_limit_kph"] == 60
+  assert result["secondary_sdi_present"] is False
+  assert "latitude" not in result and "longitude" not in result
+
+
+def test_absent_sdi_is_reported_without_inventing_camera_warning():
+  result = summarize_traffic(snapshot())
+  assert result["speed_item_present"] is False
+  assert result["sdi_present"] is False
+  assert result["sdi_type"] is None
+  assert result["sdi_distance_m"] is None
