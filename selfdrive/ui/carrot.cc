@@ -3061,16 +3061,11 @@ public:
       int car_x = bx - (car_size / 2);
       int car_y = by - (car_size / 2) - 5; 
       
-      // Blink red/white every 0.5 seconds while any door is open.
-      // Start with red as soon as an open door is detected.
-      const bool door_open = sm.alive("carState") && sm.valid("carState") && car_state.getDoorOpen();
-      static bool prev_door_open = false;
-      static double door_open_since = 0.0;
-      const double now = double(nanos_monotonic()) / 1e9;
-      if (door_open && !prev_door_open) door_open_since = now;
-      prev_door_open = door_open;
-      const bool show_red = door_open && (std::fmod(now - door_open_since, 1.0) < 0.5);
-      ui_draw_image(s, { car_x, car_y, car_size, car_size }, show_red ? "ic_car_door_open" : "ic_car", 1.0f);
+      // Match the existing on-screen turn-indicator blink phase.
+      // Red during its lit phase, white during its unlit phase; all closed: white.
+      const bool show_red_door_icon = car_state.getDoorOpenAny() && _blinker_pulse;
+      ui_draw_image(s, { car_x, car_y, car_size, car_size },
+                    show_red_door_icon ? "ic_car_door_open" : "ic_car", 1.0f);
       // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       auto tpms = car_state.getTpms();
@@ -3606,7 +3601,7 @@ void ui_nvg_init(UIState *s) {
   {"ic_navi_point", "../assets/images/navi_point.png"},
   {"ic_lfa_engaged", "../assets/images/LFA_Engaged.png"},
   {"ic_car", "../assets/images/car.png"}, // 자동차 아이콘 등록
-  {"ic_car_door_open", "../assets/images/car_door_open.png"},
+  {"ic_car_door_open", "../assets/images/car_door_open.png"}, // 도어 열림 시 빨간색 아이콘
   {"ic_speed_cam", "../assets/images/speed_cam.png"}, // 과속카메라 아이콘 등록
 
   };

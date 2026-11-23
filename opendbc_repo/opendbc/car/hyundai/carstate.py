@@ -343,6 +343,7 @@ class CarState(CarStateBase):
 
     ret.doorOpen = any([cp.vl["CGW1"]["CF_Gway_DrvDrSw"], cp.vl["CGW1"]["CF_Gway_AstDrSw"],
                         cp.vl["CGW2"]["CF_Gway_RLDrSw"], cp.vl["CGW2"]["CF_Gway_RRDrSw"]])
+    ret.doorOpenAny = ret.doorOpen  # Display-only mirror for non-CAN-FD Hyundai cars.
 
     ret.seatbeltUnlatched = cp.vl["CGW1"]["CF_Gway_DrvSeatBeltSw"] == 0
 
@@ -723,6 +724,11 @@ class CarState(CarStateBase):
 
     if self.doors_seatbelts is not None:
       ret.doorOpen = self.doors_seatbelts["DRIVER_DOOR"] == 1
+      # Keep the existing driver-door control signal unchanged.
+      # doorOpenAny is only for the TPMS car icon on the UI.
+      ret.doorOpenAny = any(self.doors_seatbelts[door] == 1 for door in (
+        "DRIVER_DOOR", "PASSENGER_DOOR", "DRIVER_REAR_DOOR", "PASSENGER_REAR_DOOR"
+      ))
       ret.seatbeltUnlatched = self.doors_seatbelts["DRIVER_SEATBELT"] == 0
         
     gear = cp.vl[self.gear_msg_canfd]["GEAR"] if not self.use_accelerator else 0 if self.accelerator is None else self.accelerator["GEAR"]
