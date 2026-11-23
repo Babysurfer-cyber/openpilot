@@ -350,3 +350,57 @@ def test_local_receipt_expiry_is_not_extended_by_fresh_publishes_and_preserves_w
       await send_item(receiver, socket, update(manifest, "speed", {"road_limit_kph": 60}, sequence=9))
       assert typed_control(receiver)[1].speed.road_limit_kph == 60
   asyncio.run(scenario())
+
+
+def test_optional_route_traffic_sections_survive_websocket_and_cereal_roundtrip():
+  async def scenario():
+    async with receiver_client() as (receiver, client):
+      control, manifest = await negotiate(client)
+      route_ws = await open_item(client, manifest, "route")
+      status_ws = await open_item(client, manifest, "navigation_status")
+      await send_item(receiver, status_ws, update(manifest, "navigation_status", {
+        "guidance_active": True, "off_route": False, "route_present": True,
+      }))
+      await send_item(receiver, route_ws, update(manifest, "route", {
+        "total_distance_m": 20000, "remain_distance_m": 12600,
+        "traffic_sections": [
+          {"start_distance_m": 0, "length_m": 5000, "congestion": "good"},
+          {"start_distance_m": 5000, "length_m": 3000, "congestion": "bad"},
+          {"start_distance_m": 8000, "length_m": 4000, "congestion": "very_bad"},
+        ],
+      }))
+      raw, parsed = typed_control(receiver)
+      assert parsed is not None and parsed.guidance_active
+      assert raw["route"]["trafficPresent"] is True
+      assert raw["route"]["trafficSections"] == [
+        {"startDistanceM": 0, "lengthM": 5000, "congestionCode": 1},
+        {"startDistanceM": 5000, "lengthM": 3000, "congestionCode": 2},
+        {"startDistanceM": 8000, "lengthM": 4000, "congestionCode": 3},
+      ]
+      # A new route without traffic must NOT reuse congestion from the old one.
+      await send_item(receiver, route_ws, update(manifest, "route", {
+        "total_distance_m": 25000, "remain_distance_m": 18000,
+      }, sequence=2))
+      raw, _ = typed_control(receiver)
+      assert raw["route"]["trafficPresent"] is False
+      assert raw["route"]["trafficSections"] == []
+      await control.close()
+  asyncio.run(scenario())
+
+
+def test_route_congestion_validation_rejects_inconsistent_sections_in_cereal():
+  async def scenario():
+    async with receiver_client() as (receiver, client):
+      _, manifest = await negotiate(client)
+      route_ws = await open_item(client, manifest, "route")
+      await send_item(receiver, route_ws, update(manifest, "route", {
+        "total_distance_m": 20000, "remain_distance_m": 15000,
+        "traffic_sections": [
+          {"start_distance_m": 1000, "length_m": 3000, "congestion": "good"},
+          {"start_distance_m": 2000, "length_m": 3000, "congestion": "very_bad"},
+        ],
+      }))
+      raw, _ = typed_control(receiver)
+      assert raw["route"]["trafficPresent"] is False
+      assert raw["route"]["trafficSections"] == []
+  asyncio.run(scenario())
