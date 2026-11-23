@@ -569,6 +569,7 @@ class VCruiseCarrot:
     remote_speed_command = (self.carrot_cmd_index != self.carrot_cmd_index_last
                             and (self.carrot_cmd == "SPEED" or (self.carrot_cmd == "CRUISE" and self.carrot_arg == "GO")))
     auto_restore_speed = None
+    automatic_carrot_restore_target = None
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
     
@@ -790,10 +791,12 @@ class VCruiseCarrot:
           # ▼▼▼ [버그 픽스] 금고 복귀 로직은 실제로 당근크루즈가 완전히 '해제'될 때만 꺼내오도록 안으로 이동! ▼▼▼
           if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
             auto_restore_speed = v_cruise_kph
-            v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
+            # Keep the pre-coast set speed separate from the reduced coast
+            # speed. Mode 5 must not reapply the lower sync speed on a safe
+            # automatic return; this is a restore, not a driver + press.
+            automatic_carrot_restore_target = self._v_cruise_kph_at_brake
+            v_cruise_kph = max(v_cruise_kph, automatic_carrot_restore_target)
             self._v_cruise_kph_at_brake = 0
-
-            # Re-synchronize auto mode explicitly; a restore is not a driver + press.
             
           self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
     else:
@@ -812,6 +815,7 @@ class VCruiseCarrot:
         CS, CC, v_cruise_kph, physical_speed_button=physical_speed_button,
         manual_speed_change=physical_speed_button or remote_speed_command or pedal_speed_change,
         restore_speed=auto_restore_speed,
+        automatic_carrot_restore_target=automatic_carrot_restore_target,
       )
     self._auto_mode_active_last = False
     self._reset_auto_mode_session()
@@ -848,7 +852,7 @@ class VCruiseCarrot:
       pass
 
   def _update_auto_mode(self, CS, CC, v_cruise_kph, *, physical_speed_button,
-                        manual_speed_change, restore_speed):
+                        manual_speed_change, restore_speed, automatic_carrot_restore_target=None):
     cancel_held = ((self.button_prev == ButtonType.cancel and self.button_cnt > 0)
                    or any(b.type == ButtonType.cancel and b.pressed for b in CS.buttonEvents))
     if (not CC.enabled or CS.gearShifter != GearShifter.drive or not CS.cruiseState.available
@@ -885,6 +889,14 @@ class VCruiseCarrot:
     # canValid alone does not validate optional cached navigation messages.
     # Unknown navigation must neither change speed nor consume a road event.
     if not CS.canValid or not getattr(CS, 'navDataValid', False):
+      if automatic_carrot_restore_target is not None and not self.camera_pending:
+        # Unknown navigation must not keep the pre-coast speed as an
+        # artificial cap when returning to a driver's existing set speed.
+        # This changes the requested setpoint only; normal ACC/lead/curve
+        # speed planning still applies independently.
+        self.auto_sync_speed = None
+        self.auto_mode_needs_sync = False
+        self.auto_baseline_pending = True
       self.camera_pending = True
       if not getattr(CS, 'navDataValid', False):
         self.nav_limit_timer = 0
@@ -924,6 +936,20 @@ class VCruiseCarrot:
     )
     target_raw_limit = (speed_limit_pure if use_pure else
                         self._auto_road_limit(CS.speedLimit) if getattr(CS, 'speedLimitDataValid', False) else 0.0)
+
+    # An automatic Carrot Cruise exit restores the set speed captured on
+    # entry, rather than synchronizing mode 5 to the slower coasting speed.
+    # Preserve camera, section-control and tollgate holds, which must not
+    # be bypassed by an automatic set-speed restoration.
+    if (automatic_carrot_restore_target is not None
+        and not (self.camera_pending or section_active or map_source == 2
+                 or is_tollgate or self.prev_is_tollgate)):
+      self.auto_sync_speed = None
+      self.auto_mode_needs_sync = False
+      self.auto_prev_limit = target_raw_limit
+      self.auto_baseline_pending = target_raw_limit <= 0
+      self._add_log(f"Carrot Cruise AUTO: previous set speed restored ({v_cruise_kph:g} km/h)")
+      return v_cruise_kph
 
     if self.auto_can_resume:
       self.auto_mode_needs_sync = False
