@@ -1,8 +1,8 @@
 #pragma once
 
-// Display-only route progress. CarrotNM 1.30's existing v2 route stream
-// does not provide per-section congestion; unknown traffic is never colored
-// green, yellow, or red.
+// Display-only route progress. Optional per-section congestion from the
+// patched CarrotNM sender is validated and rendered separately in carrot.cc.
+// If traffic is absent or invalid, the original neutral/cyan progress remains.
 namespace route_progress {
 
 struct Snapshot {
