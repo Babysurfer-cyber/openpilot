@@ -3061,9 +3061,18 @@ public:
       int car_x = bx - (car_size / 2);
       int car_y = by - (car_size / 2) - 5; 
       
-      // Match the existing on-screen turn-indicator blink phase.
-      // Red during its lit phase, white during its unlit phase; all closed: white.
-      const bool show_red_door_icon = car_state.getDoorOpenAny() && _blinker_pulse;
+      // Independent door-open warning: red 0.5s, white 0.5s.
+      // Keep PR #34's four-door detection; restart the blink in red each time a door opens.
+      const bool door_open_any = car_state.getDoorOpenAny();
+      static bool was_door_open = false;
+      static double door_open_start_s = 0.0;
+      const double now_s = double(nanos_monotonic()) / 1e9;
+      if (door_open_any && !was_door_open) {
+        door_open_start_s = now_s;
+      }
+      was_door_open = door_open_any;
+      const bool show_red_door_icon = door_open_any &&
+                                      (std::fmod(now_s - door_open_start_s, 1.0) < 0.5);
       ui_draw_image(s, { car_x, car_y, car_size, car_size },
                     show_red_door_icon ? "ic_car_door_open" : "ic_car", 1.0f);
       // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
