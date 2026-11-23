@@ -1,6 +1,9 @@
 #include "selfdrive/ui/qt/onroad/onroad_home.h"
 
+#include <algorithm>
+
 #include <QPainter>
+#include <QRect>
 #include <QStackedLayout>
 
 
