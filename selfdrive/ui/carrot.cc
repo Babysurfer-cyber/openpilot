@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1071,6 +1072,9 @@ private:
     int nGoPosDist = 0;
     int nGoPosTime = 0;
     route_progress::Snapshot route_state;
+    struct CongestionSegment { int start_m; int length_m; int code; };
+    std::vector<CongestionSegment> route_traffic_segments;
+    bool route_traffic_valid = false;
 
     QString szSdiDescr = "";
     QString atc_type;
@@ -1158,6 +1162,8 @@ protected:
     // Use only current, matching route/status data; never retain stale UI progress.
     void updateRouteProgress(const SubMaster &sm) {
         route_state = {};
+        route_traffic_valid = false;
+        route_traffic_segments.clear();
         if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
         const auto nav = sm["carrotNavi"].getCarrotNavi();
         const auto status = nav.getNavigationStatus();
@@ -1167,9 +1173,31 @@ protected:
             status.getGuidanceActive(), status.getOffRoute(),
             status.getRoutePresent(), route.getMeta().getPresent(),
             route.getTotalDistanceM(), route.getRemainingDistanceM());
+
+        // Only render congestion carried in the SAME fresh, valid route.
+        // No re-use after route changes, expiration, disconnect or off-route.
+        if (!route_state.visible || !route.getTrafficPresent()) return;
+        const auto sections = route.getTrafficSections();
+        if (sections.size() == 0 || sections.size() > 128) return;
+        int previous_end = 0;
+        for (const auto section : sections) {
+            const int start = section.getStartDistanceM();
+            const int length = section.getLengthM();
+            const int code = section.getCongestionCode();
+            if (start < previous_end || length <= 0 ||
+                start > route_state.total_m || length > route_state.total_m - start ||
+                code < 0 || code > 3) {
+                route_traffic_segments.clear();
+                return;
+            }
+            route_traffic_segments.push_back({start, length, code});
+            previous_end = start + length;
+        }
+        route_traffic_valid = true;
     }
 
-    // Neutral route progress, NOT live traffic congestion. No vehicle control.
+    // Route progress is always display-only. Congestion colors are shown ONLY
+    // when validated, same-route section data are actually received.
     void drawRouteProgress(const UIState* s, int x, int y, int width) {
         if (!route_state.visible) return;
         nvgSave(s->vg);
@@ -1179,7 +1207,21 @@ protected:
         constexpr int height = 20;
         ui_fill_rect(s->vg, {x, y, width, height}, COLOR_GREY_ALPHA(130), 8);
         const int traveled_width = static_cast<int>(std::lround(width * route_state.fraction));
-        if (traveled_width > 0) {
+        if (route_traffic_valid) {
+            // The neutral background remains for uncovered/unknown sections.
+            for (const auto &segment : route_traffic_segments) {
+                if (segment.code == 0) continue;
+                NVGcolor color = segment.code == 1 ? nvgRGBA(0, 169, 104, 245) :
+                                 segment.code == 2 ? nvgRGBA(247, 184, 58, 245) :
+                                                     nvgRGBA(235, 80, 75, 245);
+                const int sx = x + static_cast<int>(std::lround(
+                    double(width) * segment.start_m / route_state.total_m));
+                const int ex = x + static_cast<int>(std::lround(
+                    double(width) * (segment.start_m + segment.length_m) / route_state.total_m));
+                if (ex > sx) ui_fill_rect(s->vg, {sx, y, ex - sx, height}, color);
+            }
+        } else if (traveled_width > 0) {
+            // Cyan is completed distance, not a free-flow traffic indicator.
             ui_fill_rect(s->vg, {x, y, traveled_width, height}, nvgRGBA(55, 174, 193, 235), 8);
         }
         const int marker_x = x + traveled_width;
@@ -1197,7 +1239,9 @@ protected:
         snprintf(label, sizeof(label), "진행 %.1f %s", route_state.traveled_m / unit_m, unit);
         ui_draw_text(s, x, y + 49, label, 31, COLOR_WHITE, BOLD);
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, x + width / 2, y + 49, "교통 미수신", 26, COLOR_GREY, BOLD);
+        ui_draw_text(s, x + width / 2, y + 49,
+                     route_traffic_valid ? "혼잡도 수신" : "혼잡정보 미연동",
+                     26, COLOR_GREY, BOLD);
         nvgTextAlign(s->vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
         snprintf(label, sizeof(label), "남은 %.1f %s", route_state.remaining_m / unit_m, unit);
         ui_draw_text(s, x + width, y + 49, label, 31, COLOR_WHITE, BOLD);
