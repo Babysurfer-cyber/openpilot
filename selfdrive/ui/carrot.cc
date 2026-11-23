@@ -1272,9 +1272,15 @@ protected:
             int bx = tbt_x + 100;
             int by = tbt_y + 67;
 
-            // Keep supported turn icons visible at full opacity regardless of ATC phase.
-            // Only the distance label below the icon fades as the turn approaches.
-            constexpr float icon_alpha = 1.0f;
+            // Show the maneuver icon whenever a maneuver is present, independently
+            // of ATC phase. Fade the icon by distance, never to complete invisibility:
+            // >= 2000 m: 25%; 1000 m: 62.5%; 0 m: 100% opacity.
+            float icon_alpha = 0.25f;
+            if (xDistToTurn <= 0) {
+              icon_alpha = 1.0f;
+            } else if (xDistToTurn < 2000) {
+              icon_alpha = 1.0f - (0.75f * static_cast<float>(xDistToTurn) / 2000.0f);
+            }
             {
               int off_x = 0;
               int off_y = 0;
@@ -1326,17 +1332,8 @@ protected:
               if (xDistToTurn < 1609) sprintf(str, "%d ft", (int)(xDistToTurn * 3.28084));
               else sprintf(str, "%.1f mi", xDistToTurn / 1609.344f);
             }
-            // Fade the upcoming turn/ATC distance, not the maneuver icon.
-            // >= 2000 m: 25% opacity; 1000 m: 62.5%; 0 m: 100%.
-            // Keep distant warnings legible rather than fully transparent.
-            float distance_alpha = 0.25f;
-            if (xDistToTurn <= 0) {
-              distance_alpha = 1.0f;
-            } else if (xDistToTurn < 2000) {
-              distance_alpha = 1.0f - (0.75f * static_cast<float>(xDistToTurn) / 2000.0f);
-            }
-            ui_draw_text(s, bx, by + 95, str, 40,
-                         COLOR_WHITE_ALPHA(static_cast<int>(255.0f * distance_alpha + 0.5f)), BOLD);
+            // Distance text stays fully legible; only the icon fades by distance.
+            ui_draw_text(s, bx, by + 95, str, 40, COLOR_WHITE, BOLD);
         }
         nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
         // Do not render any description below the remaining-distance text.
