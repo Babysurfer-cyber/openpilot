@@ -1272,14 +1272,14 @@ protected:
             int bx = tbt_x + 100;
             int by = tbt_y + 67;
 
-            // Show the maneuver icon whenever a maneuver is present, independently
-            // of ATC phase. Fade the icon by distance, never to complete invisibility:
-            // >= 2000 m: 25%; 1000 m: 62.5%; 0 m: 100% opacity.
-            float icon_alpha = 0.25f;
+            // Keep maneuver visibility independent of the ATC phase.
+            // > 1000 m: invisible. At 1000 m: 25% opacity.
+            // Fade linearly up to 100% at the maneuver (0 m).
+            float icon_alpha = 0.0f;
             if (xDistToTurn <= 0) {
               icon_alpha = 1.0f;
-            } else if (xDistToTurn < 2000) {
-              icon_alpha = 1.0f - (0.75f * static_cast<float>(xDistToTurn) / 2000.0f);
+            } else if (xDistToTurn <= 1000) {
+              icon_alpha = 1.0f - (0.75f * static_cast<float>(xDistToTurn) / 1000.0f);
             }
             {
               int off_x = 0;
