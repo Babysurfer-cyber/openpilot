@@ -21,15 +21,9 @@ ExperimentalButton::ExperimentalButton(QWidget *parent) : experimental_mode(fals
 
   engage_img = loadPixmap("../assets/img_chffr_wheel.png", {img_size, img_size});
   experimental_img = loadPixmap("../assets/img_experimental.svg", {img_size, img_size});
-  QObject::connect(this, &QPushButton::clicked, this, &ExperimentalButton::changeMode);
-}
-
-void ExperimentalButton::changeMode() {
-  const auto cp = (*uiState()->sm)["carParams"].getCarParams();
-  bool can_change = hasLongitudinalControl(cp) && params.getBool("ExperimentalModeConfirmed");
-  if (can_change) {
-    params.putBool("ExperimentalMode", !experimental_mode);
-  }
+  // Status icon only: do not let touches change ExperimentalMode.
+  // Pass taps through to the camera without triggering button clicks.
+  setAttribute(Qt::WA_TransparentForMouseEvents, true);
 }
 
 void ExperimentalButton::updateState(const UIState &s) {
