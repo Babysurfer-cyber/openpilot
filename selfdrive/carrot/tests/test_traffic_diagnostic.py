@@ -112,3 +112,21 @@ def test_no_sections_do_not_claim_colored_coverage():
   assert r["traffic_covered_percent"] is None
   assert r["traffic_uncovered_m"] is None
   assert r["traffic_lengths_m"] is None
+
+def test_v5_traffic_candidate_coverage_visible_without_route_geometry():
+  s = snapshot([{"start_distance_m": 0, "length_m": 12000, "congestion": "good"}])
+  route = s["items"]["route"]["value"]
+  route.update({
+    "traffic_source": "naver_route_traffics",
+    "traffic_guidance_covered_m": 8000,
+    "traffic_route_sections_covered_m": 9000,
+    "traffic_route_traffics_covered_m": 12000,
+    "traffic_selected_covered_m": 12000,
+  })
+  result = summarize_traffic(s)
+  assert result["traffic_source"] == "naver_route_traffics"
+  assert result["traffic_guidance_covered_m"] == 8000
+  assert result["traffic_route_sections_covered_m"] == 9000
+  assert result["traffic_route_traffics_covered_m"] == 12000
+  assert result["traffic_selected_covered_m"] == 12000
+  assert "latitude" not in result and "longitude" not in result
