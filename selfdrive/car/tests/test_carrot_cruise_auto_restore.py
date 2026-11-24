@@ -208,3 +208,43 @@ def test_new_limit_on_exact_exit_frame_still_uses_auto_mode_calculation():
   result = run_auto(helper, CS, CC, backed_up=100, coast=55)
   assert result == pytest.approx(80)
   assert helper.auto_prev_limit == pytest.approx(60)
+
+def test_vturn_automatic_exit_uses_tracked_auto_speed_not_initial_backup():
+  helper, (CS, CC) = make_helper(), make_inputs(navSpeedLimit=60)
+  helper.frame = 1
+  helper.current_driving_mode = 5
+  helper.carrot_cruise_active = True
+  helper.prev_carrot_active = True
+  helper.carrot_cruise_min_timer = 0
+  helper._v_cruise_kph_at_brake = 100
+  helper._carrot_auto_shadow_target = 80
+  helper.auto_prev_limit = 60
+  helper.v_ego_kph_set = 55
+  helper.desiredSource = "VTRUN"
+  helper.desiredSpeed = 55
+  helper.d_rel = 0
+  helper.v_lead_kph = 30
+  helper._paddle_mode = 0
+  helper._paddle_decel_active = False
+  helper._prepare_buttons = lambda _cs, speed: (speed, 0, False)
+  helper._carrot_command = lambda speed, button, is_long: (speed, button, is_long)
+  helper._update_cruise_state = lambda _cs, _cc, speed: speed
+
+  result = helper._update_cruise_buttons(CS, CC, 55)
+  assert not helper.carrot_cruise_active
+  assert result == pytest.approx(80)
+  assert helper._v_cruise_kph_at_brake == 0
+  assert helper._carrot_auto_shadow_target is None
+
+
+def test_gas_triggered_automatic_exit_does_not_learn_offset_or_force_old_target():
+  helper, (CS, CC) = make_helper(), make_inputs(gasPressed=True, navSpeedLimit=60)
+  helper._carrot_auto_shadow_target = 80
+  helper.auto_prev_limit = 60
+  result = helper._update_auto_mode(
+    CS, CC, 100, physical_speed_button=False, manual_speed_change=True,
+    restore_speed=55, automatic_carrot_restore_target=100,
+  )
+  assert result == pytest.approx(80)
+  assert helper.auto_speed_offset == 0
+  assert helper.auto_sync_speed is None
