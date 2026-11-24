@@ -56,6 +56,8 @@ public slots:
   void showDriverView(bool show);
   void showSidebar(bool show);
   void showMapPanel(bool show);
+  void showDriverCameraPreview();
+  void hideDriverCameraPreview();
 
 protected:
   void mousePressEvent(QMouseEvent* e) override;
@@ -67,6 +69,8 @@ private:
   OnroadWindow *onroad;
   BodyWindow *body;
   DriverViewWindow *driver_view;
+  CameraWidget *driver_camera_preview;
+  QTimer *driver_camera_preview_timer;
   QStackedLayout *slayout;
 
 private slots:
