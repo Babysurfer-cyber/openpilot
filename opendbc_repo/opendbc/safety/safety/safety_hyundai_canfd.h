@@ -226,6 +226,8 @@ static uint8_t hyundai_ev6_stock_stalk[8] = {0};
 static uint32_t hyundai_ev6_stalk_rx_us = 0U;
 static uint32_t hyundai_ev6_stalk_tx_us = 0U;
 static bool hyundai_ev6_stock_stalk_idle = false;
+static bool hyundai_ev6_gear_park = false;
+static uint32_t hyundai_ev6_gear_rx_us = 0U;
 
 // EV6 2022 stock BLINKER_STALKS (0x3C1): CRC8 poly 0x1D,
 // init 0, xorout 0x65 over bytes 1..7; verified against rlog(3)/(6)/(7).
@@ -552,6 +554,17 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *to_push) {
     const int stock_scc_bus = hyundai_canfd_hda2 ? 1 : 0;
     stock_ecu_detected = stock_ecu_detected || ((addr == 0x1a0) && (bus == stock_scc_bus));
   }
+  // EV6 accelerator/gear message (0x35): byte24 bits0..2 are GEAR.
+  // Genuine 2022 EV6 captures: 0=P, 5=D, 6=N, 7=R. Require a
+  // fresh, checksum-valid P frame on bus0 so this experiment stays
+  // parked even if host controls are currently enabled.
+  if (hyundai_ev6_blinker_stalk_test && (addr == 0x35) && (bus == 0)) {
+    bool valid = (GET_LEN(to_push) == 32U) &&
+                 (hyundai_canfd_get_checksum(to_push) == hyundai_common_canfd_compute_checksum(to_push));
+    hyundai_ev6_gear_park = valid && ((GET_BYTE(to_push, 24) & 0x7U) == 0U);
+    hyundai_ev6_gear_rx_us = valid ? microsecond_timer_get() : 0U;
+  }
+
   // Remember an authentic, idle stock 0x3C1; do not forge a lever over
   // a human's active lever. The test transmit must follow a fresh stock frame.
   if (hyundai_ev6_blinker_stalk_test && (addr == 0x3C1) && (bus == 0) && (GET_LEN(to_push) == 8U)) {
@@ -612,7 +625,9 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
     bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
                    (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
                    !vehicle_moving && brake_pressed && !gas_pressed &&
-                   !controls_allowed && hyundai_ev6_stock_stalk_idle &&
+                   hyundai_ev6_gear_park && (hyundai_ev6_gear_rx_us != 0U) &&
+                   (get_ts_elapsed(now, hyundai_ev6_gear_rx_us) <= 120000U) &&
+                   hyundai_ev6_stock_stalk_idle &&
                    (hyundai_ev6_stalk_rx_us != 0U) &&
                    (get_ts_elapsed(now, hyundai_ev6_stalk_rx_us) <= 120000U) &&
                    ((hyundai_ev6_stalk_tx_us == 0U) ||
@@ -783,6 +798,8 @@ static safety_config hyundai_canfd_init(uint16_t param) {
   hyundai_ev6_stalk_rx_us = 0U;
   hyundai_ev6_stalk_tx_us = 0U;
   hyundai_ev6_stock_stalk_idle = false;
+  hyundai_ev6_gear_park = false;
+  hyundai_ev6_gear_rx_us = 0U;
   for (int i = 0; i < 8; i++) {
     hyundai_ev6_stock_stalk[i] = 0U;
   }
