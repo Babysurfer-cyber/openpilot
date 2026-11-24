@@ -285,6 +285,7 @@ class CarController(CarControllerBase):
     result = {
       "test": "EV6_SPAS2_PASSIVE_NO_TX",
       "selected": "left" if side == 1 else "right",
+      "mono_time_ns": int(now_nanos),
       "desired_blinker_control": 3 if side == 1 else 4,
       "can_tx_count": 0,
       "lat_active": bool(CC.latActive),
