@@ -220,7 +220,7 @@ class CarController(CarControllerBase):
     params.put_int("Ev6BlinkerTest", 0)
     parked = (CS.out.gearShifter == structs.CarState.GearShifter.park and
               CS.out.standstill and CS.out.vEgo < 0.05 and
-              CS.out.brakePressed and not CC.enabled and
+              CS.out.brakePressed and
               not CS.out.steeringPressed and
               not CS.out.leftBlinker and not CS.out.rightBlinker)
     if not parked or self.frame - self.ev6_last_blinker_trial_frame < 500:
