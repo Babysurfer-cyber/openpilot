@@ -524,14 +524,28 @@ class CarrotPlanner:
 
     self.events = Events()
     
-    # === [추가] 제한속도 변경 감지 및 안내음 재생 ===
-    if os.path.isfile("/dev/shm/carrot_prompt"):
-      self.events.add(EventName.audio10)  # 띠링~ 소리 발생!
+    # AUTO(5) -> NORM(3) by gap-button long press: play the existing
+    # tici_disengaged.wav through EventName.audio0 -> longDisengaged.
+    # Give this transition priority over a pending auto speed-change chime.
+    auto_mode_off_file = "/dev/shm/carrot_auto_mode_off"
+    speed_change_file = "/dev/shm/carrot_prompt"
+    if os.path.isfile(auto_mode_off_file):
+      self.events.add(EventName.audio0)
       try:
-        os.remove("/dev/shm/carrot_prompt") # 소리 냈으면 신호탄 파일 삭제
-      except Exception:
+        os.remove(auto_mode_off_file)
+      except OSError:
         pass
-    # ====================================================
+      # Do not immediately play a stale mode-5 speed-change bell after exit.
+      try:
+        os.remove(speed_change_file)
+      except FileNotFoundError:
+        pass
+    elif os.path.isfile(speed_change_file):
+      self.events.add(EventName.audio10)
+      try:
+        os.remove(speed_change_file)
+      except OSError:
+        pass
 
     carstate = sm['carState']
     vCluRatio = carstate.vCluRatio

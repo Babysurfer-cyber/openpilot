@@ -513,3 +513,171 @@ def test_ic_mixed_source_survives_unknown_class_even_after_a_high_auto_target(au
   drive.state.navLinkClass = 0
   assert step(drive, 1.01) == 110.
   assert helper.auto_prev_limit == 100.
+
+
+def test_300m_route_congestion_uses_auto_mode_notice_once(auto_drive, monkeypatch):
+  """Confirmed jam uses the existing AUTO chime event without announcement text."""
+  drive = auto_drive
+  helper = configure(drive, speed=110., pure=100., mixed=100., prior=100.)
+  drive.state.vEgo = drive.state.vEgoCluster = 25.  # 90 km/h
+  chimes = []
+  monkeypatch.setattr(helper, '_auto_mode_chime', lambda: chimes.append(True))
+
+  nav = custom.CarrotNaviState.new_message(
+    schemaVersion=1, sessionId='test-congestion-session', connected=True,
+    navigationStatus={
+      'meta': {'present': True, 'sequence': 1, 'receivedMonoTimeNanos': 1_000_000_000},
+      'guidanceActive': True, 'offRoute': False, 'routePresent': True,
+    },
+    route={
+      'meta': {'present': True, 'sequence': 1, 'receivedMonoTimeNanos': 1_000_000_000},
+      'totalDistanceM': 20_000, 'remainingDistanceM': 11_300, 'trafficPresent': True,
+      'trafficSections': [
+        {'startDistanceM': 0, 'lengthM': 9_000, 'congestionCode': 1},
+        {'startDistanceM': 9_000, 'lengthM': 5_000, 'congestionCode': 3},
+        {'startDistanceM': 14_000, 'lengthM': 6_000, 'congestionCode': 1},
+      ],
+    },
+  )
+  drive.sm.data['carrotNavi'] = nav
+  drive.sm.seen = {'carrotNavi': True}
+  drive.sm.alive['carrotNavi'] = drive.sm.valid['carrotNavi'] = True
+
+  assert step(drive, 1.0) > 80.
+  assert not chimes
+
+  nav.route.meta.sequence = 2
+  nav.route.meta.receivedMonoTimeNanos = 1_100_000_000
+  assert step(drive, 1.1) == 80.
+  assert len(chimes) == 1  # No new text or announcement
+  assert helper.log == 'Auto congestion cap: 80 km/h'
+
+  nav.route.meta.sequence = 3
+  nav.route.meta.receivedMonoTimeNanos = 1_200_000_000
+  assert step(drive, 1.2) == 80.
+  assert len(chimes) == 1  # No repeated chime or AUTO blink.
+
+
+
+def _capture_mode5_alerts(helper, monkeypatch):
+  """Spy on the existing prompt/chime pathways without filesystem side effects."""
+  alerts = []
+
+  def prompt(message):
+    helper._auto_mode_notification_sent = True
+    alerts.append(('prompt', message))
+
+  def chime():
+    helper._auto_mode_notification_sent = True
+    alerts.append(('chime', None))
+
+  monkeypatch.setattr(helper, '_auto_mode_prompt', prompt)
+  monkeypatch.setattr(helper, '_auto_mode_chime', chime)
+  return alerts
+
+
+def test_auto_mode_chimes_once_on_toll_exit(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=120., pure=100., mixed=100., prior=100.)
+  alerts = _capture_mode5_alerts(helper, monkeypatch)
+
+  drive.state.navTollExist = 1
+  assert step(drive, 1.0) == 95.
+  assert [kind for kind, _ in alerts] == ['prompt']  # Existing entry beep.
+
+  assert step(drive, 1.01) == 95.
+  assert len(alerts) == 1
+
+  drive.state.navTollExist = 0
+  assert step(drive, 1.02) == 110.
+  assert [kind for kind, _ in alerts] == ['prompt', 'chime']  # Added exit beep.
+  assert helper.log.startswith('Auto target change:')  # HUD AUTO blink.
+
+  assert step(drive, 1.03) == 110.
+  assert len(alerts) == 2  # No repeat at steady speed.
+
+
+def test_mode5_camera_release_uses_existing_beep_once(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=110., pure=80., mixed=50., prior=100.)
+  alerts = _capture_mode5_alerts(helper, monkeypatch)
+  drive.state.mapSource = 2
+  drive.state.navSectionValid = True
+  drive.state.navSectionActive = False
+
+  assert step(drive, 1.0) == 110.
+  assert not alerts  # Camera approach holds the current target.
+
+  drive.state.navSectionActive = True
+  assert step(drive, 1.01) == 95.
+  assert [kind for kind, _ in alerts] == ['prompt']
+  assert step(drive, 1.02) == 95.
+  assert len(alerts) == 1  # The fallback must not play a second chime.
+
+
+def test_manual_speed_change_does_not_fire_auto_mode_beep(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=100., pure=100., mixed=100., prior=100.)
+  alerts = _capture_mode5_alerts(helper, monkeypatch)
+  manual_speed = tap(drive, 1.0)
+  assert manual_speed > 100.
+  assert not alerts
+
+
+
+@pytest.mark.parametrize(('initial_mode', 'next_mode', 'disengage_chimes'), (
+  (5, 3, 1),  # AUTO -> NORM plays the requested tici_disengaged.wav
+  (3, 5, 0),  # NORM -> AUTO must retain its separate entry chime
+  (2, 3, 0),  # Other modes switching to NORM must not play AUTO-off
+))
+def test_gap_long_press_auto_to_norm_uses_disengage_chime_once(
+  auto_drive, monkeypatch, initial_mode, next_mode, disengage_chimes,
+):
+  drive = auto_drive
+  helper = drive.helper
+  drive.settings['MyDrivingMode'] = initial_mode
+  helper.current_driving_mode = initial_mode
+
+  def persist_mode(name, value):
+    if name == 'MyDrivingMode':
+      drive.settings[name] = value
+
+  monkeypatch.setattr(helper.params, 'put_int_nonblocking', persist_mode)
+  played = []
+  monkeypatch.setattr(helper, '_auto_mode_off_chime', lambda: played.append(True))
+
+  # At the gap-button long-press threshold, _prepare_buttons generates only
+  # one gapAdjustCruise event, even if the driver continues holding the button.
+  helper.button_prev = car.CarState.ButtonEvent.Type.gapAdjustCruise
+  helper.button_long_time = helper._cruise_button_long_delay + 30
+  helper.button_cnt = helper.button_long_time
+  helper.long_pressed = False
+  step(drive, 1.0)
+
+  assert drive.settings['MyDrivingMode'] == next_mode
+  assert helper.current_driving_mode == next_mode
+  assert len(played) == disengage_chimes
+
+  for i in range(1, 8):
+    step(drive, 1.0 + i * .01)
+  assert len(played) == disengage_chimes
+
+  drive.state.buttonEvents = [car.CarState.ButtonEvent(type='gapAdjustCruise', pressed=False)]
+  step(drive, 1.1)
+  drive.state.buttonEvents = []
+  assert len(played) == disengage_chimes  # No duplicate on button release.
+
+
+def test_gap_short_press_does_not_play_auto_off_chime(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = drive.helper
+  played = []
+  monkeypatch.setattr(helper, '_auto_mode_off_chime', lambda: played.append(True))
+  helper.button_prev = car.CarState.ButtonEvent.Type.gapAdjustCruise
+  helper.button_cnt = 1
+  helper.long_pressed = False
+  drive.state.buttonEvents = [car.CarState.ButtonEvent(type='gapAdjustCruise', pressed=False)]
+  step(drive, 1.0)
+
+  assert helper.current_driving_mode == 5
+  assert not played

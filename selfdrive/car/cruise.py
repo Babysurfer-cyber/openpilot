@@ -5,6 +5,7 @@ import numpy as np
 from cereal import car, log
 from openpilot.common.conversions import Conversions as CV
 from openpilot.selfdrive.car.can_cruise_recovery import CanErrorCruiseRecovery
+from openpilot.selfdrive.carrot.route_congestion_cruise import RouteCongestionCruiseCap
 from opendbc.car.hyundai.values import HyundaiFlags
 
 from opendbc.car import structs
@@ -228,6 +229,10 @@ class VCruiseCarrot:
     self.AutoSpeedUptoRoadSpeedLimit = 0.0
 
     self.current_driving_mode = self.params.get_int("MyDrivingMode")
+    self.route_congestion_cap = RouteCongestionCruiseCap()
+    self._auto_mode_manual_speed_change = False
+    self._auto_mode_notification_sent = False
+    self._auto_mode_automatic_target_change = False
     self.auto_speed_offset = 10.0
     self._auto_mode_active_last = False
     self._reset_auto_mode_session()
@@ -292,6 +297,8 @@ class VCruiseCarrot:
 
   def update_v_cruise(self, CS, sm, is_metric):
     self._add_log("")
+    self._auto_mode_notification_sent = False
+    self._auto_mode_automatic_target_change = False
     self.update_params(is_metric)
     self.frame += 1
     if CS.gearShifter != GearShifter.drive:
@@ -337,6 +344,43 @@ class VCruiseCarrot:
     recovery_user_command = (self.carrot_cmd_index != self.carrot_cmd_index_last
                              and self.carrot_cmd in ("CRUISE", "SPEED"))
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
+
+    # Naver route congestion is a low-confidence preview, not an obstacle
+    # sensor. Only mode 5 with engaged cruise may lower the requested setpoint,
+    # after two separate fresh navigation route messages confirm the same jam.
+    v_cruise_kph, jam_reduced = self.route_congestion_cap.update(
+      float(v_cruise_kph), float(CS.vEgo) * CV.MS_TO_KPH, sm,
+      engaged=(self.current_driving_mode == 5 and CC.enabled and CS.cruiseState.available
+               and CS.gearShifter == GearShifter.drive and CS.canValid
+               and not CS.brakePressed and not CS.regenBraking
+               and not self._cruise_cancel_state and self._activate_cruise >= 0
+               and (not self.CP.pcmCruise or self.speed_from_pcm != 1)),
+      manual_speed_change=self._auto_mode_manual_speed_change,
+      gas_pressed=CS.gasPressed,
+    )
+    if jam_reduced:
+      # The navigation-triggered cap is another automatic mode-5 target
+      # change. The shared notification below avoids double chimes if a
+      # camera/road-limit change happened on the same update.
+      self._add_log("Auto congestion cap: 80 km/h")
+
+    # Notify once for every *actual* automatic mode-5 set-speed change:
+    # road limit/camera, tollgate entry/exit, and upcoming congestion.
+    # Existing mode-5 prompts already issue audio10 through CarrotServ.
+    # Emit a direct audio10 only when no prompt was sent on this update.
+    # Do not chime for a manual speed choice, a disengaged cruise, or a
+    # policy which leaves the requested target unchanged.
+    if ((self._auto_mode_automatic_target_change or jam_reduced)
+        and not self._auto_mode_notification_sent
+        and not self._auto_mode_manual_speed_change
+        and self.current_driving_mode == 5 and CC.enabled and CS.cruiseState.available
+        and CS.gearShifter == GearShifter.drive and CS.canValid
+        and not CS.brakePressed and not CS.regenBraking and not self._cruise_cancel_state
+        and self._activate_cruise >= 0):
+      if not jam_reduced:
+        # The HUD uses this event to blink AUTO even without a text prompt.
+        self._add_log(f"Auto target change: {self.v_cruise_kph:g} -> {float(v_cruise_kph):g} km/h")
+      self._auto_mode_chime()
 
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
@@ -703,6 +747,11 @@ class VCruiseCarrot:
         new_mode = 5 if current_mode == 3 else 3
         self.params.put_int_nonblocking("MyDrivingMode", new_mode)
         self.current_driving_mode = new_mode
+        if current_mode == 5 and new_mode == 3:
+          # This callback runs only once at the long-press threshold.
+          # A dedicated event plays tici_disengaged.wav, never the ordinary
+          # auto speed-change bell; no new navigation text is displayed.
+          self._auto_mode_off_chime()
 
       elif button_type == ButtonType.lfaButton:
         useLaneLineSpeed = max(1, self.useLaneLineSpeed)
@@ -811,12 +860,22 @@ class VCruiseCarrot:
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     if self.current_driving_mode == 5:
       pedal_speed_change = CS.gasPressed and v_cruise_kph != before_state_speed
-      return self._update_auto_mode(
+      self._auto_mode_manual_speed_change = physical_speed_button or remote_speed_command or pedal_speed_change
+      automatic_target = self._update_auto_mode(
         CS, CC, v_cruise_kph, physical_speed_button=physical_speed_button,
-        manual_speed_change=physical_speed_button or remote_speed_command or pedal_speed_change,
+        manual_speed_change=self._auto_mode_manual_speed_change,
         restore_speed=auto_restore_speed,
         automatic_carrot_restore_target=automatic_carrot_restore_target,
       )
+      # Compare the policy output with the speed after driver/button and
+      # ordinary cruise-state handling. Do not treat those manual changes as
+      # automatic mode-5 decisions.
+      self._auto_mode_automatic_target_change = (
+        not self._auto_mode_manual_speed_change and math.isfinite(automatic_target)
+        and math.isfinite(v_cruise_kph) and abs(automatic_target - v_cruise_kph) >= 0.5
+      )
+      return automatic_target
+    self._auto_mode_manual_speed_change = False
     self._auto_mode_active_last = False
     self._reset_auto_mode_session()
     return self._auto_speed_up(v_cruise_kph)
@@ -844,11 +903,33 @@ class VCruiseCarrot:
   def _auto_road_limit(value):
     return float(value) if math.isfinite(value) and 30 <= value <= 160 else 0.0
 
-  @staticmethod
-  def _auto_mode_prompt(text):
+  def _auto_mode_prompt(self, text):
+    # CarrotServ consumes the text and emits one audio10 chime.
+    # Mark this cycle before the direct-chime fallback is considered.
     try:
       with open("/dev/shm/carrot_prompt_text", "w") as f:
         f.write(text)
+      self._auto_mode_notification_sent = True
+    except OSError:
+      pass
+
+  def _auto_mode_chime(self):
+    # Reuse the existing CarrotPlanner audio10 event, without adding
+    # navigation text or another audio source.
+    try:
+      with open("/dev/shm/carrot_prompt", "w"):
+        pass
+      self._auto_mode_notification_sent = True
+    except OSError:
+      pass
+
+  @staticmethod
+  def _auto_mode_off_chime():
+    # CarrotPlanner translates this one-shot marker to EventName.audio0,
+    # whose existing soundd mapping plays tici_disengaged.wav once.
+    try:
+      with open("/dev/shm/carrot_auto_mode_off", "w"):
+        pass
     except OSError:
       pass
 

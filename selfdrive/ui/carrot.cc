@@ -2203,6 +2203,7 @@ public:
 
     QString szPosRoadName = "";
     QString szPosRoadName_last = ""; // 💡 [추가] 이전 안내 텍스트 기억용
+    QString auto_mode_log_last = ""; // 내비 문구가 덮여도 자동 속도 변경 표시 유지
     int     nRoadLimitSpeed = 30;
     int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
     int     myDrivingMode_last = 1;    // 💡 [핵심 추가] 이전 드라이빙 모드 기억용
@@ -2326,6 +2327,20 @@ public:
             if (szPosRoadName != szPosRoadName_last && szPosRoadName.contains("🔔")) {
                 trigger_blink = true;
             }
+            // The navigation road name can replace transient bell text.
+            // For events with no new text (e.g. toll exit, route congestion),
+            // use the speed-change log to blink AUTO on the same audio10 event.
+            const QString auto_mode_log = QString::fromStdString(car_state.getLogCarrot());
+            if (auto_mode_log != auto_mode_log_last &&
+                (auto_mode_log.startsWith("Auto congestion cap:") ||
+                 auto_mode_log.startsWith("Auto target change:") ||
+                 auto_mode_log.startsWith("Auto speed:") ||
+                 auto_mode_log.startsWith("Tollgate IN:"))) {
+                trigger_blink = true;
+            }
+            auto_mode_log_last = auto_mode_log;
+        } else {
+            auto_mode_log_last = "";
         }
 
         if (trigger_blink) {
