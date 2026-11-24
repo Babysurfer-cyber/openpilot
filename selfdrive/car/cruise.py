@@ -355,8 +355,11 @@ class VCruiseCarrot:
       gas_pressed=CS.gasPressed,
     )
     if jam_reduced:
-      self._add_log("Route congestion ahead: cruise <=80 km/h")
-      self._auto_mode_prompt("정체 구간 300m 이내: 크루즈 80km/h 이하 🔔")
+      # Reuse the mode-5 speed-change chime (audio10) and AUTO blink.
+      # The log also lets the HUD blink if the short-lived CarrotMan prompt
+      # message is replaced by a live navigation road name.
+      self._add_log("Auto congestion cap: 80 km/h")
+      self._auto_mode_prompt("오토 속도 변경: 정체 구간 300m 앞 → 80km/h 🔔")
 
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
