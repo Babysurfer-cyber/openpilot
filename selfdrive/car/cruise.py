@@ -5,6 +5,7 @@ import numpy as np
 from cereal import car, log
 from openpilot.common.conversions import Conversions as CV
 from openpilot.selfdrive.car.can_cruise_recovery import CanErrorCruiseRecovery
+from openpilot.selfdrive.carrot.route_congestion_cruise import RouteCongestionCruiseCap
 from opendbc.car.hyundai.values import HyundaiFlags
 
 from opendbc.car import structs
@@ -228,6 +229,8 @@ class VCruiseCarrot:
     self.AutoSpeedUptoRoadSpeedLimit = 0.0
 
     self.current_driving_mode = self.params.get_int("MyDrivingMode")
+    self.route_congestion_cap = RouteCongestionCruiseCap()
+    self._auto_mode_manual_speed_change = False
     self.auto_speed_offset = 10.0
     self._auto_mode_active_last = False
     self._reset_auto_mode_session()
@@ -337,6 +340,23 @@ class VCruiseCarrot:
     recovery_user_command = (self.carrot_cmd_index != self.carrot_cmd_index_last
                              and self.carrot_cmd in ("CRUISE", "SPEED"))
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
+
+    # Naver route congestion is a low-confidence preview, not an obstacle
+    # sensor. Only mode 5 with engaged cruise may lower the requested setpoint,
+    # after two separate fresh navigation route messages confirm the same jam.
+    v_cruise_kph, jam_reduced = self.route_congestion_cap.update(
+      float(v_cruise_kph), float(CS.vEgo) * CV.MS_TO_KPH, sm,
+      engaged=(self.current_driving_mode == 5 and CC.enabled and CS.cruiseState.available
+               and CS.gearShifter == GearShifter.drive and CS.canValid
+               and not CS.brakePressed and not CS.regenBraking
+               and not self._cruise_cancel_state and self._activate_cruise >= 0
+               and (not self.CP.pcmCruise or self.speed_from_pcm != 1)),
+      manual_speed_change=self._auto_mode_manual_speed_change,
+      gas_pressed=CS.gasPressed,
+    )
+    if jam_reduced:
+      self._add_log("Route congestion ahead: cruise <=80 km/h")
+      self._auto_mode_prompt("정체 구간 100m 이내: 크루즈 80km/h 이하 🔔")
 
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
@@ -811,12 +831,14 @@ class VCruiseCarrot:
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     if self.current_driving_mode == 5:
       pedal_speed_change = CS.gasPressed and v_cruise_kph != before_state_speed
+      self._auto_mode_manual_speed_change = physical_speed_button or remote_speed_command or pedal_speed_change
       return self._update_auto_mode(
         CS, CC, v_cruise_kph, physical_speed_button=physical_speed_button,
-        manual_speed_change=physical_speed_button or remote_speed_command or pedal_speed_change,
+        manual_speed_change=self._auto_mode_manual_speed_change,
         restore_speed=auto_restore_speed,
         automatic_carrot_restore_target=automatic_carrot_restore_target,
       )
+    self._auto_mode_manual_speed_change = False
     self._auto_mode_active_last = False
     self._reset_auto_mode_session()
     return self._auto_speed_up(v_cruise_kph)
