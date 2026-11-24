@@ -337,7 +337,7 @@ class CarController(CarControllerBase):
         result["preview_idle_hex_NO_TX"] = bytes(baseline).hex()
         result["preview_autopark_like_hex_NO_TX"] = bytes(variant).hex()
         result["state"] = "prepared_only_not_transmitted"
-      except (KeyError, ValueError, RuntimeError) as exc:
+      except (KeyError, ValueError, RuntimeError, IndexError, TypeError) as exc:
         result["state"] = "preview_build_error"
         result["error"] = str(exc)[:160]
     else:
