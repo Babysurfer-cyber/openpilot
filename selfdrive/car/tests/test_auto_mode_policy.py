@@ -513,3 +513,48 @@ def test_ic_mixed_source_survives_unknown_class_even_after_a_high_auto_target(au
   drive.state.navLinkClass = 0
   assert step(drive, 1.01) == 110.
   assert helper.auto_prev_limit == 100.
+
+
+def test_300m_route_congestion_uses_auto_mode_notice_once(auto_drive, monkeypatch):
+  """Confirmed traffic cap must use the existing mode-5 bell-text/chime path once."""
+  drive = auto_drive
+  helper = configure(drive, speed=110., pure=100., mixed=100., prior=100.)
+  drive.state.vEgo = drive.state.vEgoCluster = 25.  # 90 km/h
+  prompts = []
+  monkeypatch.setattr(helper, '_auto_mode_prompt', prompts.append)
+
+  nav = custom.CarrotNaviState.new_message(
+    schemaVersion=1, sessionId='test-congestion-session', connected=True,
+    navigationStatus={
+      'meta': {'present': True, 'sequence': 1, 'receivedMonoTimeNanos': 1_000_000_000},
+      'guidanceActive': True, 'offRoute': False, 'routePresent': True,
+    },
+    route={
+      'meta': {'present': True, 'sequence': 1, 'receivedMonoTimeNanos': 1_000_000_000},
+      'totalDistanceM': 20_000, 'remainingDistanceM': 11_300, 'trafficPresent': True,
+      'trafficSections': [
+        {'startDistanceM': 0, 'lengthM': 9_000, 'congestionCode': 1},
+        {'startDistanceM': 9_000, 'lengthM': 5_000, 'congestionCode': 3},
+        {'startDistanceM': 14_000, 'lengthM': 6_000, 'congestionCode': 1},
+      ],
+    },
+  )
+  drive.sm.data['carrotNavi'] = nav
+  drive.sm.seen = {'carrotNavi': True}
+  drive.sm.alive['carrotNavi'] = drive.sm.valid['carrotNavi'] = True
+
+  assert step(drive, 1.0) > 80.
+  assert not prompts
+
+  nav.route.meta.sequence = 2
+  nav.route.meta.receivedMonoTimeNanos = 1_100_000_000
+  assert step(drive, 1.1) == 80.
+  assert len(prompts) == 1
+  assert prompts[0].startswith('오토 속도 변경: 정체 구간 300m')
+  assert prompts[0].endswith('🔔')
+  assert helper.log == 'Auto congestion cap: 80 km/h'
+
+  nav.route.meta.sequence = 3
+  nav.route.meta.receivedMonoTimeNanos = 1_200_000_000
+  assert step(drive, 1.2) == 80.
+  assert len(prompts) == 1  # No repeated chime or AUTO blink.
