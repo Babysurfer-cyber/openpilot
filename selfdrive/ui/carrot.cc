@@ -1336,12 +1336,21 @@ protected:
               case 6:
                   ui_draw_text(s, bx, by + 20, "TG", 60, turn_text_color, BOLD);
                   break;
-              case 8:
-                  ui_draw_text(s, bx, by + 20, "목적지", 60, turn_text_color, BOLD);
+              case 8: { // 목적지: original navi_point.png is 348x540 (tall).
+                  // Fit within the compact HUD's maneuver area without
+                  // distorting the aspect ratio or overlapping the distance.
+                  constexpr int pin_height = 145;
+                  constexpr int pin_width = 93; // 348 / 540 * 145, rounded
+                  constexpr int pin_y_offset = -105;
+                  if (show_maneuver_icon) {
+                      ui_draw_image(s, { bx - pin_width / 2, by + pin_y_offset,
+                                         pin_width, pin_height }, "ic_navi_point", icon_alpha);
+                  }
                   break;
+              }
               default:
                   // Unknown maneuver types must not add diagnostic text to the HUD.
-                  // Keep TG (case 6) and destination (case 8) labels above.
+                  // Keep TG (case 6); the destination (case 8) uses an icon.
                   break;
               }
             }
