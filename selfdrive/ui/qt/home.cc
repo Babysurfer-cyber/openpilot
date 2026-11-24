@@ -33,7 +33,20 @@ HomeWindow::HomeWindow(QWidget* parent) : QWidget(parent) {
 
   onroad = new OnroadWindow(this);
   QObject::connect(onroad, &OnroadWindow::mapPanelRequested, this, [=] { sidebar->hide(); });
+  QObject::connect(onroad, &OnroadWindow::driverCameraRequested,
+                   this, &HomeWindow::showDriverCameraPreview);
   slayout->addWidget(onroad);
+
+  // Onroad-only preview: never set IsDriverViewEnabled, since the regular
+  // offroad DriverViewWindow uses that parameter for driver-monitor setup.
+  driver_camera_preview = new CameraWidget("camerad", VISION_STREAM_DRIVER, this);
+  slayout->addWidget(driver_camera_preview);
+  QObject::connect(driver_camera_preview, &CameraWidget::clicked,
+                   this, &HomeWindow::hideDriverCameraPreview);
+  driver_camera_preview_timer = new QTimer(this);
+  driver_camera_preview_timer->setSingleShot(true);
+  QObject::connect(driver_camera_preview_timer, &QTimer::timeout,
+                   this, &HomeWindow::hideDriverCameraPreview);
 
   body = new BodyWindow(this);
   slayout->addWidget(body);
@@ -60,6 +73,19 @@ void HomeWindow::showMapPanel(bool show) {
 void HomeWindow::updateState(const UIState &s) {
   const SubMaster &sm = *(s.sm);
 
+  // A driver-camera preview may not hide urgent driver takeover warnings.
+  if (slayout->currentWidget() == driver_camera_preview) {
+    const auto alert = OnroadAlerts::getAlert(sm, s.scene.started_frame);
+    if (!s.scene.started ||
+        alert.status == cereal::SelfdriveState::AlertStatus::USER_PROMPT ||
+        alert.status == cereal::SelfdriveState::AlertStatus::CRITICAL) {
+      hideDriverCameraPreview();
+    } else {
+      sidebar->hide();
+      return;
+    }
+  }
+
   // switch to the generic robot UI
   if (onroad->isVisible() && !body->isEnabled() && sm["carParams"].getCarParams().getNotCar()) {
     body->setEnabled(true);
@@ -83,6 +109,11 @@ void HomeWindow::updateState(const UIState &s) {
 }
 
 void HomeWindow::offroadTransition(bool offroad) {
+  // Cancel any active preview before switching onroad/offroad views.
+  driver_camera_preview_timer->stop();
+  if (slayout->currentWidget() == driver_camera_preview) {
+    driver_camera_preview->stopVipcThread();
+  }
   body->setEnabled(false);
   sidebar->setVisible(offroad);
   UIState* s = uiState();
@@ -95,6 +126,28 @@ void HomeWindow::offroadTransition(bool offroad) {
 
     s->show_brightness_timer = (int)(10. / 0.05);
   }
+}
+
+void HomeWindow::showDriverCameraPreview() {
+  const UIState *s = uiState();
+  if (!s->scene.started || slayout->currentWidget() != onroad) return;
+
+  // Refuse to obscure takeover alerts that are already visible.
+  const auto alert = OnroadAlerts::getAlert(*(s->sm), s->scene.started_frame);
+  if (alert.status == cereal::SelfdriveState::AlertStatus::USER_PROMPT ||
+      alert.status == cereal::SelfdriveState::AlertStatus::CRITICAL) return;
+
+  sidebar->hide();
+  slayout->setCurrentWidget(driver_camera_preview);
+  driver_camera_preview_timer->start(15000);  // 15 seconds
+}
+
+void HomeWindow::hideDriverCameraPreview() {
+  if (slayout->currentWidget() != driver_camera_preview) return;
+  driver_camera_preview_timer->stop();
+  slayout->setCurrentWidget(onroad);
+  driver_camera_preview->stopVipcThread();
+  sidebar->setVisible(uiState()->scene._current_carrot_display == 1);
 }
 
 void HomeWindow::showDriverView(bool show) {
