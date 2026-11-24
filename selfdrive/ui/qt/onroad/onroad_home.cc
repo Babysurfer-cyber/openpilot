@@ -47,6 +47,8 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QOpenGLWidget(parent) {
   main_layout->addLayout(stacked_layout);
 
   nvg = new AnnotatedCameraWidget(VISION_STREAM_ROAD, this);
+  QObject::connect(nvg, &AnnotatedCameraWidget::driverCameraRequested,
+                   this, &OnroadWindow::driverCameraRequested);
 
   QWidget * split_wrapper = new QWidget;
   split = new QHBoxLayout(split_wrapper);
