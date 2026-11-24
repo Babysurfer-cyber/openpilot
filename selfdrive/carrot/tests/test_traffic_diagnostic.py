@@ -25,6 +25,22 @@ def test_colored_route_when_status_distance_and_sections_valid():
   assert r["reasons"] == []
 
 
+def test_one_metre_route_rounding_does_not_hide_real_traffic():
+  s = snapshot([{"start_distance_m": 0, "length_m": 6329, "congestion": "good"}])
+  route = s["items"]["route"]["value"]
+  route["total_distance_m"] = 6329
+  route["remain_distance_m"] = 6330
+  r = summarize_traffic(s)
+  assert r["bar_position_expected"] and r["bar_traffic_colors_expected"]
+  assert r["traffic_covered_percent"] == 100.0
+  assert r["reasons"] == []
+  # Excessively inconsistent route distances still block the HUD.
+  route["remain_distance_m"] = 6335
+  rejected = summarize_traffic(s)
+  assert rejected["bar_position_expected"] is False
+  assert "route_distance_invalid_or_missing" in rejected["reasons"]
+
+
 def test_valid_route_without_sections_shows_neutral_progress():
   r = summarize_traffic(snapshot())
   assert r["bar_position_expected"] and not r["bar_traffic_colors_expected"]
