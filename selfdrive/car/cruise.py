@@ -356,7 +356,7 @@ class VCruiseCarrot:
     )
     if jam_reduced:
       self._add_log("Route congestion ahead: cruise <=80 km/h")
-      self._auto_mode_prompt("정체 구간 100m 이내: 크루즈 80km/h 이하 🔔")
+      self._auto_mode_prompt("정체 구간 300m 이내: 크루즈 80km/h 이하 🔔")
 
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
