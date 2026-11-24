@@ -747,6 +747,11 @@ class VCruiseCarrot:
         new_mode = 5 if current_mode == 3 else 3
         self.params.put_int_nonblocking("MyDrivingMode", new_mode)
         self.current_driving_mode = new_mode
+        if current_mode == 5 and new_mode == 3:
+          # This callback runs only once at the long-press threshold.
+          # A dedicated event plays tici_disengaged.wav, never the ordinary
+          # auto speed-change bell; no new navigation text is displayed.
+          self._auto_mode_off_chime()
 
       elif button_type == ButtonType.lfaButton:
         useLaneLineSpeed = max(1, self.useLaneLineSpeed)
@@ -915,6 +920,16 @@ class VCruiseCarrot:
       with open("/dev/shm/carrot_prompt", "w"):
         pass
       self._auto_mode_notification_sent = True
+    except OSError:
+      pass
+
+  @staticmethod
+  def _auto_mode_off_chime():
+    # CarrotPlanner translates this one-shot marker to EventName.audio0,
+    # whose existing soundd mapping plays tici_disengaged.wav once.
+    try:
+      with open("/dev/shm/carrot_auto_mode_off", "w"):
+        pass
     except OSError:
       pass
 
