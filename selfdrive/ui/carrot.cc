@@ -2333,7 +2333,9 @@ public:
             const QString auto_mode_log = QString::fromStdString(car_state.getLogCarrot());
             if (auto_mode_log != auto_mode_log_last &&
                 (auto_mode_log.startsWith("Auto congestion cap:") ||
-                 auto_mode_log.startsWith("Auto target change:"))) {
+                 auto_mode_log.startsWith("Auto target change:") ||
+                 auto_mode_log.startsWith("Auto speed:") ||
+                 auto_mode_log.startsWith("Tollgate IN:"))) {
                 trigger_blink = true;
             }
             auto_mode_log_last = auto_mode_log;
