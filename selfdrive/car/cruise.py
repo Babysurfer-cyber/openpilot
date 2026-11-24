@@ -355,11 +355,10 @@ class VCruiseCarrot:
       gas_pressed=CS.gasPressed,
     )
     if jam_reduced:
-      # Reuse the mode-5 speed-change chime (audio10) and AUTO blink.
-      # The log also lets the HUD blink if the short-lived CarrotMan prompt
-      # message is replaced by a live navigation road name.
+      # Existing mode-5 audio10 chime and AUTO indicator blink only.
+      # Do not inject an extra navigation announcement or text message.
       self._add_log("Auto congestion cap: 80 km/h")
-      self._auto_mode_prompt("오토 속도 변경: 정체 구간 300m 앞 → 80km/h 🔔")
+      self._auto_mode_chime()
 
     if self._activate_cruise > 0:
       #self.events.append(EventName.buttonEnable)
@@ -874,6 +873,16 @@ class VCruiseCarrot:
     try:
       with open("/dev/shm/carrot_prompt_text", "w") as f:
         f.write(text)
+    except OSError:
+      pass
+
+  @staticmethod
+  def _auto_mode_chime():
+    # Existing CarrotPlanner event bridge converts this one-shot file
+    # into audio10. AUTO indicator blink is triggered from logCarrot.
+    try:
+      with open("/dev/shm/carrot_prompt", "w"):
+        pass
     except OSError:
       pass
 
