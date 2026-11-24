@@ -261,6 +261,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"Ev6BlinkerTest", {PERSISTENT, INT, "0"}},  // 2022 EV6 P-only, one-shot stalk experiment
     {"Ev6SpasDryRun", {PERSISTENT, INT, "0"}},  // 0=off, 1=left, 2=right; no CAN TX
     {"Ev6SpasDryRunResult", {PERSISTENT, STRING, ""}},
+    {"Ev6SpasDryRunHistory", {PERSISTENT, STRING, "[]"}},
 
     {"SoundVolumeAdjust", {PERSISTENT, INT, "100"}},
     {"SoundVolumeAdjustEngage", {PERSISTENT, INT, "10"}},
