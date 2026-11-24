@@ -556,3 +556,69 @@ def test_300m_route_congestion_uses_auto_mode_notice_once(auto_drive, monkeypatc
   nav.route.meta.receivedMonoTimeNanos = 1_200_000_000
   assert step(drive, 1.2) == 80.
   assert len(chimes) == 1  # No repeated chime or AUTO blink.
+
+
+
+def _capture_mode5_alerts(helper, monkeypatch):
+  """Spy on the existing prompt/chime pathways without filesystem side effects."""
+  alerts = []
+
+  def prompt(message):
+    helper._auto_mode_notification_sent = True
+    alerts.append(('prompt', message))
+
+  def chime():
+    helper._auto_mode_notification_sent = True
+    alerts.append(('chime', None))
+
+  monkeypatch.setattr(helper, '_auto_mode_prompt', prompt)
+  monkeypatch.setattr(helper, '_auto_mode_chime', chime)
+  return alerts
+
+
+def test_auto_mode_chimes_once_on_toll_exit(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=120., pure=100., mixed=100., prior=100.)
+  alerts = _capture_mode5_alerts(helper, monkeypatch)
+
+  drive.state.navTollExist = 1
+  assert step(drive, 1.0) == 95.
+  assert [kind for kind, _ in alerts] == ['prompt']  # Existing entry beep.
+
+  assert step(drive, 1.01) == 95.
+  assert len(alerts) == 1
+
+  drive.state.navTollExist = 0
+  assert step(drive, 1.02) == 110.
+  assert [kind for kind, _ in alerts] == ['prompt', 'chime']  # Added exit beep.
+  assert helper.log.startswith('Auto target change:')  # HUD AUTO blink.
+
+  assert step(drive, 1.03) == 110.
+  assert len(alerts) == 2  # No repeat at steady speed.
+
+
+def test_mode5_camera_release_uses_existing_beep_once(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=110., pure=80., mixed=50., prior=100.)
+  alerts = _capture_mode5_alerts(helper, monkeypatch)
+  drive.state.mapSource = 2
+  drive.state.navSectionValid = True
+  drive.state.navSectionActive = False
+
+  assert step(drive, 1.0) == 110.
+  assert not alerts  # Camera approach holds the current target.
+
+  drive.state.navSectionActive = True
+  assert step(drive, 1.01) == 95.
+  assert [kind for kind, _ in alerts] == ['prompt']
+  assert step(drive, 1.02) == 95.
+  assert len(alerts) == 1  # The fallback must not play a second chime.
+
+
+def test_manual_speed_change_does_not_fire_auto_mode_beep(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=100., pure=100., mixed=100., prior=100.)
+  alerts = _capture_mode5_alerts(helper, monkeypatch)
+  manual_speed = tap(drive, 1.0)
+  assert manual_speed > 100.
+  assert not alerts
