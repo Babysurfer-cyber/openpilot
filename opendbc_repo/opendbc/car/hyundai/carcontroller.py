@@ -346,6 +346,16 @@ class CarController(CarControllerBase):
 
     report = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
     params.put("Ev6SpasDryRunResult", report)
+    # Keep both left and right selections even after the next input overwrites
+    # the latest result. Last eight entries only; never store CAN traffic.
+    try:
+      history = json.loads(params.get("Ev6SpasDryRunHistory") or "[]")
+      if not isinstance(history, list):
+        history = []
+    except (ValueError, TypeError):
+      history = []
+    history.append(result)
+    params.put("Ev6SpasDryRunHistory", json.dumps(history[-8:], ensure_ascii=False, separators=(",", ":")))
     print("EV6 SPAS2 PASSIVE NO-TX:", report)
 
   def _update_blocked_blinker_hold(self, CC, CS, now_nanos):
