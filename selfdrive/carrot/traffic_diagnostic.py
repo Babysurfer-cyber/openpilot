@@ -72,6 +72,26 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
     "carrotNavi_cereal_not_published", "carrotNavi_cereal_publish_error",
   ))
   traffic_ready = position_ready and traffic_valid
+
+  # Diagnose whether the sender actually covers the entire route; valid
+  # traffic_sections are allowed to contain gaps, which the HUD draws gray.
+  lengths = {"good": 0, "bad": 0, "very_bad": 0, "none": 0}
+  covered_m = 0
+  last_section_end_m = None
+  first_section_start_m = None
+  if traffic_valid:
+    names = {0: "none", 1: "good", 2: "bad", 3: "very_bad"}
+    for section in sections:
+      start = section["startDistanceM"]
+      end = start + section["lengthM"]
+      if first_section_start_m is None:
+        first_section_start_m = start
+      last_section_end_m = end
+      covered_m += section["lengthM"]
+      lengths[names[section["congestionCode"]]] += section["lengthM"]
+  uncovered_m = total - covered_m if traffic_valid and total is not None else None
+  covered_percent = round(100.0 * covered_m / total, 1) if traffic_valid and total else None
+
   return {
     "connected": connected,
     "route_item_present": route_received,
@@ -96,6 +116,12 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
     "road_limit_kph": speed.get("road_limit_kph"),
     "traffic_sections_received": len(raw_traffic) if traffic_received else None,
     "traffic_sections_valid": len(sections) if traffic_valid else 0,
+    "traffic_lengths_m": lengths if traffic_valid else None,
+    "traffic_covered_m": covered_m if traffic_valid else None,
+    "traffic_covered_percent": covered_percent,
+    "traffic_uncovered_m": uncovered_m,
+    "traffic_first_section_start_m": first_section_start_m,
+    "traffic_last_section_end_m": last_section_end_m,
     "cereal_publish_count": publisher_count,
     "cereal_error": publisher_error,
     "bar_position_expected": position_ready,
