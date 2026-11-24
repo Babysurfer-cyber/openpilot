@@ -823,6 +823,7 @@ class VCruiseCarrot:
 
   def _reset_auto_mode_session(self):
     self.auto_prev_limit = 0
+    self._carrot_auto_shadow_target = None
     self.auto_source_high = None
     self.auto_mode_needs_sync = True
     self.auto_sync_speed = None
@@ -853,6 +854,52 @@ class VCruiseCarrot:
 
   def _update_auto_mode(self, CS, CC, v_cruise_kph, *, physical_speed_button,
                         manual_speed_change, restore_speed, automatic_carrot_restore_target=None):
+    # The real setpoint is deliberately held at/below vehicle speed in Carrot
+    # Cruise. Separately advance the regular mode-5 setpoint so road-limit
+    # changes during the coast are not lost when it automatically disengages.
+    shadow_target = getattr(self, "_carrot_auto_shadow_target", None)
+    if self.carrot_cruise_active:
+      if shadow_target is None:
+        saved = getattr(self, "_v_cruise_kph_at_brake", 0)
+        shadow_target = saved if saved > 0 else v_cruise_kph
+      if manual_speed_change:
+        # Explicit driver/remote speed choices take precedence over a shadow.
+        shadow_target = v_cruise_kph
+      updated_target = self._update_auto_mode_target(
+        CS, CC, shadow_target, physical_speed_button=physical_speed_button,
+        manual_speed_change=manual_speed_change, restore_speed=None,
+        automatic_carrot_restore_target=None,
+      )
+      if self._auto_mode_active_last:
+        self._carrot_auto_shadow_target = updated_target
+      return min(v_cruise_kph, updated_target)
+
+    if automatic_carrot_restore_target is not None:
+      # The last mode-5 target is authoritative on an automatic return,
+      # including verified road-limit changes during the coast.
+      if shadow_target is not None:
+        v_cruise_kph = shadow_target
+      # The lower coasting speed must not cap a normal automatic restore.
+      # Keep the original safety hold path for camera/section/toll states.
+      section_active = bool(getattr(CS, "navSectionValid", False)
+                            and getattr(CS, "navSectionActive", False))
+      toll_active = (getattr(CS, "navTollExist", 0) == 1
+                     and getattr(CS, "navLinkClass", 0) == 1)
+      camera_active = getattr(CS, "mapSource", 0) == 2
+      nav_valid = bool(CS.canValid and getattr(CS, "navDataValid", False))
+      if ((nav_valid and not (camera_active or section_active or toll_active or self.prev_is_tollgate))
+          or (not nav_valid and not self.camera_pending)):
+        restore_speed = None
+
+    self._carrot_auto_shadow_target = None
+    return self._update_auto_mode_target(
+      CS, CC, v_cruise_kph, physical_speed_button=physical_speed_button,
+      manual_speed_change=manual_speed_change, restore_speed=restore_speed,
+      automatic_carrot_restore_target=automatic_carrot_restore_target,
+    )
+
+  def _update_auto_mode_target(self, CS, CC, v_cruise_kph, *, physical_speed_button,
+                               manual_speed_change, restore_speed, automatic_carrot_restore_target=None):
     cancel_held = ((self.button_prev == ButtonType.cancel and self.button_cnt > 0)
                    or any(b.type == ButtonType.cancel and b.pressed for b in CS.buttonEvents))
     if (not CC.enabled or CS.gearShifter != GearShifter.drive or not CS.cruiseState.available
@@ -937,19 +984,8 @@ class VCruiseCarrot:
     target_raw_limit = (speed_limit_pure if use_pure else
                         self._auto_road_limit(CS.speedLimit) if getattr(CS, 'speedLimitDataValid', False) else 0.0)
 
-    # An automatic Carrot Cruise exit restores the set speed captured on
-    # entry, rather than synchronizing mode 5 to the slower coasting speed.
-    # Preserve camera, section-control and tollgate holds, which must not
-    # be bypassed by an automatic set-speed restoration.
-    if (automatic_carrot_restore_target is not None
-        and not (self.camera_pending or section_active or map_source == 2
-                 or is_tollgate or self.prev_is_tollgate)):
-      self.auto_sync_speed = None
-      self.auto_mode_needs_sync = False
-      self.auto_prev_limit = target_raw_limit
-      self.auto_baseline_pending = target_raw_limit <= 0
-      self._add_log(f"Carrot Cruise AUTO: previous set speed restored ({v_cruise_kph:g} km/h)")
-      return v_cruise_kph
+    # Automatic returns also run the regular mode-5 road-limit calculation
+    # on the shadow target; never bypass a limit change on the exit frame.
 
     if self.auto_can_resume:
       self.auto_mode_needs_sync = False
@@ -1006,8 +1042,8 @@ class VCruiseCarrot:
           self.auto_sync_speed = v_cruise_kph
       elif not self.tollgate_speed_changed:
         v_cruise_kph = min(110.0, max(v_cruise_kph, self.v_cruise_before_tollgate))
-        if self.carrot_cruise_active:
-          v_cruise_kph = min(v_cruise_kph, self.v_ego_kph_set)
+        # During a coast the wrapper caps only the real setpoint. Do not
+        # apply the coast clamp to this shadow auto-mode target.
         self._add_log(f"Tollgate OUT: Restore Speed ({v_cruise_kph}km/h)")
       self.prev_is_tollgate = False
       self.v_cruise_before_tollgate = self.expected_tollgate_speed = 0
@@ -1022,7 +1058,7 @@ class VCruiseCarrot:
       # The toll held an explicit coast-restore synchronization request.
       # Complete it now instead of silently consuming it as a road baseline.
 
-    if self.camera_pending or self.carrot_cruise_active or CS.gasPressed or target_raw_limit <= 0:
+    if self.camera_pending or CS.gasPressed or target_raw_limit <= 0:
       return min(v_cruise_kph, self.auto_sync_speed) if self.auto_sync_speed is not None else v_cruise_kph
 
     if target_raw_limit != self.auto_prev_limit or self.auto_mode_needs_sync:
