@@ -923,7 +923,7 @@ class VCruiseCarrot:
       self.auto_sync_speed = restore_speed
 
     # Physical input remains authoritative even when navigation is unknown.
-    if manual_speed_change and restore_speed is None:
+    if manual_speed_change and restore_speed is None and (automatic_carrot_restore_target is None or physical_speed_button):
       self.auto_mode_needs_sync = False
       self.auto_sync_speed = None
       self.auto_baseline_pending = True
@@ -1001,7 +1001,7 @@ class VCruiseCarrot:
       self.auto_prev_limit = target_raw_limit
       self.auto_baseline_pending = False
 
-    if manual_speed_change:
+    if manual_speed_change and (automatic_carrot_restore_target is None or physical_speed_button):
       if (physical_speed_button and restore_speed is None and self.auto_engage_timer == 0
           and not self.carrot_cruise_active and target_raw_limit > 0):
         self.auto_speed_offset = float(np.clip(v_cruise_kph - target_raw_limit, 0.0, 10.0))
