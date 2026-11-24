@@ -1009,6 +1009,10 @@ class CarState(CarStateBase):
     # Register 4A3 up front so its cached dictionary also receives late data.
     msgs = [("HDA_INFO_4A3", math.nan), ("NEW_MSG_4B9", math.nan),
             ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4B4", math.nan)]
+    # Passive SPAS diagnostics on 2022 EV6: parse genuine stock frames.
+    # No ECU disable, no extra TX, and no new CAN validity requirement.
+    if CP.carFingerprint == CAR.KIA_EV6 and CanBus(CP).ECAN == 0:
+      msgs += [("SPAS1", math.nan), ("SPAS2", math.nan)]
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
