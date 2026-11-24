@@ -1827,6 +1827,22 @@
     },
     {
       "group": "시작",
+      "name": "Ev6SpasDryRun",
+      "title": "EV6 SPAS2 분석시험(송신 없음)",
+      "descr": "0: 해제, 1: 좌측 가상명령, 2: 우측 가상명령. P단 완전정차·브레이크 상태에서 순정 SPAS1/2와 CAN 카운터를 읽어 후보 패킷만 생성합니다. 차량에는 절대 송신하지 않으며 실제 깜빡이가 켜지지 않는 시험입니다. 명령은 자동으로 0으로 복귀하고 결과는 Ev6SpasDryRunResult 파라미터에 기록됩니다.",
+      "egroup": "START",
+      "etitle": "EV6 SPAS2 Passive Diagnostic (NO TX)",
+      "edescr": "0: Off, 1: Left preview, 2: Right preview. Park and hold the brake. Generates diagnostic candidates from live stock SPAS1/2 without sending ANY CAN frames; lamps will not light. Auto resets to 0. Result: Ev6SpasDryRunResult.",
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "启动设置",
+      "ctitle": "EV6 SPAS2 只读测试(不发送CAN)",
+      "cdescr": "0:关闭 1:左侧预览 2:右侧预览。P挡并踩制动，只读取原厂SPAS帧，绝不发送CAN，测试后自动归零。"
+    },
+    {
+      "group": "시작",
       "name": "EnableRadarTracks",
       "title": "레이더트랙,SCC레이더설정(0)",
       "descr": "-2: VOACC 비전 only 시험\n-1: SCC 항상 사용\n0: SCC 레이더 사용\n1: 레이더트랙 사용\n2: 레이더트랙 + 저속 SCC 함께 사용\n3: 레이더트랙 + 저속 SCC + 끼어드는 차량 + 스텔스 차량",
