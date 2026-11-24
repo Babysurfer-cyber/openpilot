@@ -649,7 +649,8 @@ def test_gap_long_press_auto_to_norm_uses_disengage_chime_once(
   # At the gap-button long-press threshold, _prepare_buttons generates only
   # one gapAdjustCruise event, even if the driver continues holding the button.
   helper.button_prev = car.CarState.ButtonEvent.Type.gapAdjustCruise
-  helper.button_cnt = helper._cruise_button_long_delay + 30
+  helper.button_long_time = helper._cruise_button_long_delay + 30
+  helper.button_cnt = helper.button_long_time
   helper.long_pressed = False
   step(drive, 1.0)
 
