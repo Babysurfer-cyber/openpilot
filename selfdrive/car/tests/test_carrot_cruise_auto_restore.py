@@ -115,3 +115,96 @@ def test_auto_mode_without_restore_keeps_normal_limit_sync():
     restore_speed=60,
   )
   assert result == pytest.approx(80.0)
+
+def coast_frame(helper, CS, CC, speed=60):
+  return helper._update_auto_mode(
+    CS, CC, speed,
+    physical_speed_button=False, manual_speed_change=False,
+    restore_speed=None,
+  )
+
+
+def test_auto_mode_speed_limit_reduction_is_remembered_during_coast():
+  helper, (CS, CC) = make_helper(), make_inputs()
+  helper._v_cruise_kph_at_brake = 100
+  helper.carrot_cruise_active = True
+
+  # At first the normal auto target remains 100, while coast is limited to 60.
+  assert coast_frame(helper, CS, CC, 60) == pytest.approx(60)
+  assert helper._carrot_auto_shadow_target == pytest.approx(100)
+
+  # A verified 80->60 road-limit change would make mode 5 choose 80.
+  CS.navSpeedLimit = 60
+  assert coast_frame(helper, CS, CC, 55) == pytest.approx(55)
+  assert helper._carrot_auto_shadow_target == pytest.approx(80)
+  assert helper.auto_prev_limit == pytest.approx(60)
+
+  # A normal automatic exit must use 80, not old 100 or current 55.
+  helper.carrot_cruise_active = False
+  assert run_auto(helper, CS, CC, backed_up=100, coast=55) == pytest.approx(80)
+  assert helper._carrot_auto_shadow_target is None
+
+
+def test_auto_mode_speed_limit_increase_is_remembered_during_coast():
+  helper, (CS, CC) = make_helper(), make_inputs()
+  helper._v_cruise_kph_at_brake = 100
+  helper.auto_speed_offset = 10
+  helper.carrot_cruise_active = True
+  assert coast_frame(helper, CS, CC) == pytest.approx(60)
+
+  # For this configured +10 offset, mode 5 would raise 100->110.
+  CS.navSpeedLimit = 100
+  assert coast_frame(helper, CS, CC, 60) == pytest.approx(60)
+  assert helper._carrot_auto_shadow_target == pytest.approx(110)
+
+  helper.carrot_cruise_active = False
+  assert run_auto(helper, CS, CC, backed_up=100, coast=60) == pytest.approx(110)
+
+
+def test_camera_pending_during_coast_still_holds_lower_restore_speed():
+  helper, (CS, CC) = make_helper(), make_inputs(mapSource=2)
+  helper._v_cruise_kph_at_brake = 100
+  helper.carrot_cruise_active = True
+  assert coast_frame(helper, CS, CC) == pytest.approx(60)
+  assert helper.camera_pending
+  assert helper._carrot_auto_shadow_target == pytest.approx(100)
+
+  helper.carrot_cruise_active = False
+  assert run_auto(helper, CS, CC, backed_up=100, coast=60) == pytest.approx(60)
+
+
+def test_tollgate_transition_is_tracked_in_shadow_not_by_coasting_speed():
+  helper, (CS, CC) = make_helper(), make_inputs(navTollExist=1)
+  helper._v_cruise_kph_at_brake = 100
+  helper.carrot_cruise_active = True
+  assert coast_frame(helper, CS, CC, 60) == pytest.approx(60)
+  assert helper._carrot_auto_shadow_target == pytest.approx(80)
+  assert helper.prev_is_tollgate
+
+  CS.navTollExist = 0
+  assert coast_frame(helper, CS, CC, 55) == pytest.approx(55)
+  assert helper._carrot_auto_shadow_target == pytest.approx(100)
+  assert not helper.prev_is_tollgate
+
+  helper.carrot_cruise_active = False
+  assert run_auto(helper, CS, CC, backed_up=100, coast=55) == pytest.approx(100)
+
+
+def test_explicit_set_speed_discards_shadow_target():
+  helper, (CS, CC) = make_helper(), make_inputs()
+  helper._carrot_auto_shadow_target = 100
+  helper.carrot_cruise_active = False
+  result = helper._update_auto_mode(
+    CS, CC, 55, physical_speed_button=True, manual_speed_change=True,
+    restore_speed=None,
+  )
+  assert result == pytest.approx(55)
+  assert helper._carrot_auto_shadow_target is None
+
+
+def test_new_limit_on_exact_exit_frame_still_uses_auto_mode_calculation():
+  helper, (CS, CC) = make_helper(), make_inputs(navSpeedLimit=60)
+  helper._carrot_auto_shadow_target = 100
+  result = run_auto(helper, CS, CC, backed_up=100, coast=55)
+  assert result == pytest.approx(80)
+  assert helper.auto_prev_limit == pytest.approx(60)
