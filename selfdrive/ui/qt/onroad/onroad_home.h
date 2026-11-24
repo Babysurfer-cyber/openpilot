@@ -17,6 +17,7 @@ public:
 
 signals:
   void mapPanelRequested();
+  void driverCameraRequested();
 
 private:
   void paintEvent(QPaintEvent *event);
@@ -33,5 +34,5 @@ private slots:
   void updateState(const UIState &s);
 
 protected:
-    void initializeGL() override; // OpenGL �ʱ�ȭ
+    void initializeGL() override; // OpenGL ÃÊ±âÈ­
 };
