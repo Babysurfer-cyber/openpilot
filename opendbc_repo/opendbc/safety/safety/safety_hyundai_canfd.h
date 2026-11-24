@@ -612,7 +612,7 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
     bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
                    (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
                    !vehicle_moving && brake_pressed && !gas_pressed &&
-                   !controls_allowed && hyundai_ev6_stock_stalk_idle &&
+                   hyundai_ev6_stock_stalk_idle &&
                    (hyundai_ev6_stalk_rx_us != 0U) &&
                    (get_ts_elapsed(now, hyundai_ev6_stalk_rx_us) <= 120000U) &&
                    ((hyundai_ev6_stalk_tx_us == 0U) ||
