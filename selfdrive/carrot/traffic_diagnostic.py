@@ -103,6 +103,12 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
     "remain_distance_m": remaining,
     "traffic_source": route.get("traffic_source", "(not sent)"),
     "traffic_probe": route.get("traffic_probe", "(not sent)"),
+    # v5 APK: compare validated coverage from all three Naver SDK APIs.
+    # -1 means a candidate could not be extracted or was invalid.
+    "traffic_guidance_covered_m": route.get("traffic_guidance_covered_m"),
+    "traffic_route_sections_covered_m": route.get("traffic_route_sections_covered_m"),
+    "traffic_route_traffics_covered_m": route.get("traffic_route_traffics_covered_m"),
+    "traffic_selected_covered_m": route.get("traffic_selected_covered_m"),
     # Input-side SDI values for diagnosing repeated fixed-camera warnings.
     # These are read-only app messages, not the car's CAN camera signals.
     "speed_item_present": speed_record.get("present") is True,
