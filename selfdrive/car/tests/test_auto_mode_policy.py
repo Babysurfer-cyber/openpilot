@@ -622,3 +622,61 @@ def test_manual_speed_change_does_not_fire_auto_mode_beep(auto_drive, monkeypatc
   manual_speed = tap(drive, 1.0)
   assert manual_speed > 100.
   assert not alerts
+
+
+
+@pytest.mark.parametrize(('initial_mode', 'next_mode', 'disengage_chimes'), (
+  (5, 3, 1),  # AUTO -> NORM plays the requested tici_disengaged.wav
+  (3, 5, 0),  # NORM -> AUTO must retain its separate entry chime
+  (2, 3, 0),  # Other modes switching to NORM must not play AUTO-off
+))
+def test_gap_long_press_auto_to_norm_uses_disengage_chime_once(
+  auto_drive, monkeypatch, initial_mode, next_mode, disengage_chimes,
+):
+  drive = auto_drive
+  helper = drive.helper
+  drive.settings['MyDrivingMode'] = initial_mode
+  helper.current_driving_mode = initial_mode
+
+  def persist_mode(name, value):
+    if name == 'MyDrivingMode':
+      drive.settings[name] = value
+
+  monkeypatch.setattr(helper.params, 'put_int_nonblocking', persist_mode)
+  played = []
+  monkeypatch.setattr(helper, '_auto_mode_off_chime', lambda: played.append(True))
+
+  # At the gap-button long-press threshold, _prepare_buttons generates only
+  # one gapAdjustCruise event, even if the driver continues holding the button.
+  helper.button_prev = car.CarState.ButtonEvent.Type.gapAdjustCruise
+  helper.button_cnt = helper._cruise_button_long_delay + 30
+  helper.long_pressed = False
+  step(drive, 1.0)
+
+  assert drive.settings['MyDrivingMode'] == next_mode
+  assert helper.current_driving_mode == next_mode
+  assert len(played) == disengage_chimes
+
+  for i in range(1, 8):
+    step(drive, 1.0 + i * .01)
+  assert len(played) == disengage_chimes
+
+  drive.state.buttonEvents = [car.CarState.ButtonEvent(type='gapAdjustCruise', pressed=False)]
+  step(drive, 1.1)
+  drive.state.buttonEvents = []
+  assert len(played) == disengage_chimes  # No duplicate on button release.
+
+
+def test_gap_short_press_does_not_play_auto_off_chime(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = drive.helper
+  played = []
+  monkeypatch.setattr(helper, '_auto_mode_off_chime', lambda: played.append(True))
+  helper.button_prev = car.CarState.ButtonEvent.Type.gapAdjustCruise
+  helper.button_cnt = 1
+  helper.long_pressed = False
+  drive.state.buttonEvents = [car.CarState.ButtonEvent(type='gapAdjustCruise', pressed=False)]
+  step(drive, 1.0)
+
+  assert helper.current_driving_mode == 5
+  assert not played
