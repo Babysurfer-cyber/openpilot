@@ -145,8 +145,10 @@ void HomeWindow::showDriverCameraPreview() {
 void HomeWindow::hideDriverCameraPreview() {
   if (slayout->currentWidget() != driver_camera_preview) return;
   driver_camera_preview_timer->stop();
-  slayout->setCurrentWidget(onroad);
+  // Stop the camera client while its OpenGL widget still has a visible
+  // surface, then return to the exact onroad layout that was in use.
   driver_camera_preview->stopVipcThread();
+  slayout->setCurrentWidget(onroad);
   sidebar->setVisible(uiState()->scene._current_carrot_display == 1);
 }
 
