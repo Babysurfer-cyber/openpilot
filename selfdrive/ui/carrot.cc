@@ -1281,7 +1281,14 @@ protected:
             int bx = tbt_x + 100;
             int by = tbt_y + 67;
 
-            // Keep maneuver visibility independent of the ATC phase.
+            // Normal navigation: maneuver icons remain steadily visible.
+            // When ATC is actually setting the lower speed target, blink all
+            // maneuver *icons* using the existing indicator pulse. Do not
+            // blink route distance, ETA, speed limits, or TG/destination text.
+            const bool atc_active = atc_decel_active &&
+                                    !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
+            const bool show_maneuver_icon = !atc_active || _blinker_pulse;
+
             // > 1000 m: invisible; 1000 m: 25%; <= 100 m: 100%.
             // Interpolate opacity smoothly between 1000 m and 100 m.
             float icon_alpha = 0.0f;
@@ -1299,26 +1306,32 @@ protected:
               switch (xTurnInfo) {
               case 1: // 좌회전 (turn_l.png) - 우측 치우침 보정 (-60)
                   off_x = -60; off_y = 0; sz = 256;
-                  ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_turn_l", icon_alpha);
+                  if (show_maneuver_icon) {
+                      ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_turn_l", icon_alpha);
+                  }
                   break;
               case 2: // 우회전 (turn_r.png) - 좌측 치우침 보정 (+60)
                   off_x = 60; off_y = 0; sz = 256;
-                  ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_turn_r", icon_alpha);
+                  if (show_maneuver_icon) {
+                      ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_turn_r", icon_alpha);
+                  }
                   break;
-              case 3: // 좌측 분기 / 차선 변경 (lane_change_l.png) - 깜빡이 주기 동기화 점멸
+              case 3: // 좌측 분기 / 차선 변경 (lane_change_l.png)
                   off_x = -60; off_y = 0; sz = 256;
-                  if (_blinker_pulse) {
+                  if (show_maneuver_icon) {
                       ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_lane_change_l", icon_alpha);
                   }
                   break;
-              case 4: // 우측 분기 / 차선 변경 (lane_change_r.png) - 깜빡이 주기 동기화 점멸
+              case 4: // 우측 분기 / 차선 변경 (lane_change_r.png)
                   off_x = 60; off_y = 0; sz = 256;
-                  if (_blinker_pulse) {
+                  if (show_maneuver_icon) {
                       ui_draw_image(s, { bx - sz / 2 + off_x, by - sz / 2 + off_y, sz, sz }, "ic_lane_change_r", icon_alpha);
                   }
                   break;
               case 7: // 유턴 (turn_u.png) - 보정 제외
-                  ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_u", icon_alpha);
+                  if (show_maneuver_icon) {
+                      ui_draw_image(s, { bx - icon_size / 2, by - icon_size / 2, icon_size, icon_size }, "ic_turn_u", icon_alpha);
+                  }
                   break;
               case 6:
                   ui_draw_text(s, bx, by + 20, "TG", 60, turn_text_color, BOLD);
