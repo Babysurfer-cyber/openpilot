@@ -42,11 +42,11 @@ def update(cap, sm, *, target=110., speed=90., engaged=True, manual=False, gas=F
                     gas_pressed=gas, now_s=NOW)
 
 
-def test_100m_boundary_and_outside():
-  sm = NaviSM(remaining=11_101)  # traveled 8899: jam starts 101m ahead
+def test_300m_boundary_and_outside():
+  sm = NaviSM(remaining=11_301)  # traveled 8699: jam starts 301m ahead
   assert imminent_route_jam(sm, now_s=NOW) is None
-  sm.nav.route.remainingDistanceM = 11_100
-  assert imminent_route_jam(sm, now_s=NOW).distance_m == 100
+  sm.nav.route.remainingDistanceM = 11_300
+  assert imminent_route_jam(sm, now_s=NOW).distance_m == 300
   sm.nav.route.remainingDistanceM = 11_000
   assert imminent_route_jam(sm, now_s=NOW).distance_m == 0
   sm.nav.route.remainingDistanceM = 10_999  # already inside congestion
