@@ -1,4 +1,5 @@
 import time
+import json
 
 import numpy as np
 from opendbc.can import CANPacker
@@ -252,6 +253,111 @@ class CarController(CarControllerBase):
     print(f"EV6 blinker trial: one 0x3C1 tap for side {side}, counter {values['COUNTER_ALT']}")
     return [(addr, bytes(payload), bus)]
 
+  def _ev6_spas_dry_run(self, CC, CS, now_nanos):
+    """Purely passive SPAS2 experiment. Never adds CAN frames to can_sends.
+
+    A preview built from the DBC is intentionally NOT a valid activation
+    recipe: the EV6's real parked auto-parking frames contain additional
+    status fields that our DBC does not expose (including byte 7 and 18).
+    """
+    if self.frame % 10 or self.CP.carFingerprint != CAR.KIA_EV6 or self.CAN.ECAN != 0:
+      return
+
+    params = Params()
+    side = params.get_int("Ev6SpasDryRun")
+    if side not in (1, 2):
+      return
+    # Always consume the request, even when data/conditions are not ready.
+    # No delayed execution when the vehicle later enters P.
+    params.put_int("Ev6SpasDryRun", 0)
+
+    parser = getattr(CS, "cp", None)
+    def age_ms(name):
+      if parser is None:
+        return None
+      stamp = max(parser.ts_nanos.get(name, {}).values(), default=0)
+      return round((now_nanos - stamp) / 1e6, 1) if stamp > 0 and now_nanos >= stamp else None
+
+    age1, age2 = age_ms("SPAS1"), age_ms("SPAS2")
+    observed1 = dict(parser.vl["SPAS1"]) if parser is not None and age1 is not None else {}
+    observed2 = dict(parser.vl["SPAS2"]) if parser is not None and age2 is not None else {}
+
+    result = {
+      "test": "EV6_SPAS2_PASSIVE_NO_TX",
+      "selected": "left" if side == 1 else "right",
+      "mono_time_ns": int(now_nanos),
+      "desired_blinker_control": 3 if side == 1 else 4,
+      "can_tx_count": 0,
+      "lat_active": bool(CC.latActive),
+      "controls_enabled": bool(CC.enabled),
+      "gear": str(CS.out.gearShifter),
+      "standstill": bool(CS.out.standstill),
+      "brake_pressed": bool(CS.out.brakePressed),
+      "spas1_age_ms": age1,
+      "spas2_age_ms": age2,
+      "spas1_byte3": int(observed1.get("BYTE3", 0)) if observed1 else None,
+      "spas1_counter": int(observed1.get("COUNTER", 0)) if observed1 else None,
+      "spas2_byte3": int(observed2.get("BYTE3", 0)) if observed2 else None,
+      "spas2_byte4": int(observed2.get("BYTE4", 0)) if observed2 else None,
+      "spas2_blinker_control": int(observed2.get("BLINKER_CONTROL", 0)) if observed2 else None,
+      "spas2_counter": int(observed2.get("COUNTER", 0)) if observed2 else None,
+      "transmitted": False,
+      "caution": "Incomplete DBC preview, NEVER transmit or use as vehicle control",
+    }
+    blocked = []
+    if CS.out.gearShifter != structs.CarState.GearShifter.park:
+      blocked.append("not_in_P")
+    if not CS.out.standstill or CS.out.vEgo >= 0.05:
+      blocked.append("moving")
+    if not CS.out.brakePressed:
+      blocked.append("foot_brake_not_pressed")
+    if age1 is None or age1 > 150:
+      blocked.append("SPAS1_not_fresh")
+    if age2 is None or age2 > 150:
+      blocked.append("SPAS2_not_fresh")
+    if CS.out.leftBlinker or CS.out.rightBlinker:
+      blocked.append("stock_lamp_active")
+
+    if not blocked:
+      try:
+        # Baseline candidate: modify only decoded SPAS2 BLINKER_CONTROL.
+        # Generated in memory, never returned or passed to CAN send.
+        values = {k: v for k, v in observed2.items() if k != "CHECKSUM"}
+        values["COUNTER"] = (int(values["COUNTER"]) + 1) & 0xFF
+        values["BLINKER_CONTROL"] = 3 if side == 1 else 4
+        addr, baseline, _bus = self.packer.make_can_msg("SPAS2", self.CAN.ECAN, values)
+
+        # Auto-park-inspired comparison, still incomplete: b3=0x26 and
+        # b18=0x40 occurred together with BLINKER_CONTROL 3/4 in
+        # genuine EV6 rlog(6)/(7); other hidden state fields differ too.
+        variant = bytearray(baseline)
+        variant[3], variant[18] = 0x26, 0x40
+        checksum = hyundaicanfd.hkg_can_fd_checksum(addr, None, variant)
+        variant[:2] = checksum.to_bytes(2, "little")
+        result["preview_idle_hex_NO_TX"] = bytes(baseline).hex()
+        result["preview_autopark_like_hex_NO_TX"] = bytes(variant).hex()
+        result["state"] = "prepared_only_not_transmitted"
+      except (KeyError, ValueError, RuntimeError, IndexError, TypeError) as exc:
+        result["state"] = "preview_build_error"
+        result["error"] = str(exc)[:160]
+    else:
+      result["state"] = "blocked"
+      result["blocked_by"] = blocked
+
+    report = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+    params.put("Ev6SpasDryRunResult", report)
+    # Keep both left and right selections even after the next input overwrites
+    # the latest result. Last eight entries only; never store CAN traffic.
+    try:
+      history = json.loads(params.get("Ev6SpasDryRunHistory") or "[]")
+      if not isinstance(history, list):
+        history = []
+    except (ValueError, TypeError):
+      history = []
+    history.append(result)
+    params.put("Ev6SpasDryRunHistory", json.dumps(history[-8:], ensure_ascii=False, separators=(",", ":")))
+    print("EV6 SPAS2 PASSIVE NO-TX:", report)
+
   def _update_blocked_blinker_hold(self, CC, CS, now_nanos):
     now_s = now_nanos / 1e9
     model_valid = (self.sm.seen['modelV2'] and self.sm.valid['modelV2'] and self.sm.alive['modelV2']
@@ -466,6 +572,9 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
+      # No-TX SPAS2 diagnostic: only inspect factory data and save a virtual preview.
+      self._ev6_spas_dry_run(CC, CS, now_nanos)
+
       # 2022 EV6 P-only one-touch stalk experiment; the panda is the final safety gate.
       can_sends.extend(self._ev6_blinker_stalk_trial(CC, CS))
 
