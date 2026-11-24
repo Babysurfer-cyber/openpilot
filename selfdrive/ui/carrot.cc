@@ -1218,6 +1218,15 @@ protected:
                 // Original cyan progress when no actual traffic data was received.
                 ui_fill_rect(s->vg, {x, y, traveled_width, height}, nvgRGBA(55, 174, 193, 235), 8);
             }
+            if (traveled_width > 0) {
+                // Gray out only the already-traveled route, irrespective of
+                // congestion color. Clip the original rounded bar shape so
+                // the moving boundary is straight and the left end stays rounded.
+                nvgSave(s->vg);
+                nvgScissor(s->vg, x, y, traveled_width, height);
+                ui_fill_rect(s->vg, {x, y, width, height}, nvgRGBA(65, 70, 75, 255), 8);
+                nvgRestore(s->vg);
+            }
             const int marker_x = x + traveled_width;
             nvgBeginPath(s->vg);
             nvgMoveTo(s->vg, marker_x, y - 9);
