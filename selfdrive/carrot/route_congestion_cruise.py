@@ -11,7 +11,7 @@ import math
 import time
 from typing import Any
 
-TRIGGER_DISTANCE_M = 100
+TRIGGER_DISTANCE_M = 300
 TRIGGER_EGO_KPH = 90.0
 MAX_SET_SPEED_KPH = 80.0
 SERVICE_TIMEOUT_S = 1.0
@@ -37,7 +37,7 @@ def _fresh(meta: Any, now_s: float) -> bool:
 
 
 def imminent_route_jam(sm: Any, *, now_s: float | None = None) -> JamAhead | None:
-  """Return a verified very_bad section starting 0..100m ahead, else None.
+  """Return a verified very_bad section starting 0..300m ahead, else None.
 
   Route distances are from the start of the *current* Naver route. The route
   and guidance status must both be fresh, live, and mutually consistent.
