@@ -5,6 +5,11 @@
 // If traffic is absent or invalid, the original neutral/cyan progress remains.
 namespace route_progress {
 
+// A navigation SDK can round remaining distance up by a few metres at route
+// start. Tolerate only this small overshoot; larger mismatches still clear
+// the HUD marker rather than displaying incorrect position or traffic.
+constexpr int MAX_REMAINING_OVERSHOOT_M = 5;
+
 struct Snapshot {
   bool visible = false;
   int total_m = 0;
@@ -22,11 +27,12 @@ inline Snapshot calculate(bool connected, bool status_present,
   if (!connected || !status_present || !guidance_active || off_route ||
       !route_present || !route_meta_present ||
       total_m <= 0 || total_m > 2000000 ||
-      remaining_m < 0 || remaining_m > total_m) {
+      remaining_m < 0 || remaining_m > total_m + MAX_REMAINING_OVERSHOOT_M) {
     return {};
   }
-  const int traveled_m = total_m - remaining_m;
-  return {true, total_m, traveled_m, remaining_m,
+  const int normalized_remaining_m = remaining_m > total_m ? total_m : remaining_m;
+  const int traveled_m = total_m - normalized_remaining_m;
+  return {true, total_m, traveled_m, normalized_remaining_m,
           static_cast<float>(traveled_m) / static_cast<float>(total_m)};
 }
 
