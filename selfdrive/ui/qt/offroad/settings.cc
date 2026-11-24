@@ -894,6 +894,7 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   startToggles->addItem(new CValueControl("HotspotOnBoot", tr("Hotspot enabled on boot"), "", 0, 1, 1));
   startToggles->addItem(new CValueControl("SoftwareMenu", tr("Enable Software Menu"), "", 0, 1, 1));
   startToggles->addItem(new CValueControl("IsLdwsCar", tr("IsLdwsCar"), "", 0, 1, 1));
+  startToggles->addItem(new CValueControl("Ev6BlinkerTest", tr("EV6 Blinker One-Touch Test (P only)"), tr("0: Off, 1: Left, 2: Right. Hold brake, openpilot OFF. Single-use command auto-resets to 0. Experimental."), 0, 2, 1));
   startToggles->addItem(new CValueControl("HardwareC3xLite", tr("Hardware is C3x Lite"), "", 0, 1, 1));
   startToggles->addItem(new CValueControl("ShareData", "Share Data", tr("0:None, 1:TCP JSON Data(Reboot required)"), 0, 1, 1));
   //startToggles->addItem(new CValueControl("CarrotCountDownSpeed", "NaviCountDown Speed(10)", "", 0, 200, 5));

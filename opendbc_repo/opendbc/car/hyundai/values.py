@@ -83,6 +83,7 @@ class HyundaiSafetyFlags(IntFlag):
   CANFD_LKA_STEERING_ALT = 128
   FCEV_GAS = 256
   ALT_LIMITS_2 = 512
+  EV6_BLINKER_STALK_TEST = 1024  # isolated parked-only 0x3C1 trial
 
 
 class HyundaiFlags(IntFlag):

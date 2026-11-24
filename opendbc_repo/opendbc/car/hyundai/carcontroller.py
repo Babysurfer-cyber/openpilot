@@ -178,6 +178,7 @@ class CarController(CarControllerBase):
     self.camera_scc_params = Params().get_int("HyundaiCameraSCC")
     self.is_ldws_car = Params().get_bool("IsLdwsCar")
     self.enable_corner_radar = 0
+    self.ev6_last_blinker_trial_frame = -100000
 
     # 💡 [수정] radarState와 modelV2를 모두 수신하도록 변경
     self.sm = messaging.SubMaster(['radarState', 'modelV2'])
@@ -187,6 +188,69 @@ class CarController(CarControllerBase):
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
+
+  @staticmethod
+  def _ev6_stalk_crc8(body):
+    """2022 EV6 BLINKER_STALKS CRC8: poly 0x1D, init 0, xorout 0x65."""
+    crc = 0
+    for byte in body:
+      crc ^= byte
+      for _ in range(8):
+        crc = ((crc << 1) ^ (0x1D if crc & 0x80 else 0)) & 0xFF
+    return crc ^ 0x65
+
+  def _ev6_blinker_stalk_trial(self, CC, CS):
+    """One-shot, P-only replay of the real 0x3C1 one-touch *lever* frame.
+
+    This does not touch SPAS/APRK. The vehicle may reject the replay; a
+    correctly formed frame is not proof that the BCM has accepted it.
+    The panda safety hook independently checks brake, speed, counter,
+    stock lever freshness and message CRC.
+    """
+    if self.frame % 10 or self.CP.carFingerprint != CAR.KIA_EV6 or self.CAN.ECAN != 0:
+      return []
+
+    params = Params()
+    side = params.get_int("Ev6BlinkerTest")
+    if side not in (1, 2):
+      return []
+
+    # Consume immediately, including failed prerequisites. No delayed flash
+    # when somebody later shifts into P or applies the brake.
+    params.put_int("Ev6BlinkerTest", 0)
+    parked = (CS.out.gearShifter == structs.CarState.GearShifter.park and
+              CS.out.standstill and CS.out.vEgo < 0.05 and
+              CS.out.brakePressed and not CC.enabled and
+              not CS.out.steeringPressed and
+              not CS.out.leftBlinker and not CS.out.rightBlinker)
+    if not parked or self.frame - self.ev6_last_blinker_trial_frame < 500:
+      print("EV6 blinker trial: rejected (park/brake/openpilot/5s cooldown)")
+      return []
+
+    if CS.blinker_stalks is None:
+      print("EV6 blinker trial: no stock 0x3C1 template")
+      return []
+
+    values = dict(CS.blinker_stalks)
+    if any(values.get(k, 0) for k in
+           ("LEFT_BLINKER", "RIGHT_BLINKER", "LEFT_BLINKER_TAP", "RIGHT_BLINKER_TAP")):
+      print("EV6 blinker trial: driver lever active")
+      return []
+
+    # Actual EV6 rlog(3): left byte3=40 byte4=10; right byte3=00
+    # byte4=41. Driver's original 0x3C1 remains unchanged in software.
+    values["COUNTER_ALT"] = (int(values["COUNTER_ALT"]) + 1) & 0xF
+    values["CHECKSUM_MAYBE"] = 0
+    values.update(LEFT_BLINKER=int(side == 1),
+                  RIGHT_BLINKER=int(side == 2),
+                  LEFT_BLINKER_TAP=int(side == 1),
+                  RIGHT_BLINKER_TAP=int(side == 2))
+    addr, payload, bus = self.packer.make_can_msg("BLINKER_STALKS", self.CAN.ECAN, values)
+    payload = bytearray(payload)
+    payload[0] = self._ev6_stalk_crc8(payload[1:])
+    self.ev6_last_blinker_trial_frame = self.frame
+    print(f"EV6 blinker trial: one 0x3C1 tap for side {side}, counter {values['COUNTER_ALT']}")
+    return [(addr, bytes(payload), bus)]
 
   def _update_blocked_blinker_hold(self, CC, CS, now_nanos):
     now_s = now_nanos / 1e9
@@ -402,6 +466,9 @@ class CarController(CarControllerBase):
         if not camera_scc:
           can_sends.extend(hyundaicanfd.create_lfa_icon_non_camera_scc(self.packer, CS, self.CAN, CC))
           
+      # 2022 EV6 P-only one-touch stalk experiment; the panda is the final safety gate.
+      can_sends.extend(self._ev6_blinker_stalk_trial(CC, CS))
+
       # blinkers (기존에 이미 있던 코드)
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
         can_sends.extend(hyundaicanfd.create_spas_messages(self.packer, self.CAN, self.frame, CC.leftBlinker, CC.rightBlinker))

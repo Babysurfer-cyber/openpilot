@@ -228,6 +228,11 @@ class CarInterface(CarInterfaceBase):
     elif ret.flags & HyundaiFlags.FCEV:
       ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.FCEV_GAS.value
 
+    # Only 2022-24 EV6 gets access to the tightly guarded parked-only stalk trial.
+    # This is not SPAS2 activation and does not disable the parking ECU.
+    if candidate == CAR.KIA_EV6 and ret.flags & HyundaiFlags.CANFD:
+      ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.EV6_BLINKER_STALK_TEST.value
+
     # Car specific configuration overrides
 
     if candidate == CAR.KIA_OPTIMA_G4_FL:

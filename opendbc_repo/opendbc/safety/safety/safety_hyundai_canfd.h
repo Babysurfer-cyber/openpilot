@@ -22,12 +22,14 @@ const TorqueSteeringLimits HYUNDAI_CANFD_STEERING_LIMITS = {
 };
 
 const CanMsg HYUNDAI_CANFD_HDA2_TX_MSGS[] = {
+  {0x3C1, 0, 8},  // EV6 P-only one-touch stalk trial; blocked unless safety flag, brake and zero speed
   {0x50, 0, 16},  // LKAS
   {0x1CF, 1, 8},  // CRUISE_BUTTON
   {0x2A4, 0, 24}, // CAM_0x2A4
 };
 
 const CanMsg HYUNDAI_CANFD_HDA2_ALT_STEERING_TX_MSGS[] = {
+  {0x3C1, 0, 8},  // EV6 P-only one-touch stalk trial; blocked unless safety flag, brake and zero speed
   {0x110, 0, 32}, // LKAS_ALT
   {0x1CF, 1, 8},  // CRUISE_BUTTON
   {0x362, 0, 32}, // CAM_0x362
@@ -35,6 +37,7 @@ const CanMsg HYUNDAI_CANFD_HDA2_ALT_STEERING_TX_MSGS[] = {
 };
 
 const CanMsg HYUNDAI_CANFD_HDA2_LONG_TX_MSGS[] = {
+  {0x3C1, 0, 8},  // EV6 P-only one-touch stalk trial; blocked unless safety flag, brake and zero speed
   {0x50, 0, 16},  // LKAS
   {0x1CF, 0, 8},  // CRUISE_BUTTON
   {0x1CF, 1, 8},  // CRUISE_BUTTON
@@ -90,6 +93,7 @@ const CanMsg HYUNDAI_CANFD_HDA2_LONG_TX_MSGS[] = {
 };
 
 const CanMsg HYUNDAI_CANFD_HDA1_TX_MSGS[] = {
+  {0x3C1, 0, 8},  // EV6 P-only one-touch stalk trial; blocked unless safety flag, brake and zero speed
   {0x12A, 0, 16}, // LFA
   {0x1A0, 0, 32}, // CRUISE_INFO
   {0x1CF, 0, 8},  // CRUISE_BUTTON
@@ -216,6 +220,26 @@ RxCheck hyundai_canfd_hda2_long_alt_buttons_rx_checks_scc2[] = {
 
 const int HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
 const int HYUNDAI_PARAM_CANFD_HDA2_ALT_STEERING = 128;
+const int HYUNDAI_PARAM_EV6_BLINKER_STALK_TEST = 1024;
+static bool hyundai_ev6_blinker_stalk_test = false;
+static uint8_t hyundai_ev6_stock_stalk[8] = {0};
+static uint32_t hyundai_ev6_stalk_rx_us = 0U;
+static uint32_t hyundai_ev6_stalk_tx_us = 0U;
+static bool hyundai_ev6_stock_stalk_idle = false;
+
+// EV6 2022 stock BLINKER_STALKS (0x3C1): CRC8 poly 0x1D,
+// init 0, xorout 0x65 over bytes 1..7; verified against rlog(3)/(6)/(7).
+static uint8_t hyundai_ev6_stalk_crc8(const CANPacket_t *pkt) {
+  uint8_t crc = 0U;
+  for (int i = 1; i < 8; i++) {
+    crc ^= GET_BYTE(pkt, i);
+    for (int bit = 0; bit < 8; bit++) {
+      crc = (uint8_t)(((crc << 1U) ^ ((crc & 0x80U) ? 0x1DU : 0U)) & 0xFFU);
+    }
+  }
+  return (uint8_t)(crc ^ 0x65U);
+}
+
 bool hyundai_canfd_alt_buttons = false;
 bool hyundai_canfd_hda2_alt_steering = false;
 bool hyundai_canfd_buffered_fwd = false;
@@ -243,13 +267,13 @@ static uint32_t hyundai_canfd_get_checksum(const CANPacket_t* to_push) {
 
 typedef struct {
   int addr;
-  int bus;              // forwarding block ¥ÎªÛ tx bus: 0 or 2
+  int bus;              // forwarding block ÎåÄÏÉÅ tx bus: 0 or 2
   int hz;
   uint32_t timeout_us;
   uint32_t last_tx_us;
 } CanfdTxState;
 
-// forwarding blockøÎ: bus 0,2∏∏ ªÁøÎ
+// forwarding blockÏö©: bus 0,2Îßå ÏÇ¨Ïö©
 CanfdTxState canfd_tx_states[] = {
   {0x50,  0, 100, 0U, 0U}, // 80:  LKAS
   {0x51,  0, 100, 0U, 0U}, // 81:  ADRV_0x51
@@ -396,7 +420,7 @@ static void canfd_bfwd_push(CanfdBufferedFwd* st, const CANPacket_t* pkt) {
   if ((st == NULL) || !st->enabled) return;
   if (GET_BUS(pkt) != st->dst_bus) return;
 
-  // queue∞° ¿ÃπÃ 2∞≥∏È ¿Ãπ¯ ªı packet¿∫ πˆ∏≤
+  // queueÍ∞Ä Ïù¥ÎØ∏ 2Í∞úÎ©¥ Ïù¥Î≤à ÏÉà packetÏùÄ Î≤ÑÎ¶º
   if (st->count >= CANFD_BFWD_MAX_QUEUE) {
     return;
   }
@@ -420,7 +444,7 @@ static bool canfd_bfwd_pop(CanfdBufferedFwd* st, CANPacket_t* pkt) {
   st->head = (st->head + 1U) % CANFD_BFWD_MAX_QUEUE;
   st->count--;
 
-  // ∏∂¡ˆ∏∑ ¡§ªÛ packet ¿˙¿Â
+  // ÎßàÏßÄÎßâ Ï†ïÏÉÅ packet Ï†ÄÏû•
   canfd_copy_packet(&st->last_pkt, pkt);
   st->has_last_pkt = true;
   st->reuse_left = CANFD_BFWD_REUSE_MAX;
@@ -528,6 +552,20 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *to_push) {
     const int stock_scc_bus = hyundai_canfd_hda2 ? 1 : 0;
     stock_ecu_detected = stock_ecu_detected || ((addr == 0x1a0) && (bus == stock_scc_bus));
   }
+  // Remember an authentic, idle stock 0x3C1; do not forge a lever over
+  // a human's active lever. The test transmit must follow a fresh stock frame.
+  if (hyundai_ev6_blinker_stalk_test && (addr == 0x3C1) && (bus == 0) && (GET_LEN(to_push) == 8U)) {
+    bool valid = (hyundai_ev6_stalk_crc8(to_push) == GET_BYTE(to_push, 0));
+    hyundai_ev6_stock_stalk_idle = valid && (GET_BYTE(to_push, 3) == 0U) &&
+                                  (GET_BYTE(to_push, 4) == 0U);
+    if (valid) {
+      for (int i = 0; i < 8; i++) {
+        hyundai_ev6_stock_stalk[i] = GET_BYTE(to_push, i);
+      }
+      hyundai_ev6_stalk_rx_us = microsecond_timer_get();
+    }
+  }
+
   generic_rx_checks(stock_ecu_detected);
 
 }
@@ -556,6 +594,36 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
   bool tx = true;
   int addr = GET_ADDR(to_send);
   bool violation = false;
+
+  // Opt-in 2022 EV6 only: one real lever *tap* shape per >=5 seconds.
+  // Deliberately no APRK diagnostic frames, no SPAS1/SPAS2 and no driving use.
+  if (addr == 0x3C1) {
+    uint32_t now = microsecond_timer_get();
+    uint8_t expected_counter = (uint8_t)(((hyundai_ev6_stock_stalk[1] >> 4U) + 1U) & 0xFU);
+    bool left = (GET_BYTE(to_send, 3) == 0x40U) && (GET_BYTE(to_send, 4) == 0x10U);
+    bool right = (GET_BYTE(to_send, 3) == 0x00U) && (GET_BYTE(to_send, 4) == 0x41U);
+    bool shape = left || right;
+    bool stock_copy = ((GET_BYTE(to_send, 1) & 0x0FU) == (hyundai_ev6_stock_stalk[1] & 0x0FU)) &&
+                      ((GET_BYTE(to_send, 1) >> 4U) == expected_counter) &&
+                      (GET_BYTE(to_send, 2) == hyundai_ev6_stock_stalk[2]) &&
+                      (GET_BYTE(to_send, 5) == hyundai_ev6_stock_stalk[5]) &&
+                      (GET_BYTE(to_send, 6) == hyundai_ev6_stock_stalk[6]) &&
+                      (GET_BYTE(to_send, 7) == hyundai_ev6_stock_stalk[7]);
+    bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
+                   (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
+                   !vehicle_moving && brake_pressed && !gas_pressed &&
+                   !controls_allowed && hyundai_ev6_stock_stalk_idle &&
+                   (hyundai_ev6_stalk_rx_us != 0U) &&
+                   (get_ts_elapsed(now, hyundai_ev6_stalk_rx_us) <= 120000U) &&
+                   ((hyundai_ev6_stalk_tx_us == 0U) ||
+                    (get_ts_elapsed(now, hyundai_ev6_stalk_tx_us) >= 5000000U)) &&
+                   shape && stock_copy &&
+                   (hyundai_ev6_stalk_crc8(to_send) == GET_BYTE(to_send, 0));
+    if (allowed) {
+      hyundai_ev6_stalk_tx_us = now;
+    }
+    return allowed;
+  }
 
   // steering
   const int steer_addr = (hyundai_canfd_hda2 && !hyundai_longitudinal) ? hyundai_canfd_hda2_get_lkas_addr() : 0x12a;
@@ -660,7 +728,7 @@ static int hyundai_canfd_fwd_hook(CANPacket_t* to_send) {
       CANPacket_t buffered_pkt;
       bool use_buffered = canfd_bfwd_pop(bfwd, &buffered_pkt);
 
-      // queue∞° ∫Òæ˙¿∏∏È ∏∂¡ˆ∏∑ ¡§ªÛ∞™¿ª 1~2»∏ ¿ÁªÁøÎ
+      // queueÍ∞Ä ÎπÑÏóàÏúºÎ©¥ ÎßàÏßÄÎßâ Ï†ïÏÉÅÍ∞íÏùÑ 1~2Ìöå Ïû¨ÏÇ¨Ïö©
       if (!use_buffered) {
         use_buffered = canfd_bfwd_reuse_last(bfwd, &buffered_pkt);
         if (use_buffered) {
@@ -711,6 +779,13 @@ static safety_config hyundai_canfd_init(uint16_t param) {
   hyundai_canfd_alt_buttons = GET_FLAG(param, HYUNDAI_PARAM_CANFD_ALT_BUTTONS);
   hyundai_canfd_hda2_alt_steering = GET_FLAG(param, HYUNDAI_PARAM_CANFD_HDA2_ALT_STEERING);
   hyundai_canfd_buffered_fwd = hyundai_camera_scc;
+  hyundai_ev6_blinker_stalk_test = GET_FLAG(param, HYUNDAI_PARAM_EV6_BLINKER_STALK_TEST);
+  hyundai_ev6_stalk_rx_us = 0U;
+  hyundai_ev6_stalk_tx_us = 0U;
+  hyundai_ev6_stock_stalk_idle = false;
+  for (int i = 0; i < 8; i++) {
+    hyundai_ev6_stock_stalk[i] = 0U;
+  }
 
   // no long for radar-SCC HDA1 yet
   //if (!hyundai_canfd_hda2 && !hyundai_camera_scc) {
