@@ -74,3 +74,41 @@ def test_absent_sdi_is_reported_without_inventing_camera_warning():
   assert result["sdi_present"] is False
   assert result["sdi_type"] is None
   assert result["sdi_distance_m"] is None
+
+
+def test_traffic_coverage_identifies_unreported_gray_gap():
+  s = snapshot([
+    {"start_distance_m": 0, "length_m": 14000, "congestion": "good"},
+    {"start_distance_m": 14000, "length_m": 1000, "congestion": "bad"},
+    {"start_distance_m": 15000, "length_m": 500, "congestion": "very_bad"},
+  ])
+  r = summarize_traffic(s)
+  assert r["bar_traffic_colors_expected"]
+  assert r["traffic_covered_m"] == 15500
+  assert r["traffic_uncovered_m"] == 4500
+  assert r["traffic_covered_percent"] == 77.5
+  assert r["traffic_first_section_start_m"] == 0
+  assert r["traffic_last_section_end_m"] == 15500
+  assert r["traffic_lengths_m"] == {
+    "good": 14000, "bad": 1000, "very_bad": 500, "none": 0,
+  }
+
+
+def test_traffic_coverage_counts_unknown_gaps_even_between_valid_sections():
+  s = snapshot([
+    {"start_distance_m": 1000, "length_m": 3000, "congestion": "none"},
+    {"start_distance_m": 5000, "length_m": 2000, "congestion": "good"},
+  ])
+  r = summarize_traffic(s)
+  assert r["traffic_uncovered_m"] == 15000
+  assert r["traffic_covered_percent"] == 25
+  assert r["traffic_first_section_start_m"] == 1000
+  assert r["traffic_last_section_end_m"] == 7000
+  assert r["traffic_lengths_m"]["none"] == 3000
+
+
+def test_no_sections_do_not_claim_colored_coverage():
+  r = summarize_traffic(snapshot())
+  assert r["traffic_covered_percent"] is None
+  assert r["traffic_uncovered_m"] is None
+  assert r["traffic_lengths_m"] is None
