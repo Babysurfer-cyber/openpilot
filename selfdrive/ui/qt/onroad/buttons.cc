@@ -21,9 +21,9 @@ ExperimentalButton::ExperimentalButton(QWidget *parent) : experimental_mode(fals
 
   engage_img = loadPixmap("../assets/img_chffr_wheel.png", {img_size, img_size});
   experimental_img = loadPixmap("../assets/img_experimental.svg", {img_size, img_size});
-  // Status icon only: do not let touches change ExperimentalMode.
-  // Pass taps through to the camera without triggering button clicks.
-  setAttribute(Qt::WA_TransparentForMouseEvents, true);
+  // The steering-wheel icon opens a temporary driver-camera preview.
+  // Do not change the experimental-mode setting when it is tapped.
+  setAttribute(Qt::WA_TransparentForMouseEvents, false);
 }
 
 void ExperimentalButton::updateState(const UIState &s) {
