@@ -6,6 +6,9 @@ from typing import Any
 
 from openpilot.selfdrive.carrot.route_traffic import extract_route_traffic
 
+# Match the read-only HUD's tiny SDK rounding tolerance in route_progress.h.
+MAX_REMAINING_OVERSHOOT_M = 5
+
 
 def _object(value: Any) -> dict:
   return value if isinstance(value, dict) else {}
@@ -49,7 +52,7 @@ def summarize_traffic(snapshot: dict[str, Any]) -> dict[str, Any]:
     blockers.append("navigation_route_present_false")
   if not route_received:
     blockers.append("route_item_missing_or_stale")
-  if total is None or total <= 0 or remaining is None or remaining > total:
+  if total is None or total <= 0 or remaining is None or remaining > total + MAX_REMAINING_OVERSHOOT_M:
     blockers.append("route_distance_invalid_or_missing")
 
   raw_traffic = route.get("traffic_sections")
