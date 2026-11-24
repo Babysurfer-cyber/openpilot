@@ -2203,6 +2203,7 @@ public:
 
     QString szPosRoadName = "";
     QString szPosRoadName_last = ""; // 💡 [추가] 이전 안내 텍스트 기억용
+    QString auto_mode_log_last = ""; // 내비 문구가 덮여도 오토 정체 감속 표시 유지
     int     nRoadLimitSpeed = 30;
     int     auto_blink_timer = 0;      // ⬅️ [추가] 3초 깜빡임 타이머
     int     myDrivingMode_last = 1;    // 💡 [핵심 추가] 이전 드라이빙 모드 기억용
@@ -2326,6 +2327,17 @@ public:
             if (szPosRoadName != szPosRoadName_last && szPosRoadName.contains("🔔")) {
                 trigger_blink = true;
             }
+            // CarrotMan's navigation road name can replace the transient
+            // bell-text before the UI sees it. The confirmed auto congestion
+            // speed-change log is a second, independent blink trigger.
+            const QString auto_mode_log = QString::fromStdString(car_state.getLogCarrot());
+            if (auto_mode_log != auto_mode_log_last &&
+                auto_mode_log.startsWith("Auto congestion cap:")) {
+                trigger_blink = true;
+            }
+            auto_mode_log_last = auto_mode_log;
+        } else {
+            auto_mode_log_last = "";
         }
 
         if (trigger_blink) {
