@@ -1811,6 +1811,22 @@
     },
     {
       "group": "시작",
+      "name": "Ev6BlinkerTest",
+      "title": "EV6 원터치 깜빡이 시험(0)",
+      "descr": "0:해제 1:좌측 2:우측. 2022 EV6 전용 원터치 레버 0x3C1 시험입니다. P단, 브레이크 밟기, 오픈파일럿 해제 상태에서 한 번만 전송하고 0으로 복귀합니다. 작동 여부 미검증. 자동주차 ECU와 SPAS2는 건드리지 않습니다.",
+      "egroup": "START",
+      "etitle": "EV6 One-Touch Blinker Trial(0)",
+      "edescr": "0:Off 1:Left 2:Right. Experimental 2022 EV6 P-only, hold brake, openpilot OFF, one shot, resets to 0. Not verified.",
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "启动设置",
+      "ctitle": "EV6 转向灯单次试验(0)",
+      "cdescr": "0:关闭 1:左 2:右；仅驻车且踩下制动，一次发送，自动恢复0，未经实车验证"
+    },
+    {
+      "group": "시작",
       "name": "EnableRadarTracks",
       "title": "레이더트랙,SCC레이더설정(0)",
       "descr": "-2: VOACC 비전 only 시험\n-1: SCC 항상 사용\n0: SCC 레이더 사용\n1: 레이더트랙 사용\n2: 레이더트랙 + 저속 SCC 함께 사용\n3: 레이더트랙 + 저속 SCC + 끼어드는 차량 + 스텔스 차량",
