@@ -17,6 +17,9 @@ public:
   explicit AnnotatedCameraWidget(VisionStreamType type, QWidget* parent = 0);
   void updateState(const UIState &s);
 
+signals:
+  void driverCameraRequested();
+
 private:
   QVBoxLayout *main_layout;
   ExperimentalButton *experimental_btn;
