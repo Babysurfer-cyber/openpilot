@@ -153,7 +153,15 @@ class AprkHandoffBench:
       return
     response = bytes(payload[1:1+n])
     if response.startswith(b'\x7f'):
-      self._abort(now_ms, 'ecu_negative_response')
+      if self.phase in ('wait_restore_enable', 'wait_restore_default'):
+        # _abort() deliberately does not re-enter restore from a restore
+        # state. A negative ECU reply during restore must instead be
+        # terminal: no subsequent positive reply may claim restoration.
+        self.reason = 'ecu_negative_response_during_restore'
+        self.phase, self.phase_ms = 'restore_unconfirmed', now_ms
+        self._event(now_ms, 'RESTORE_UNCONFIRMED_DO_NOT_ACTUATE')
+      else:
+        self._abort(now_ms, 'ecu_negative_response')
     elif self.phase == 'wait_extended' and response.startswith(b'\x50\x03'):
       self.session_ack_ms = now_ms
       self.stock_after_session_ack = {addr: -1 for addr in SPAS}
