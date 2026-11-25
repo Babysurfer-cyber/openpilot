@@ -98,7 +98,7 @@ class AprkHandoffBench:
     if self.phase == 'wait_post_session_stock':
       # Do not even *propose* the diagnostic disable request until BOTH
       # original streams are still live and advancing after session ACK.
-      if (not continuous or now_ms <= self.session_ack_ms or
+      if (not consecutive or now_ms <= self.session_ack_ms or
           now_ms - self.session_ack_ms > POST_SESSION_STOCK_WINDOW_MS):
         self._abort(now_ms, 'stock_contract_failed_after_session_ack')
         return
