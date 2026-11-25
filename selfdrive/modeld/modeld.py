@@ -546,7 +546,12 @@ def main(demo=False):
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       # Preserve the verified stalk origin; laneChangeStarting alone also includes ATC.
-      modelv2_send.modelV2.meta.laneChangeDriverRequest = bool(DH.lane_change_driver_request)
+      # Revoke the radar-only provenance immediately if the optional stalk
+      # CAN frames expire, even after an otherwise valid FSM has started.
+      modelv2_send.modelV2.meta.laneChangeDriverRequest = bool(
+        DH.lane_change_driver_request and sm['carState'].canValid
+        and getattr(sm['carState'], 'blinkerStalkValid', False)
+      )
       modelv2_send.modelV2.meta.laneChangeBlocked = DH.lane_change_blocked
       modelv2_send.modelV2.meta.desireLog = DH.desireLog #carrot
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
