@@ -23,7 +23,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 import os
+import re
 import secrets
+import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, render_template, Response, request, send_from_directory, redirect, url_for, abort
 from openpilot.common.realtime import set_core_affinity
@@ -47,6 +51,83 @@ tempseg = -1
 temproute = "None"
 
 app = Flask(__name__)
+
+# Preview generation is bounded and never blocks the Dashcam page response.
+PREVIEW_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fleet-preview")
+PREVIEW_LOCK = threading.Lock()
+PREVIEW_PENDING = set()
+PREVIEW_RETRY_AFTER = {}
+PREVIEW_QUEUE_LIMIT = 8
+PREVIEW_FAILURE_COOLDOWN = 180.0
+FOOTAGE_PAGE_SIZE = 20
+ROUTE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}$")
+SEGMENT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}--\d+$")
+
+
+def _create_preview(segment):
+  segment_dir = os.path.join(Paths.log_root(), segment)
+  source = os.path.join(segment_dir, "qcamera.ts")
+  preview = os.path.join(segment_dir, "preview.gif")
+  temporary = os.path.join(segment_dir, "preview.part.gif")
+  success = False
+
+  try:
+    if not os.path.isfile(source):
+      raise FileNotFoundError(source)
+    # Seek before decoding; bound CPU usage and process duration.
+    subprocess.run(
+      ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1",
+       "-i", source, "-ss", "5", "-frames:v", "1", "-y", temporary],
+      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=True,
+    )
+    if not os.path.isfile(temporary) or os.path.getsize(temporary) == 0:
+      raise RuntimeError("ffmpeg did not produce a preview")
+    os.replace(temporary, preview)
+    success = True
+  except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+    cloudlog.warning(f"Fleet preview failed for {segment}: {exc}")
+  finally:
+    if os.path.exists(temporary):
+      try:
+        os.remove(temporary)
+      except OSError:
+        pass
+    with PREVIEW_LOCK:
+      PREVIEW_PENDING.discard(segment)
+      if success:
+        PREVIEW_RETRY_AFTER.pop(segment, None)
+      else:
+        PREVIEW_RETRY_AFTER[segment] = time.monotonic() + PREVIEW_FAILURE_COOLDOWN
+
+
+@app.route("/preview-thumbnail/<segment>")
+def preview_thumbnail(segment):
+  if not SEGMENT_PATTERN.fullmatch(segment):
+    abort(404)
+
+  preview_dir = os.path.join(Paths.log_root(), segment)
+  preview_name = "preview.gif"
+  preview_path = os.path.join(preview_dir, preview_name)
+
+  if os.path.isfile(preview_path) and os.path.getsize(preview_path) > 0:
+    return send_from_directory(preview_dir, preview_name, mimetype="image/gif", max_age=300)
+
+  if not os.path.isfile(os.path.join(preview_dir, "qcamera.ts")):
+    return jsonify({"status": "missing_recording"}), 404
+
+  with PREVIEW_LOCK:
+    now = time.monotonic()
+    if now < PREVIEW_RETRY_AFTER.get(segment, 0):
+      return jsonify({"status": "failed_retry_later"}), 503
+    if segment not in PREVIEW_PENDING and len(PREVIEW_PENDING) < PREVIEW_QUEUE_LIMIT:
+      PREVIEW_PENDING.add(segment)
+      try:
+        PREVIEW_EXECUTOR.submit(_create_preview, segment)
+      except RuntimeError:
+        PREVIEW_PENDING.discard(segment)
+        return jsonify({"status": "unavailable"}), 503
+
+  return jsonify({"status": "pending"}), 202
 
 @app.route("/")
 def home_page():
@@ -264,53 +345,92 @@ def get_file_size():
 
 @app.route("/footage/<cameratype>/<segment>")
 def fcamera(cameratype, segment):
-  if not fleet.is_valid_segment(segment):
-    return render_template("error.html", error="invalid segment")
-  file_name = Paths.log_root() + "/" + segment + "/" + cameratype + (".ts" if cameratype == "qcamera" else ".hevc")
-  return Response(fleet.ffmpeg_mp4_wrap_process_builder(file_name).stdout.read(), status=200, mimetype='video/mp4')
+  if cameratype not in ("qcamera", "fcamera", "dcamera", "ecamera"):
+    abort(404)
+  if not SEGMENT_PATTERN.fullmatch(segment) or not fleet.is_valid_segment(segment):
+    abort(404)
+  file_name = os.path.join(Paths.log_root(), segment, cameratype + (".ts" if cameratype == "qcamera" else ".hevc"))
+  if not os.path.isfile(file_name) or os.path.getsize(file_name) == 0:
+    abort(404)
+  process = fleet.ffmpeg_mp4_wrap_process_builder(file_name)
+
+  def stream_video():
+    try:
+      while True:
+        chunk = process.stdout.read(65536)
+        if not chunk:
+          break
+        yield chunk
+    finally:
+      if process.stdout:
+        process.stdout.close()
+      if process.poll() is None:
+        process.terminate()
+        try:
+          process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+          process.kill()
+          process.wait()
+
+  return Response(stream_video(), status=200, mimetype="video/mp4")
 
 
 @app.route("/footage/<route>")
 def route(route):
-    if len(route) != 20:
-        return render_template("error.html", error="route not found")
+    if not ROUTE_PATTERN.fullmatch(route):
+        abort(404)
+    query_params = request.query_string.decode("utf-8").split(",")
+    query_segment = query_params[0] if query_params and query_params[0].isdigit() else "0"
+    query_type = query_params[1] if len(query_params) >= 2 and query_params[1] in ("qcamera", "fcamera", "dcamera", "ecamera") else "qcamera"
 
-    query_params = request.query_string.decode('utf-8').split(',')
-    if len(query_params) >= 2:
-        query_segment = query_params[0]
-        query_type = query_params[1]
-    else:
-        query_segment = "0"
-        query_type = "qcamera"
+    segments = fleet.segments_in_route(route)
+    if not segments:
+        return render_template("error.html", error="No recording segments are stored for this route")
 
-    links = []
-    segments = []
-    for segment in fleet.segments_in_route(route):
-        seg_num = segment.split("--")[2]
-        links.append(f'<a href="{route}?{seg_num},{query_type}">{segment}</a>')
-        segments.append(f"'{segment}'")
-    
-    return render_template("route.html", 
-                         route=route,
-                         query_type=query_type,
-                         links="<br>".join(links),
-                         segments=",".join(segments),
-                         query_segment=query_segment)
+    file_name = query_type + (".ts" if query_type == "qcamera" else ".hevc")
+    selected = f"{route}--{query_segment}"
+    if selected not in segments or not os.path.isfile(os.path.join(Paths.log_root(), selected, file_name)):
+        playable = [segment for segment in segments
+                    if os.path.isfile(os.path.join(Paths.log_root(), segment, file_name))]
+        if not playable:
+            return render_template("error.html", error="No playable video for this camera; only logs may remain")
+        query_segment = playable[0].rsplit("--", 1)[-1]
 
+    links = [f'<a href="{route}?{segment.rsplit("--", 1)[-1]},{query_type}">{segment}</a>'
+             for segment in segments]
+    return render_template("route.html", route=route, query_type=query_type,
+                           links="<br>".join(links),
+                           segments=",".join(f"'{segment}'" for segment in segments),
+                           query_segment=query_segment)
 
 @app.route("/footage/")
 @app.route("/footage")
 def footage():
-  route_paths = fleet.all_routes()
-  gifs = []
-  for route_path in route_paths:
-    input_path = Paths.log_root() + route_path + "--0/qcamera.ts"
-    output_path = Paths.log_root() + route_path + "--0/preview.gif"
-    fleet.video_to_img(input_path, output_path)
-    gif_path = route_path + "--0/preview.gif"
-    gifs.append(gif_path)
-  zipped = zip(route_paths, gifs, strict=False)
-  return render_template("footage.html", zipped=zipped)
+  # Read directory names once. Segment 0 can be absent after retention cleanup.
+  groups = {}
+  for item in fleet.all_segment_names():
+    groups.setdefault(item.time_str, []).append(item.segment_num)
+  names = sorted(groups, reverse=True)
+  total_routes = len(names)
+  total_pages = max(1, (total_routes + FOOTAGE_PAGE_SIZE - 1) // FOOTAGE_PAGE_SIZE)
+  page = request.args.get("page", default=1, type=int) or 1
+  page = min(max(1, page), total_pages)
+  page_names = names[(page - 1) * FOOTAGE_PAGE_SIZE:page * FOOTAGE_PAGE_SIZE]
+  rows = []
+  for name in page_names:
+    numbers = sorted(groups[name])
+    segment = next(
+      (f"{name}--{n}" for n in numbers
+       if os.path.isfile(os.path.join(Paths.log_root(), f"{name}--{n}", "qcamera.ts"))), None
+    )
+    try:
+      date_folder = os.path.join(Paths.log_root(), f"{name}--{numbers[0]}")
+      date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.stat(date_folder).st_ctime))
+    except (IndexError, OSError):
+      date_text = "저장된 날짜 정보 없음"
+    rows.append({"name": name, "segment": segment, "date": date_text})
+  return render_template("footage.html", routes=rows, page=page,
+                         total_pages=total_pages, total_routes=total_routes)
 
 @app.route("/preserved/")
 @app.route("/preserved")
