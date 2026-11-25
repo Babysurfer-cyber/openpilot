@@ -1687,8 +1687,6 @@ private:
     int     show_path_color = 14;
     int     show_path_mode_normal = 13;
     int     show_path_color_normal = 14;
-    int     show_path_mode_lane = 13;
-    int     show_path_color_lane = 14;
     int     show_path_color_cruise_off = 14;
     float   show_path_width = 1.05; // 👈 1.05로 변경 (1.9m 폭으로 확장)
     Params  params;
@@ -1897,25 +1895,15 @@ protected:
 		  SubMaster& sm = *(s->sm);
 		  if (!sm.alive("modelV2") || !sm.alive("carState")) return false;
         const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
-        active_lane_line = sm["controlsState"].getControlsState().getActiveLaneLine();
         auto model_position = model.getPosition();
-        if (active_lane_line) {
-          model_position = sm["lateralPlan"].getLateralPlan().getPosition();
-        }
         float max_distance = s->max_distance;
         max_distance -= 2.0;
         int max_idx = get_path_length_idx(model_position, max_distance);
 
         auto selfdrive_state = sm["selfdriveState"].getSelfdriveState();
         longActive = selfdrive_state.getEnabled();
-        if (active_lane_line) {
-          show_path_mode = show_path_mode_lane;
-          show_path_color = show_path_color_lane;
-        }
-        else {
-          show_path_mode = show_path_mode_normal;
-          show_path_color = show_path_color_normal;
-        }
+        show_path_mode = show_path_mode_normal;
+        show_path_color = show_path_color_normal;
         if (longActive == false) {
             show_path_color = show_path_color_cruise_off;
         }
@@ -1931,7 +1919,6 @@ protected:
 
         return true;
     }
-    int use_lane_line_speed_apply = 0;
 public:
     void draw(const UIState* s, float& pathDrawSeq) {
         SubMaster& sm = *(s->sm);
@@ -1940,16 +1927,9 @@ public:
         if (params_count == 0) {
             show_path_mode_normal = params.getInt("ShowPathMode");
             show_path_color_normal = params.getInt("ShowPathColor");
-            show_path_mode_lane = params.getInt("ShowPathModeLane");
-            show_path_color_lane = params.getInt("ShowPathColorLane");
             show_path_color_cruise_off = params.getInt("ShowPathColorCruiseOff");
         }
         if (!make_data(s)) return;
-        int temp = (int)car_state.getUseLaneLineSpeed();
-        if (temp != use_lane_line_speed_apply) {
-            ui_draw_text_a(s, 0, 0, (temp>0)?"LaneMode":"Laneless", 30, (temp>0)?COLOR_GREEN:COLOR_YELLOW, BOLD);
-            use_lane_line_speed_apply = temp;
-        }
         static bool forward = true;
         int alpha = 90;
         NVGcolor colors[10] = {
@@ -2222,6 +2202,8 @@ public:
     int     active_carrot = 0;
     float   cruiseTarget = 0.0;
     int     myDrivingMode = 1;
+    bool    atc_enabled = false;
+    int     atc_params_count = 0;
 
     QString szPosRoadName = "";
     QString szPosRoadName_last = ""; // 💡 [추가] 이전 안내 텍스트 기억용
@@ -2240,6 +2222,9 @@ public:
     //std::vector<lead_vertex_data> lead_vertices_side;
 
     bool updateState(UIState *s) {
+        if (atc_params_count++ % 20 == 0) {
+            atc_enabled = params.getBool("AutoTurnControlEnabled") && params.getInt("AutoTurnControl") > 0;
+        }
         const SubMaster& sm = *(s->sm);
         const bool cs_alive = sm.alive("carState");
         const bool car_state_alive = sm.alive("carState");
@@ -2774,13 +2759,15 @@ public:
         switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
-        case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str()); mode_color = COLOR_GREY_ALPHA(210);  text_color = COLOR_WHITE;  break;
+        case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str());
+                mode_color = atc_enabled ? nvgRGBA(255, 228, 158, 210) : COLOR_WHITE_ALPHA(210);
+                text_color = COLOR_BLACK; break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
         // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
         case 5: 
             strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
-            mode_color = COLOR_GREEN_ALPHA(210);  // 배경은 무조건 녹색 고정!
+            mode_color = atc_enabled ? nvgRGBA(169, 118, 0, 210) : COLOR_GREEN_ALPHA(210);
             
             if (auto_blink_timer > 0) {
                 auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소

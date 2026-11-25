@@ -179,6 +179,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AutoCurveSpeedAggressiveness", {PERSISTENT, INT, "100"}},
 
     {"AutoTurnControl", {PERSISTENT, INT, "0"}},
+    // Keep the configured ATC mode when temporarily disabled via long LFA press.
+    {"AutoTurnControlEnabled", {PERSISTENT, BOOL, "1"}},
     {"AutoTurnControlSpeedTurn", {PERSISTENT, INT, "20"}},
     {"AutoTurnControlTurnEnd", {PERSISTENT, INT, "6"}},
     {"AutoTurnMapChange", {PERSISTENT, INT, "0"}},

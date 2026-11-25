@@ -58,7 +58,6 @@ class LateralPlanner:
     self.lanelines_active = False
     self.lanelines_active_tmp = False
 
-    self.useLaneLineSpeedApply = self.params.get_int("UseLaneLineSpeed")
     self.pathOffset = float(self.params.get_int("PathOffset")) * 0.01
     self.useLaneLineMode = False
     self.plan_a = np.zeros((TRAJECTORY_SIZE, ))
@@ -71,8 +70,6 @@ class LateralPlanner:
     self.lat_mpc = LateralMpc()
     self.reset_mpc(np.zeros(4))
     self.curve_speed = 0
-    self.lanemode_possible_count = 0
-    self.laneless_only = True
 
   def reset_mpc(self, x0=None):
     if x0 is None:
@@ -85,7 +82,6 @@ class LateralPlanner:
     self.readParams -= 1
     if self.readParams <= 0:
       self.readParams = 100
-      self.useLaneLineSpeedApply = sm['carState'].useLaneLineSpeed
       self.pathOffset = float(self.params.get_int("PathOffset")) * 0.01
       self.lateralPathCost = self.params.get_float("LatMpcPathCost") * 0.01
       self.lateralMotionCost = self.params.get_float("LatMpcMotionCost") * 0.01
@@ -96,7 +92,6 @@ class LateralPlanner:
     # clip speed , lateral planning is not possible at 0 speed
     measured_curvature = sm['controlsState'].curvature
     v_ego_car = max(sm['carState'].vEgo, MIN_SPEED)
-    speed_kph = v_ego_car * 3.6
     self.v_ego = v_ego_car
     self.curve_speed = sm['carrotMan'].vTurnSpeed
 
@@ -114,25 +109,15 @@ class LateralPlanner:
       self.v_plan = np.clip(car_speed, MIN_SPEED, np.inf)
       self.v_ego = self.v_plan[0]
       self.plan_a = np.array(md.acceleration.x)
-      if md.velocity.x[-1] < md.velocity.x[0] * 0.7:  # TODO: 모델이 감속을 요청하는 경우 속도테이블이 레인모드를 할수 없음. 속도테이블을 새로 만들어야함..
-        self.lanemode_possible_count = 0
-        self.laneless_only = True
-      else:
-        self.lanemode_possible_count += 1
-        if self.lanemode_possible_count > int(1/DT_MDL):
-          self.laneless_only = False
 
     # Parse model predictions
     self.LP.parse_model(md)
     #lane_change_prob = self.LP.l_lane_change_prob + self.LP.r_lane_change_prob
     #self.DH.update(sm['carState'], md, sm['carControl'].latActive, lane_change_prob, sm)
 
-    if self.useLaneLineSpeedApply == 0 or self.laneless_only:
-      self.useLaneLineMode = False
-    elif speed_kph >= self.useLaneLineSpeedApply + 2:
-      self.useLaneLineMode = True
-    elif speed_kph < self.useLaneLineSpeedApply - 2:
-      self.useLaneLineMode = False
+    # Always follow the model-derived laneless path. Continue parsing lane
+    # geometry for offset and lane-change safety logic.
+    self.useLaneLineMode = False
 
     # Turn off lanes during lane change
     #if self.DH.desire == log.Desire.laneChangeRight or self.DH.desire == log.Desire.laneChangeLeft:
@@ -143,7 +128,7 @@ class LateralPlanner:
       self.LP.lane_change_multiplier = 1.0
 
     # lanelines calculation?
-    self.LP.lanefull_mode = self.useLaneLineMode
+    self.LP.lanefull_mode = False
     self.LP.lane_width_left = md.meta.laneWidthLeft
     self.LP.lane_width_right = md.meta.laneWidthRight
     self.LP.curvature = measured_curvature

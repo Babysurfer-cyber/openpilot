@@ -244,8 +244,10 @@ class VCruiseCarrot:
     self._auto_mode_active_last = False
     self._reset_auto_mode_session()
 
-    self.useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed")
-    self.useLaneLineSpeedApply = self.useLaneLineSpeed
+    # Retain legacy published field, but never allow lane mode.
+    self.useLaneLineSpeed = 0
+    self.useLaneLineSpeedApply = 0
+    self._atc_toggle_enabled = self.params.get_bool("AutoTurnControlEnabled")
 
 
   @property
@@ -273,11 +275,6 @@ class VCruiseCarrot:
       self.applyModelSpeed = self.params.get_float("ApplyModelSpeed") * 0.01
       self.autoSpeedUptoRoadSpeedLimit = self.params.get_float("AutoSpeedUptoRoadSpeedLimit") * 0.01
       self.autoRoadSpeedAdjust = self.params.get_float("AutoRoadSpeedAdjust") * 0.01
-
-      useLaneLineSpeed = self.params.get_int("UseLaneLineSpeed") * unit_factor
-      if self.useLaneLineSpeed != useLaneLineSpeed:
-        self.useLaneLineSpeedApply = useLaneLineSpeed
-      self.useLaneLineSpeed = useLaneLineSpeed
 
       self.speed_from_pcm = self.params.get_int("SpeedFromPCM")
       self._cruise_speed_unit = self.params.get_int("CruiseSpeedUnit")
@@ -622,6 +619,13 @@ class VCruiseCarrot:
     
     return v_cruise_kph, button_type, long_pressed
 
+  def _toggle_atc_enabled(self):
+    # Change only the effective ATC state; preserve configured mode (0..3).
+    self._atc_toggle_enabled = not self._atc_toggle_enabled
+    self.params.put_bool_nonblocking("AutoTurnControlEnabled", self._atc_toggle_enabled)
+    configured_mode = self.params.get_int("AutoTurnControl")
+    self._add_log(f"ATC {'ON' if self._atc_toggle_enabled and configured_mode > 0 else 'OFF'}")
+
   def _update_cruise_buttons(self, CS, CC, v_cruise_kph):
     if self.frame % 10 == 0:
       self.current_driving_mode = self.params.get_int("MyDrivingMode")
@@ -795,8 +799,8 @@ class VCruiseCarrot:
           self._auto_mode_off_chime()
 
       elif button_type == ButtonType.lfaButton:
-        useLaneLineSpeed = max(1, self.useLaneLineSpeed)
-        self.useLaneLineSpeedApply = useLaneLineSpeed if self.useLaneLineSpeedApply == 0 else 0
+        # A long press generates one event; short-press behavior is unchanged.
+        self._toggle_atc_enabled()
 
       elif button_type == ButtonType.cancel:
         self._cruise_cancel_state = True

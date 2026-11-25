@@ -1,0 +1,40 @@
+name: Laneless ATC regression
+
+on:
+  push:
+    branches:
+      - codex/laneless-only-atc-lfa-20261125
+  pull_request:
+    branches:
+      - ms-xy-radar3
+    paths:
+      - .github/workflows/laneless-atc-regression.yml
+      - selfdrive/car/cruise.py
+      - selfdrive/car/tests/test_laneless_atc_standalone.py
+      - selfdrive/carrot/carrot_serv.py
+      - selfdrive/controls/lib/lateral_planner.py
+      - selfdrive/ui/carrot.cc
+      - selfdrive/ui/qt/offroad/settings.cc
+      - common/params_keys.h
+
+permissions:
+  contents: read
+
+jobs:
+  laneless-atc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python source syntax
+        run: |
+          python3 -m py_compile \
+            selfdrive/car/cruise.py \
+            selfdrive/carrot/carrot_serv.py \
+            selfdrive/controls/lib/lateral_planner.py \
+            selfdrive/car/tests/test_laneless_atc_toggle.py \
+            selfdrive/car/tests/test_laneless_atc_standalone.py
+      - name: Execute real method behavior with isolated dependencies
+        run: python3 selfdrive/car/tests/test_laneless_atc_standalone.py -v
