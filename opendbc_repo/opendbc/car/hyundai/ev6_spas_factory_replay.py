@@ -20,6 +20,43 @@ LAMP = 0x413
 LEVER = 0x3C1
 SOURCE_BUS = 0
 MAX_LAMP_DELAY_S = .250
+LEVER_CONTEXT_WINDOW_S = .250  # enough for the observed ~5Hz OEM stalk reporting
+
+
+def lever_checksum(raw):
+  """2022 EV6 0x3C1 8-byte CRC8 (poly=0x1D, init=0, xorout=0x65)."""
+  if len(raw) != 8:
+    raise ValueError('Invalid OEM lever length')
+  checksum = 0
+  for byte in raw[1:]:
+    checksum ^= byte
+    for _ in range(8):
+      checksum = ((checksum << 1) ^ (0x1D if checksum & 0x80 else 0)) & 0xFF
+  return checksum ^ 0x65
+
+
+def verify_lever_context(lever_samples, onset_at):
+  """Evidence limited to timestamps actually observed near the onset.
+
+  The 0x3C1 sample rate is too low to rule out an action between samples.
+  A missing/invalid/non-idle sample must not count as corroboration.
+  """
+  if onset_at is None:
+    return None
+  nearest_before = next((t for t, idle in reversed(lever_samples)
+                         if t <= onset_at and onset_at-t <= LEVER_CONTEXT_WINDOW_S), None)
+  nearest_after = next((t for t, idle in lever_samples
+                        if t >= onset_at and t-onset_at <= LEVER_CONTEXT_WINDOW_S), None)
+  window = [(t, idle) for t, idle in lever_samples if abs(t-onset_at) <= LEVER_CONTEXT_WINDOW_S]
+  return {
+    'before_onset_ms': round((nearest_before-onset_at)*1000, 2) if nearest_before is not None else None,
+    'after_onset_ms': round((nearest_after-onset_at)*1000, 2) if nearest_after is not None else None,
+    'window_samples': len(window),
+    'all_observed_lever_samples_neutral': bool(window) and all(idle for _, idle in window),
+    'neutral_pre_and_post_onset_observed': nearest_before is not None and nearest_after is not None and
+                                           bool(window) and all(idle for _, idle in window),
+    'does_not_exclude_inter_sample_driver_action': True,
+  }
 
 
 def _decode_capture(path):
@@ -69,6 +106,7 @@ def analyze_capture(path, side):
   accepted_passive_snapshots = 0
   crc_invalid = 0
   request_or_response_records = 0
+  lever_samples = []  # only CRC-valid, original bus-0 0x3C1 records
   lamp_bit = 0x10 if side == 'left' else 0x40
   expected_cmd = 3 if side == 'left' else 4
 
@@ -78,6 +116,10 @@ def analyze_capture(path, side):
       continue
     if addr in (0x7B1, 0x7B9):
       request_or_response_records += 1  # presence is NOT proof of provenance or ECU handoff
+    if addr == LEVER:
+      if len(raw) != 8 or raw[0] != lever_checksum(raw):
+        raise ValueError(f'Invalid OEM 0x3C1 lever CRC/length at {stamp:.6f}s')
+      lever_samples.append((stamp, raw[3] == 0 and raw[4] == 0))
     if addr in SPAS_LENGTHS:
       stock_totals[addr] += 1
       if not check_stock_frame(addr, raw):
@@ -118,6 +160,10 @@ def analyze_capture(path, side):
   top_states = [{'byte7': b7, 'byte18': b18, 'frames': count}
                 for (b7, b18), count in active_states.most_common(12)]
   factory_indicator_observed = first_command_at is not None and first_lamp_at is not None
+  lever_context = verify_lever_context(lever_samples, first_command_at)
+  corroborated = (factory_indicator_observed and lever_context is not None and
+                  lever_context['neutral_pre_and_post_onset_observed'] and
+                  request_or_response_records == 0)
   return {
     'kind': 'EV6_FACTORY_CSV_PASSIVE_REPLAY_NO_TX',
     'side': side,
@@ -138,12 +184,18 @@ def analyze_capture(path, side):
     'lamp_off_on_after_cmd_s': round(first_lamp_at, 6) if first_lamp_at is not None else None,
     'lamp_onset_delay_ms': round((first_lamp_at-first_command_at)*1000, 3) if factory_indicator_observed else None,
     'factory_indicator_observed_in_log': factory_indicator_observed,
+    'factory_event_neutral_lever_corroborated': corroborated,
+    'lever_original_bus0_frames': len(lever_samples),
+    'lever_non_neutral_observed_frames': sum(not idle for _,idle in lever_samples),
+    'lever_onset_context': lever_context,
     'active_factory_spas2_byte7_byte18_variants': len(active_states),
     'active_factory_spas2_byte7_byte18_top_pairs': top_states,
     'passive_planner_snapshots_accepted': accepted_passive_snapshots,
     'donor_zero_fill_matches_factory_command_onset': bool(command_frame and
                                                            command_frame['byte7'] == 0 and command_frame['byte18'] == 0),
-    'warning': ('This replay neither issues CAN/UDS requests nor validates external control. '
+    'warning': ('Correlated SPAS2/0x413 transitions are not proof of factory-only causality. '
+                'Even 0x3C1 neutral samples cannot rule out a lever action between samples. '
+                'This replay neither issues CAN/UDS requests nor validates external control. '
                 'It cannot authenticate capture origin, prove UDS handoff, or authorize real-car TX.'),
   }
 
