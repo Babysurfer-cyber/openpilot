@@ -46,7 +46,9 @@ class MemoryParams:
     return 100. if key == 'MapTurnSpeedFactor' else float(self.get_int(key))
 
   def get_bool(self, key):
-    return key == 'IsMetric'
+    # These tests exercise active ATC navigation. Explicitly enable the
+    # opt-in switch rather than silently changing its production default.
+    return key in ('IsMetric', 'AutoTurnControlEnabled')
 
   def get(self, key, **_kwargs):
     return b'30' if key == 'AutoCurveSpeedLowerLimit' else self.values.get(key)
@@ -114,6 +116,10 @@ def navi_drive(monkeypatch):
       return publications['carrotMan'].carrotMan
 
   return Drive()
+
+
+def test_navi_atc_fixture_explicitly_enables_opt_in(navi_drive):
+  assert navi_drive.serv.autoTurnControl == 2
 
 
 @pytest.mark.parametrize(('turn_type', 'distance', 'expected_type', 'turn_info'), (
