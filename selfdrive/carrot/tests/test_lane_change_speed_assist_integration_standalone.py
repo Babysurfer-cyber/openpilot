@@ -228,7 +228,7 @@ def production_mpc_input_envelope():
   maximum = find_target("self.params[:, 1]")
   minimum = find_target("self.params[:, 2]")
   acc_obstacles = find_target("x_obstacles", value_fragment="cruise_obstacle")
-  blended_obstacles = find_target("x_obstacles", value_fragment="lead_1_obstacle")
+  blended_obstacles = find_target("x_obstacles", value_fragment="lead_0_obstacle, lead_1_obstacle")
   # The blended expression does not include cruise_obstacle; disambiguate it.
   if "cruise_obstacle" in ast.unparse(blended_obstacles.value):
     blended_matches = [n for n in assignments if ast.unparse(n.targets[0]) == "x_obstacles"
