@@ -252,3 +252,32 @@ def test_stable_side_track_assist_expires_after_four_seconds():
     selected = tracker.update(time_s, 27.0, model("laneChangeStarting", "left"), (point,))
     if time_s > 4.3:
       assert selected is None
+
+
+def test_realistic_time_series_side_lead_only_during_active_change():
+  """Four time series with changing range: two intended leads and two opposite-lane controls."""
+  from dataclasses import replace
+
+  for direction, side_y, expected in (
+    ("left", 3.6, True),
+    ("left", -3.6, False),
+    ("right", 3.6, False),
+    ("right", -3.6, True),
+  ):
+    tracker = LaneChangeSpeedAssist()
+    active_frames = []
+    for frame in range(120):
+      time_s = frame * .05
+      state = ("off" if frame < 20 else
+               "preLaneChange" if frame < 35 else
+               "laneChangeStarting" if frame < 85 else
+               "laneChangeFinishing")
+      p = replace(Point(), d_rel=45.0 - 2.0 * time_s, v_rel=-2.0,
+                  v_lead=25.0, y_rel=side_y)
+      candidate = tracker.update(time_s, 27.0, model(state, direction), (p,))
+      active_frames.append(candidate is not None)
+
+    assert sum(active_frames) == (50 if expected else 0), (direction, side_y)
+    assert not any(active_frames[:35]), (direction, side_y)
+    assert not any(active_frames[85:]), (direction, side_y)
+
