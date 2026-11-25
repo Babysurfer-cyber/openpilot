@@ -31,6 +31,10 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: opendbc_repo/pyproject.toml
+      - name: Compile and exercise exact C input-gate source (no third-party dependencies)
+        working-directory: opendbc_repo
+        run: |
+          python opendbc/safety/tests/test_ev6_park_gate_c_contract.py
       - name: Install build and test dependencies
         working-directory: opendbc_repo
         run: |
