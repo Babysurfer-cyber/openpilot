@@ -142,13 +142,16 @@ def analyze(events):
         if addr < 0 or addr > 0x1FFFFFFF:
             fault("INVALID_CAN_ADDRESS_OR_DATA")
             continue
-        if bus != 0:
-            # Host echo on bus128 is not evidence of an ECU response.
-            continue
-
-        if kind == "tx" and addr in SPAS:
+        # A passive probe must reject any *physical-bus* external SPAS TX,
+        # not just bus 0. Otherwise an injection on another physical CAN bus
+        # could be hidden by the bus-0-only evidence filter.
+        # src 128/192 are panda pseudo-bus echoes, not physical bus proof.
+        if kind == "tx" and addr in SPAS and 0 <= bus < 8:
             out["external_spas_tx"] += 1
             fault("EXTERNAL_SPAS_TRANSMISSION_PRESENT_IN_PASSIVE_PROBE")
+            continue
+        if bus != 0:
+            # Host echo on bus128 is not evidence of an ECU response.
             continue
 
         if kind == "rx" and addr in SPAS:
