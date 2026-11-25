@@ -60,6 +60,15 @@ python tools/signal_analysis/ev6_bench_trace_validator.py isolated_bench_capture
 
 여기서 `ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED`라고 출력돼도 **제공한 캡처 파일의 형식/상태 판정에 한정**된다. 독립 계측 기록과 실제 ECU 출처에 대한 사람의 확인이 추가되어야 한다. 코드 자체는 실제 CAN 메시지를 송신하지 않는다.
 
-## 6. 현재 결정
+## 6. 기존 EV6 실차에서 보고된 0x7B1 부작용 (중요)
+
+- commaai/openpilot GitHub issue #27885 (2023-04-12, **2022 EV6 GT-Line AWD HDA2**)에서 주차 ECU 0x7B1에 관련된 실험적 안전 정책/통신 처리 후 **주차 센서, 360도 카메라, 방향지시등 카메라, 자동주차, 주차 안전 기능**이 작동하지 않는 사례가 보고됐다.
+  https://github.com/commaai/openpilot/issues/27885
+- 당시 openpilot 기여자 댓글은 실험적 방향지시등 제어에 *parking ADAS ECU 비활성화가 필요했고 그로 인한 부작용이 있다*고 설명한다. 이는 본 사용자 차량에서 직접 재현되거나 모든 EV6 사양에 적용된다는 증거는 아니다.
+- EV6 정비 관련 2차 자료도 ADAS_PRK ECU가 주차 관련 여러 기능에 관여하는 것으로 설명한다.
+  https://www.kia-ev6.com/kia_ev6_advanced_driver_assistance_system_parking_-1548.html
+- 따라서 **실차에서 0x7B1 통신 차단, 0x165/0x16A 대체 송신 실험은 금지**한다. 주차 ECU를 복구하지 못했을 때 주차 보조 기능 전체가 영향을 받을 수 있다. 실제 ECU 벤치가 성공하더라도 별도의 기능상실 위험 검증이 필요하다.
+
+## 7. 현재 결정
 
 **소프트웨어 단계의 준비는 정리됨. 실제 차량 점등 시험 개시 = 불가.** 다음 새 증거는 **격리된 실제 EV6-compatible APRK ECU**의 응답·송신 중단·복구 캡처이며, 그 전에는 추가 코딩만으로 안전성을 입증할 수 없다.
