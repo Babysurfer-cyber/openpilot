@@ -31,7 +31,8 @@ def test_ffmpeg_remux_starts_at_requested_position(monkeypatch, filename, positi
 
   assert command[command.index("-i") + 1] == filename
   assert command[command.index("-c") + 1] == "copy"
-  assert command[command.index("-f") + 1] == "mp4"
+  assert command[len(command) - 1] == "-"  # ffmpeg writes MP4 to stdout
+  assert [command[i + 1] for i, value in enumerate(command[:-1]) if value == "-f"][-1] == "mp4"
   assert "empty_moov" in command
   if position:
     assert command[command.index("-ss") + 1] == f"{position:.3f}"
