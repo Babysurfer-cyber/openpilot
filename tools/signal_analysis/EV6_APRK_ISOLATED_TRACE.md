@@ -64,6 +64,15 @@ From repository root, using Python 3.10+:
   before requesting an ECU diagnostic session.
 - Correlated ECU positive response **after** each session and communication
   mode request. Wrong bus, stale or unsolicited responses are not proof.
+- **Both** factory SPAS1 and SPAS2 must still be actively received **after**
+  the extended-session positive ACK and within **50ms before** the
+  communication-disable request. The factory ECU already being silent after
+  session entry does **not** establish that communication-disable worked.
+  It could be a dropped capture, unplugged ECU or some other state change.
+- The claimed silence interval between acknowledged communication-disable
+  and attempted restore must be at least 100ms but no longer than **500ms**;
+  an arbitrarily long quiet interval is not accepted as a short controlled
+  bench diagnostic probe.
 - Independent evidence of **both** original stock SPAS streams stopping for
   at least 100ms after acknowledgment. A synthetic positive response is
   insufficient.
@@ -102,3 +111,18 @@ counter reset/increase, missing post-restore sample and >100ms monitor gaps.
 The added negative cases are regression-tested; the tests still use synthetic
 capture events, NOT a real parking ECU. An independent monitor cannot prove
 physical CAN origin from ID alone, so an isolated hardware setup is essential.
+
+## New evidence-gating regression (35 synthetic tests)
+
+The previous validator accepted a synthetic trace in which both original
+SPAS streams stopped immediately after extended-session request, with **no
+stock activity after session ACK**. It then mistakenly attributed an already
+silent bus to successful communication disable. The amended validator now
+rejects missing SPAS1/2 liveness immediately before disable and unbounded
+quiet intervals. No physical ECU experiment or transmission was performed.
+
+**Next real dependency:** Independently instrumented isolated 12V parking ECU
+bench (correct vehicle-specific ECU, verified connector/pinout and safe power
+supply, actual CAN-FD bus and independent error/loss and power monitoring).
+Do not use this protocol as a vehicle-integrated diagnostic script. Do not
+short or disable the parking ECU's communication while the vehicle is in use.
