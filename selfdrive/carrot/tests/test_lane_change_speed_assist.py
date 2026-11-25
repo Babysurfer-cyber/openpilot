@@ -1,7 +1,8 @@
 """Lane-change side-lead assist must not react to a mere blinker or false tracks."""
 
-from dataclasses import dataclass
-from math import nan
+from dataclasses import dataclass, replace
+from math import nan, inf, isfinite
+from random import Random
 from types import SimpleNamespace
 
 from openpilot.selfdrive.carrot.radar_motion.lane_change_speed_assist import (
@@ -203,3 +204,51 @@ def test_nonfinite_lane_line_probability_rejected():
 
 def test_nonfinite_target_velocity_rejected():
   assert seed(LaneChangeSpeedAssist(), Point(v_lead=float("inf"))) is None
+
+
+def test_synthetic_state_sequences_fail_closed():
+  rng = Random(6060)
+  values = (-inf, -100.0, -5.4, -3.6, -1.8, -0.1, 0, 0.1, 1.8, 3.6, 5.4, 100, inf, nan)
+  probs = (0.0, 0.2, 0.49, 0.5, 0.9, nan, inf)
+  states = ("off", "preLaneChange", "laneChangeStarting", "laneChangeFinishing", "unexpected")
+  directions = ("none", "left", "right", "unexpected")
+  for _ in range(250):
+    tracker = LaneChangeSpeedAssist()
+    for frame in range(35):
+      time_s = frame * 0.05
+      if rng.random() < 0.01:
+        time_s -= 0.1
+      state = rng.choice(states)
+      direction = rng.choice(directions)
+      m = model(state, direction, probabilities=tuple(rng.choice(probs) for _ in range(4)))
+      point = Point(
+        track_id=rng.choice((0, 1, 10)),
+        source=rng.choice(("frontRadar", "corner180", "corner235", "scc", "other")),
+        d_rel=rng.choice((0, 1, 4, 10, 35, 78, 100, nan, inf)),
+        y_rel=rng.choice(values),
+        v_rel=rng.choice((-30, -3, 0, 1, 30, nan, inf)),
+        v_lead=rng.choice((0, 1, 2, 10, 25, nan, inf)),
+        measured=rng.choice((True, False)),
+      )
+      result = tracker.update(time_s, rng.choice((0, 3, 8, 27, nan, inf)), m, (point,))
+      if result is not None:
+        assert state == "laneChangeStarting"
+        assert direction in ("left", "right")
+        assert result is point
+        assert result.v_rel <= 0
+        assert result.d_rel > 0
+        assert all(isfinite(v) for v in (result.d_rel, result.y_rel, result.v_rel, result.v_lead))
+
+
+def test_stable_side_track_assist_expires_after_four_seconds():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(v_rel=0.0, v_lead=27.0)
+  for i in range(6):
+    tracker.update(i * .05, 27.0, model("preLaneChange", "left"), (point,))
+  assert tracker.update(.3, 27.0, model("laneChangeStarting", "left"), (point,)) is not None
+  for i in range(1, 86):
+    time_s = .3 + i * .05
+    point = replace(point, d_rel=35.0)
+    selected = tracker.update(time_s, 27.0, model("laneChangeStarting", "left"), (point,))
+    if time_s > 4.3:
+      assert selected is None
