@@ -1,0 +1,61 @@
+name: EV6 SPAS2 offline verification
+on:
+  pull_request:
+    paths:
+      - "tools/signal_analysis/ev6_spas*.py"
+      - "tools/signal_analysis/test_ev6_spas*.py"
+      - ".github/workflows/ev6-spas2-offline.yml"
+  push:
+    branches:
+      - "test/ev6-spas2-oem-offline-check-20261125"
+    paths:
+      - "tools/signal_analysis/ev6_spas*.py"
+      - "tools/signal_analysis/test_ev6_spas*.py"
+      - ".github/workflows/ev6-spas2-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-only:
+    name: Standard-library syntax and EV6 synthetic tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify importability and syntax
+        run: |
+          python -m py_compile \
+            tools/signal_analysis/ev6_spas_oem_transition_test.py \
+            tools/signal_analysis/ev6_spas_bus_route_audit.py \
+            tools/signal_analysis/ev6_spas_onset_sequence.py \
+            tools/signal_analysis/test_ev6_spas_oem_stalk_independence.py \
+            tools/signal_analysis/test_ev6_spas_onset_sequence.py
+      - name: Run offline read-only unit tests
+        run: |
+          python -m unittest discover -s tools/signal_analysis \
+            -p 'test_ev6_spas*.py' -v
+      - name: Reject vehicle TX code in changed offline scripts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          folder = Path("tools/signal_analysis")
+          names = ("ev6_spas_oem_transition_test.py", "ev6_spas_bus_route_audit.py", "ev6_spas_onset_sequence.py")
+          forbidden = ("socketcan", "can_send(", "sendcan", "disable_ecu(", "make_tester_present_msg(", "panda.can_send(")
+          for name in names:
+              content = (folder / name).read_text()
+              # This is a conservative review gate, not a security sandbox.
+              import ast
+              tree = ast.parse(content)
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.Import, ast.ImportFrom)):
+                      targets = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
+                                 else [node.module or ""])
+                      if any(t.startswith(("panda", "can", "isotp", "socket")) for t in targets):
+                          raise SystemExit(f"Forbidden CAN I/O import: {name}: {targets}")
+          print("No direct CAN I/O module imports in offline analysis scripts.")
+          PY
