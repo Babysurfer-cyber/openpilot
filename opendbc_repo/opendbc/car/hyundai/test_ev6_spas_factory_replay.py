@@ -184,5 +184,24 @@ class TestFactoryReplay(unittest.TestCase):
     self.assertEqual(r['aprk_request_or_reply_frames_seen_on_bus0'], 1)
 
 
+  def test_one_sample_exactly_on_onset_does_not_count_as_both_sides(self):
+    rows = scenario('left')
+    rows.append((1.24, '0x3c1', 0, sample_lever()))
+    rows.sort(key=lambda item:item[0])
+    r = analyze_capture(self.save(rows), 'left')
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+    self.assertIsNone(r['lever_onset_context']['before_onset_ms'])
+    self.assertIsNone(r['lever_onset_context']['after_onset_ms'])
+
+  def test_neutral_lever_too_far_from_onset_not_corroboration(self):
+    rows = scenario('left')
+    rows.extend(((0.98, '0x3c1', 0, sample_lever()), (1.56, '0x3c1', 0, sample_lever())))
+    rows.sort(key=lambda item:item[0])
+    r = analyze_capture(self.save(rows), 'left')
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+    self.assertIsNone(r['lever_onset_context']['before_onset_ms'])
+    self.assertIsNone(r['lever_onset_context']['after_onset_ms'])
+
+
 if __name__ == '__main__':
   unittest.main()
