@@ -238,7 +238,7 @@ class OneTouchOriginGate(unittest.TestCase):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
-    namespace = {"time": SimpleNamespace(monotonic_ns=lambda: now)}
+    namespace = {"time": SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda clock_id: now)}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), namespace)
     update = namespace["_update_blinker_stalks"]
     stalk = {"LEFT_BLINKER": 1, "RIGHT_BLINKER": 0,
@@ -269,7 +269,7 @@ class OneTouchOriginGate(unittest.TestCase):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
-    scope = {"time": SimpleNamespace(monotonic_ns=lambda: now)}
+    scope = {"time": SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda clock_id: now)}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), scope)
     parser = scope["_update_blinker_stalks"]
     now = 1_000_000_000
@@ -308,7 +308,7 @@ class OneTouchOriginGate(unittest.TestCase):
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
     clock = [1_020_000_000]
-    scope = {"time": SimpleNamespace(monotonic_ns=lambda: clock[0])}
+    scope = {"time": SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda clock_id: clock[0])}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), scope)
     update = scope["_update_blinker_stalks"]
     neutral = {"LEFT_BLINKER": 0, "RIGHT_BLINKER": 0, "LEFT_BLINKER_TAP": 0, "RIGHT_BLINKER_TAP": 0}
@@ -356,7 +356,7 @@ class OneTouchOriginGate(unittest.TestCase):
     function = next(node for node in cls.body
                     if isinstance(node, ast.FunctionDef) and node.name == "_update_blinker_stalks")
     now = [1_000_000_000]
-    namespace = {"time": SimpleNamespace(monotonic_ns=lambda: now[0])}
+    namespace = {"time": SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda clock_id: now[0])}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
                  str(path), "exec"), namespace)
     parse = namespace["_update_blinker_stalks"]
@@ -415,7 +415,7 @@ class OneTouchOriginGate(unittest.TestCase):
     function = next(node for node in cls.body
                     if isinstance(node, ast.FunctionDef) and node.name == "_update_blinker_stalks")
     now = [1_100_000_000]
-    namespace = {"time": SimpleNamespace(monotonic_ns=lambda: now[0])}
+    namespace = {"time": SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda clock_id: now[0])}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
                  str(path), "exec"), namespace)
     parse = namespace["_update_blinker_stalks"]
@@ -446,6 +446,36 @@ class OneTouchOriginGate(unittest.TestCase):
     now[0] = 999_999_999
     cp._last_update_nanos = 1_000_000_000
     self.assertFalse(valid())  # future timestamp is also invalid
+
+  def test_stalk_clock_boottime_matches_can_clock_despite_monotonic_offset(self):
+    # openpilot common/timing.h nanos_since_boot() uses CLOCK_BOOTTIME;
+    # Python monotonic_ns() can differ after suspend, so it must be ignored.
+    path = ROOT / "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    source = path.read_text(encoding="utf-8")
+    self.assertIn("time.clock_gettime_ns(time.CLOCK_BOOTTIME)", source)
+    tree = ast.parse(source)
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
+    fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
+    seen_clock_ids = []
+    fake_time = SimpleNamespace(
+      CLOCK_BOOTTIME=7,
+      clock_gettime_ns=lambda clock_id: (seen_clock_ids.append(clock_id) or 1_100_000_000),
+      monotonic_ns=lambda: 6_100_000_000,  # deliberately different clock
+    )
+    env = {"time": fake_time}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), str(path), "exec"), env)
+    neutral = {key: 0 for key in ("LEFT_BLINKER", "RIGHT_BLINKER",
+                                 "LEFT_BLINKER_TAP", "RIGHT_BLINKER_TAP")}
+    car = SimpleNamespace(
+      blinker_stalks=neutral, blinker_stalk_armed=False,
+      left_stalk_prev=False, right_stalk_prev=False,
+      left_blinker_stalk_count=0, right_blinker_stalk_count=0,
+      _vehicle_navi_message_timestamp=lambda cp, name: 1_000_000_000)
+    cp = SimpleNamespace(_last_update_nanos=1_100_000_000)
+    result = SimpleNamespace(blinkerLever=0, blinkerStalkValid=False)
+    env["_update_blinker_stalks"](car, result, cp)
+    self.assertTrue(result.blinkerStalkValid)
+    self.assertEqual(seen_clock_ids, [fake_time.CLOCK_BOOTTIME])
 
   def test_modeld_retracts_stalk_provenance_after_message_timeout(self):
     path = ROOT / "selfdrive/modeld/modeld.py"
