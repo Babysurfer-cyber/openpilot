@@ -268,7 +268,9 @@ class EV6SpasControlPlan:
       return self._drain()
     # An unobserved gap during ECU silence can be a disconnected monitor,
     # not proof that the original ECU stopped transmitting.
-    if self.phase == 'quiet' and self.last_tick_at >= 0 and now - self.last_tick_at > .250:
+    # Align the software heartbeat gap with the 100ms independent bench
+    # verdict window; the heartbeat alone cannot authenticate hardware.
+    if self.phase == 'quiet' and self.last_tick_at >= 0 and now - self.last_tick_at > .100:
       self._restore(now, 'monitor_continuity_lost')
     self.last_tick_at = now
     if not isinstance(inputs, SafetyInputs) or not inputs.safe():
