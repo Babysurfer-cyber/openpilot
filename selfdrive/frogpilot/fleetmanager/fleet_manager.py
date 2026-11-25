@@ -424,7 +424,7 @@ def route(route):
     return render_template("route.html", route=route, query_type=query_type,
                            links="<br>".join(links),
                            segments=",".join(f"'{segment}'" for segment in segments),
-                           playable_segments=playable,
+                           segment_list=segments, playable_segments=playable,
                            query_segment=query_segment)
 
 @app.route("/footage/")
