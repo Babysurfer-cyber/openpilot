@@ -160,6 +160,57 @@ class TestEvidence(unittest.TestCase):
         next(r for r in rows if r["direction"] == "health")["bus_off"] = "false"
         self.assertIn("INVALID_CAN_HEALTH_SAMPLE", analyze(rows)["faults"]
 
+    def test_missing_bus_must_fail(self):
+        rows = traffic()
+        for r in rows:
+            r.pop("bus", None)
+        result = analyze(rows)
+        self.assertIn("MISSING_OR_INVALID_CAN_BUS", result["faults"])
+        self.assertNotEqual(result["diagnostic"], "ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED")
+
+    def test_missing_bus_only_from_ecu_ack_must_fail(self):
+        rows = traffic()
+        next(r for r in rows if r["address"] == "0x7b9").pop("bus")
+        result = analyze(rows)
+        self.assertIn("MISSING_OR_INVALID_CAN_BUS", result["faults"])
+        self.assertIn("ECU_EXTENDED_SESSION_NOT_ACKNOWLEDGED", result["faults"])
+
+    def test_negative_bus_must_fail(self):
+        rows = traffic()
+        rows[4]["bus"] = -1
+        self.assertIn("MISSING_OR_INVALID_CAN_BUS", analyze(rows)["faults"])
+
+    def test_boolean_bus_must_fail(self):
+        rows = traffic()
+        rows[4]["bus"] = False
+        self.assertIn("MISSING_OR_INVALID_CAN_BUS", analyze(rows)["faults"])
+
+    def test_malformed_can_data_must_fail(self):
+        rows = traffic()
+        next(r for r in rows if r["address"] == "0x7b9")["data"] = "NOT_HEX"
+        self.assertIn("INVALID_CAN_ADDRESS_OR_DATA", analyze(rows)["faults"])
+
+    def test_missing_address_must_fail(self):
+        rows = traffic()
+        next(r for r in rows if r["direction"] == "rx").pop("address")
+        self.assertIn("INVALID_CAN_ADDRESS_OR_DATA", analyze(rows)["faults"])
+
+    def test_malformed_event_does_not_crash(self):
+        rows = traffic() + [None]
+        self.assertIn("INVALID_CAPTURE_EVENT", analyze(rows)["faults"])
+
+    def test_oem_counter_jump_detected(self):
+        rows = traffic()
+        r = next(r for r in rows if r["ms"] == 100 and r["address"] == "0x16a")
+        r["data"] = stock_frame(0x16a, 12)
+        self.assertIn("STOCK_COUNTER_DISCONTINUITY", analyze(rows)["faults"])
+
+    def test_captured_diagnostic_requests_not_counted_as_verifier_tx(self):
+        result = analyze(traffic())
+        self.assertEqual(result["captured_aprk_requests"], 4)
+        self.assertEqual(result["offline_verifier_can_tx"], 0)
+        self.assertFalse(result["evidence_is_authenticated"])
+
 
 if __name__ == "__main__":
     unittest.main()
