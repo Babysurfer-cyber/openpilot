@@ -58,7 +58,7 @@ class StockStream:
   last_time: float = -1.
   counter: int = -1
   consecutive: int = 0
-  after_ack: bool = False
+  post_session_consecutive: int = 0
   restore_consecutive: int = 0
 
 
@@ -124,7 +124,7 @@ class EV6SpasControlPlan:
 
   def _post_session_stock_ready(self, now):
     return self.session_ack_at >= 0 and all(
-      s.after_ack and s.consecutive >= 2 and
+      s.post_session_consecutive >= 2 and
       self.session_ack_at < s.last_time <= now and
       0 <= now - s.last_time <= POST_SESSION_MAX_AGE_S
       for s in self.stock.values())
@@ -136,7 +136,7 @@ class EV6SpasControlPlan:
       return
     st = self.stock[addr]
     if not isinstance(data, bytes) or not check_stock_frame(addr, data):
-      st.consecutive, st.after_ack, st.restore_consecutive = 0, False, 0
+      st.consecutive, st.post_session_consecutive, st.restore_consecutive = 0, 0, 0
       if addr == 0x16A:
         self.stock_direction = None
       if self.phase.startswith('restore_'):
@@ -158,8 +158,12 @@ class EV6SpasControlPlan:
         self._lock(now, 'restore_counter_discontinuity')
       else:
         st.restore_consecutive = min(st.restore_consecutive + 1, 20)
-    if self.session_ack_at >= 0 and now > self.session_ack_at and advances:
-      st.after_ack = True
+    if self.phase == 'post_session_stock' and now > self.session_ack_at:
+      if not advances:
+        st.post_session_consecutive = 0
+        self._restore(now, 'post_session_counter_discontinuity')
+      else:
+        st.post_session_consecutive = min(st.post_session_consecutive + 1, 20)
     if self.phase == 'eligible':
       self._restore(now, 'original_ecu_resumed')
     elif self.phase == 'quiet' and now-self.disable_ack_at >= QUIET_S:
@@ -220,7 +224,7 @@ class EV6SpasControlPlan:
       self.session_ack_at = self.disable_ack_at = self.simulated_active_at = -1.
       self.restore_enable_ack = self.restore_default_ack = False
       for stream in self.stock.values():
-        stream.after_ack = False
+        stream.post_session_consecutive = 0
       self._enter('session', now)
       self._emit('WOULD_REQUEST_EXTENDED_SESSION')
     return self._drain()
@@ -277,6 +281,8 @@ class EV6SpasControlPlan:
         self._restore(now, 'extended_session_timeout')
       elif self._ack(b'\x50\x03'):
         self.session_ack_at = now
+        for stream in self.stock.values():
+          stream.post_session_consecutive = 0
         self._enter('post_session_stock', now)
     elif self.phase == 'post_session_stock':
       if self._post_session_stock_ready(now):
