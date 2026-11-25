@@ -86,7 +86,12 @@
     for (let attempt = 0; attempt < 90; attempt++) {
       try {
         const response = await fetch(url, {cache: 'no-store'});
-        if (response.ok) {
+        // 202 Accepted means the thumbnail worker is still generating a
+        // preview. response.ok is true for 202 as well as 200, so accepting
+        // every 2xx status here tries to decode JSON "pending" as an image.
+        if (response.status === 202) {
+          status.textContent = '미리보기 준비 중...';
+        } else if (response.status === 200) {
           const blob = await response.blob();
           if (!blob.size || !blob.type.startsWith('image/')) {
             status.textContent = '미리보기 이미지 형식 오류';
@@ -114,17 +119,14 @@
             img.onerror = null;
           }
           return;
-        }
-        if (response.status === 404) {
+        } else if (response.status === 404) {
           status.textContent = '녹화영상이 없습니다.';
           return;
-        }
-        if (response.status !== 202 && response.status !== 503) {
-          status.textContent = '미리보기를 불러올 수 없습니다.';
-          return;
-        }
-        if (response.status === 503) {
+        } else if (response.status === 503) {
           status.textContent = '미리보기 생성 지연';
+        } else if (response.status !== 202) {
+          status.textContent = '미리보기를 불러올 수 없습니다. (HTTP ' + response.status + ')';
+          return;
         }
       } catch (error) {
         status.textContent = '일시적인 연결 오류';
