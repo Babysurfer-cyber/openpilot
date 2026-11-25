@@ -210,6 +210,14 @@ class TestEV6StalkParkGuard(unittest.TestCase):
     self._rx(_hyundai_canfd(0xA0, 24, counter=1, moving=True))
     self.assertFalse(self._tx_left())
 
+  def test_active_panda_controls_block_even_when_park_brake_and_stalk_valid(self):
+    # Explicit independent safety condition: a test lever command is never
+    # authorized during active openpilot control, even in Park.
+    self._prime(gear=0)
+    self.safety.set_controls_allowed(True)
+    self.assertTrue(self.safety.get_controls_allowed())
+    self.assertFalse(self._tx_left())
+
   def test_missing_safety_opt_in_flag_still_blocks(self):
     no_stalk_flag = self.flags & ~HyundaiSafetyFlags.EV6_BLINKER_STALK_TEST
     self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, no_stalk_flag)
