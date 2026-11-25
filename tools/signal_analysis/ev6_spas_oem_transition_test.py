@@ -59,6 +59,46 @@ def lamp_active(data, side):
   return bool(data[2] & (0x10 if side == 'left' else 0x40))
 
 
+def stalk_crc8_ok(data):
+  """Stock 0x3C1 CRC8 poly 0x1D, init=0, xorout=0x65 on bytes 1..7."""
+  if len(data) != 8:
+    return False
+  crc = 0
+  for byte in data[1:]:
+    crc ^= byte
+    for _ in range(8):
+      crc = ((crc << 1) ^ (0x1D if crc & 0x80 else 0)) & 0xFF
+  return (crc ^ 0x65) == data[0]
+
+
+def lever_neutral(data):
+  """EV6 2022 recorded 0x3C1 left/right lever/tap bytes both neutral."""
+  return len(data) == 8 and data[3] == 0 and data[4] == 0
+
+
+def factory_lamp_without_stalk(frames, side):
+  """Evidence for the *observed* OEM auto-park path, not external control."""
+  levers = frames.get(LEVER, [])
+  lamps = frames.get(LAMP, [])
+  lamp_on = [f for f in lamps if lamp_active(f.data, side)]
+  lever_invalid = sum(not stalk_crc8_ok(f.data) for f in levers)
+  lever_active = sum(stalk_crc8_ok(f.data) and not lever_neutral(f.data) for f in levers)
+  # All stalks must be checksum-valid and neutral across the entire capture.
+  # Don't infer lever independence from a missing/invalid stalk feed.
+  supported = bool(lamp_on and levers) and lever_invalid == 0 and lever_active == 0
+  return {
+    'physical_lamp_on_frames': len(lamp_on),
+    'stock_stalk_bus0_frames': len(levers),
+    'stock_stalk_crc_invalid': lever_invalid,
+    'stock_stalk_active_frames': lever_active,
+    'stock_stalk_neutral_frames': sum(stalk_crc8_ok(f.data) and lever_neutral(f.data) for f in levers),
+    'factory_lamp_with_all_observed_stalk_frames_neutral': supported,
+    'interpretation': ('OEM auto-park lamps illuminated while all observed stock stalk frames were neutral; '
+                       'does not establish external CAN/ECU control' if supported else
+                       'Insufficient or conflicting observations; no inference'),
+  }
+
+
 def load_rlog(path):
   """Read only genuine bus-0 incoming frames, never sendcan or bus-128 echo."""
   from openpilot.tools.lib.logreader import LogReader
@@ -116,6 +156,7 @@ def inspect_case(frames, side=None):
   }
   if side:
     result['factory_turn_on_transition'] = transition_data(spas2, frames.get(LAMP, []), side)
+    result['factory_lamp_without_stalk'] = factory_lamp_without_stalk(frames, side)
   return result
 
 
@@ -131,8 +172,14 @@ def build_report(groups):
       raise ValueError(f'{name}: stock SPAS CRC validation failed; do not rely on results')
     if not case['spas1_frames'] or not case['spas2_frames']:
       raise ValueError(f'{name}: missing incoming stock SPAS1/2 on bus 0')
-    if name in ('left', 'right') and case['factory_turn_on_transition'] is None:
-      raise ValueError(f'{name}: no factory 0-to-{3 if name=="left" else 4} transition')
+    if name in ('left', 'right'):
+      if case['factory_turn_on_transition'] is None:
+        raise ValueError(f'{name}: no factory 0-to-{3 if name=="left" else 4} transition')
+      # The same proof can legitimately be False in a different capture.
+      # A malformed stalk recording, however, must never support it.
+      proof = case['factory_lamp_without_stalk']
+      if proof['stock_stalk_crc_invalid']:
+        raise ValueError(f'{name}: invalid factory 0x3C1 checksum; evidence not trustworthy')
   return result
 
 
