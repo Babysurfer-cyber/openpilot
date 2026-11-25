@@ -22,9 +22,14 @@ def after_disable():
   bench = initial()
   assert bench.start(190, Context())
   bench.response(210, RESPONSE, 0, POS_SESSION)
-  # Genuine stream liveness after session ACK (PR #45 pre-disable gate).
+  assert bench.phase == 'wait_post_session_stock'
+  assert not any(e['event'] == 'WOULD_REQUEST_COMMUNICATION_DISABLE' for e in bench.audit)
+  # Both original streams are first verified alive AFTER session ACK
+  # and BEFORE the hypothetical disable request is emitted.
   bench.stock(212, 0x165, 10)
+  assert bench.phase == 'wait_post_session_stock'
   bench.stock(214, 0x16A, 10)
+  assert bench.phase == 'wait_disable'
   bench.response(230, RESPONSE, 0, POS_DISABLE)
   assert bench.phase == 'wait_quiet'
   return bench
@@ -83,6 +88,8 @@ class TestEV6AprkHandoffBench(unittest.TestCase):
     b = initial()
     b.start(190, Context())
     b.response(210, RESPONSE, 0, POS_SESSION)
+    b.stock(212, 0x165, 10)
+    b.stock(214, 0x16A, 10)
     b.tick(620, Context())
     self.assertEqual(b.reason, 'no_communication_disable_ack')
 
@@ -118,6 +125,9 @@ class TestEV6AprkHandoffBench(unittest.TestCase):
     b.start(190, Context())
     b.response(210, RESPONSE, 0, POS_SESSION)
     b.response(230, RESPONSE, 0, POS_DISABLE)
+    self.assertEqual(b.phase, 'wait_post_session_stock')
+    self.assertFalse(any(e['event'] == 'WOULD_REQUEST_COMMUNICATION_DISABLE' for e in b.audit))
+    b.tick(261, Context())
     self.assertEqual(b.phase, 'wait_restore_enable')
     self.assertEqual(b.reason, 'oem_spas_not_live_after_session_ack')
     self.assertFalse(any('ELIGIBLE' in e['event'] for e in b.audit))
@@ -128,8 +138,44 @@ class TestEV6AprkHandoffBench(unittest.TestCase):
     b.response(210, RESPONSE, 0, POS_SESSION)
     b.stock(212, 0x165, 10)
     b.response(230, RESPONSE, 0, POS_DISABLE)
+    self.assertEqual(b.phase, 'wait_post_session_stock')
+    self.assertFalse(any(e['event'] == 'WOULD_REQUEST_COMMUNICATION_DISABLE' for e in b.audit))
+    b.tick(261, Context())
     self.assertEqual(b.phase, 'wait_restore_enable')
     self.assertEqual(b.reason, 'oem_spas_not_live_after_session_ack')
+
+  def test_disable_request_only_after_both_streams_verified(self):
+    b = initial()
+    b.start(190, Context())
+    b.response(210, RESPONSE, 0, POS_SESSION)
+    self.assertEqual(b.phase, 'wait_post_session_stock')
+    self.assertFalse(any(e['event'] == 'WOULD_REQUEST_COMMUNICATION_DISABLE' for e in b.audit))
+    b.stock(212, 0x165, 10)
+    self.assertEqual(b.phase, 'wait_post_session_stock')
+    b.stock(214, 0x16A, 10)
+    self.assertEqual(b.phase, 'wait_disable')
+    self.assertEqual(sum(e['event'] == 'WOULD_REQUEST_COMMUNICATION_DISABLE' for e in b.audit), 1)
+    # A legitimate diagnostic ACK can arrive later than the pre-request
+    # stream freshness window; the proof belongs to the request time.
+    b.response(280, RESPONSE, 0, POS_DISABLE)
+    self.assertEqual(b.phase, 'wait_quiet')
+
+  def test_session_stock_counter_skip_revokes_without_disable_request(self):
+    b = initial()
+    b.start(190, Context())
+    b.response(210, RESPONSE, 0, POS_SESSION)
+    b.stock(212, 0x165, 17)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'stock_contract_failed_after_session_ack')
+    self.assertFalse(any(e['event'] == 'WOULD_REQUEST_COMMUNICATION_DISABLE' for e in b.audit))
+
+  def test_negative_response_during_post_session_proof_aborts(self):
+    b = initial()
+    b.start(190, Context())
+    b.response(210, RESPONSE, 0, POS_SESSION)
+    b.response(212, RESPONSE, 0, NEGATIVE)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'ecu_negative_response')
 
   def test_bad_stock_during_session_handoff_revokes(self):
     b = initial()
