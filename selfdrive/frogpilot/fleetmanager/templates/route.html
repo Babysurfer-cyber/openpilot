@@ -23,13 +23,10 @@
           <option value="2">2×</option><option value="4">4×</option>
         </select>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <span id="seekClock" class="small text-nowrap">00:00</span>
-        <input id="seekPosition" class="form-range flex-grow-1" style="min-width:0" type="range"
-               min="0" max="59" step="1" value="0" aria-label="현재 1분 영상의 재생 위치">
-        <span class="small text-nowrap">01:00</span>
+      <div class="text-center small mb-1" aria-label="현재 영상 재생 시점">
+        현재 재생 시점 <span id="seekClock" class="fw-semibold" role="timer">00:00 / 01:00</span>
       </div>
-      <div id="playbackHint" class="small text-center text-muted">탐색바 또는 ±10초 버튼으로 이동 · 영상 좌우 밀기로 이전/다음</div>
+      <div id="playbackHint" class="small text-center text-muted">±10초 버튼으로 이동 · 영상 좌우 밀기로 이전/다음</div>
     </section>
     <br>
     <div class="camera-switcher d-flex justify-content-center gap-2 mb-3">
@@ -132,13 +129,14 @@
         let currentSegment = playableSegments[currentSegmentIndex];
 
         const video = document.getElementById('video');
-        const seekBar = document.getElementById('seekPosition');
         const seekClock = document.getElementById('seekClock');
         const rateSelect = document.getElementById('playbackRate');
         const prevButton = document.getElementById('prevSegment');
         const nextButton = document.getElementById('nextSegment');
         let streamStart = 0;
-        let dragging = false;
+        // This is the same absolute playhead previously displayed by the
+        // seek slider. Store it independently so +/-10s remains functional.
+        let currentPosition = 0;
         let clipDuration = 60;
         const segmentNumber = segment => segment.split('--').slice(-1)[0];
         const clampPosition = seconds => Math.min(Math.max(Number(seconds) || 0, 0), Math.max(0, clipDuration - 0.5));
@@ -149,9 +147,9 @@
         };
 
         function refreshPosition(seconds) {
-          const position = Math.min(60, Math.max(0, seconds));
-          if (!dragging) seekBar.value = Math.min(Number(seekBar.max), position);
-          seekClock.textContent = clock(position);
+          const position = Math.min(clipDuration, Math.max(0, Number(seconds) || 0));
+          currentPosition = position;
+          seekClock.textContent = clock(position) + ' / ' + clock(clipDuration);
         }
 
         function openStream(fromSeconds, shouldPlay) {
@@ -196,7 +194,6 @@
           currentSegmentIndex = index;
           currentSegment = playableSegments[currentSegmentIndex];
           clipDuration = 60;
-          seekBar.max = '59';
           showSegment();
           openStream(0, true);
         }
@@ -218,16 +215,13 @@
 
         prevButton.addEventListener('click', () => changeSegment(-1));
         nextButton.addEventListener('click', () => changeSegment(1));
-        // The slider already tracks the absolute 0–60s position.  Reading
-        // currentTime + streamStart here can double-count the offset while a
-        // remuxed stream is loading, or use stale time after a clip switch.
-        // Reuse the same seekTo path as a working manual slider change.
+        // The slider was removed, but the +/-10s buttons still use the
+        // absolute playhead recorded by refreshPosition(). Avoid recomputing
+        // from currentTime during a stream switch (it may be stale).
         function skipBySeconds(delta) {
-          const playhead = Number(seekBar.value);
-          const lastSecond = Number(seekBar.max);
-          if (!Number.isFinite(playhead) || !Number.isFinite(lastSecond)) return;
-          const target = Math.max(0, Math.min(lastSecond, playhead + delta));
-          if (Math.abs(target - playhead) < 0.5) return;
+          const lastSecond = Math.max(0, Math.floor(clipDuration - 0.5));
+          const target = Math.max(0, Math.min(lastSecond, currentPosition + delta));
+          if (Math.abs(target - currentPosition) < 0.5) return;
           seekTo(target);
         }
 
@@ -235,15 +229,6 @@
           () => skipBySeconds(-10));
         document.getElementById('skipForward').addEventListener('click',
           () => skipBySeconds(10));
-        seekBar.addEventListener('input', () => {
-          dragging = true;
-          seekClock.textContent = clock(Number(seekBar.value));
-        });
-        seekBar.addEventListener('change', () => {
-          const destination = Number(seekBar.value);
-          dragging = false;
-          seekTo(destination);
-        });
         rateSelect.addEventListener('change', () => {
           video.playbackRate = Number(rateSelect.value);
         });
@@ -254,7 +239,7 @@
           // stopped mid-segment. Never enlarge the seek range from MP4 metadata.
           if (Number.isFinite(duration) && duration > 0 && duration < 75) {
             clipDuration = Math.min(60, streamStart + duration);
-            seekBar.max = String(Math.max(0, Math.floor(clipDuration - 0.5)));
+            refreshPosition(currentPosition);
           }
         });
         video.addEventListener('timeupdate', () => {
