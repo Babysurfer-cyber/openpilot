@@ -30,6 +30,8 @@ def traffic():
             rows.append(e(20*i, "rx", addr, stock_frame(addr, i)))
     rows += [e(190, "tx", 0x7b1, REQ["session"]),
              e(210, "rx", 0x7b9, "0250030000000000"),
+             e(212, "rx", 0x165, stock_frame(0x165, 10)),
+             e(214, "rx", 0x16a, stock_frame(0x16a, 10)),
              e(220, "tx", 0x7b1, REQ["disable"]),
              e(240, "rx", 0x7b9, "0268030000000000"),
              e(350, "tx", 0x7b1, REQ["enable"]),
@@ -210,6 +212,28 @@ class TestEvidence(unittest.TestCase):
         self.assertEqual(result["captured_aprk_requests"], 4)
         self.assertEqual(result["offline_verifier_can_tx"], 0)
         self.assertFalse(result["evidence_is_authenticated"])
+
+    def test_no_factory_stream_during_session_must_fail(self):
+        rows = [r for r in traffic() if not (r["address"] in ("0x165", "0x16a") and 190 < r["ms"] < 220)]
+        verdict = analyze(rows)
+        self.assertIn("OEM_SPAS_NOT_ACTIVE_IMMEDIATELY_BEFORE_DISABLE", verdict["faults"])
+        self.assertNotEqual(verdict["diagnostic"], "ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED")
+
+    def test_only_one_factory_spas_during_session_must_fail(self):
+        rows = [r for r in traffic() if not (r["address"] == "0x16a" and r["ms"] == 214)]
+        self.assertIn("OEM_SPAS_NOT_ACTIVE_IMMEDIATELY_BEFORE_DISABLE", analyze(rows)["faults"])
+
+    def test_unbounded_silence_period_must_fail(self):
+        rows = traffic()
+        for row in rows:
+            if row["ms"] >= 350:
+                row["ms"] += 2000
+        rows.sort(key=lambda row: row["ms"])
+        self.assertIn("UNBOUNDED_OEM_QUIET_INTERVAL", analyze(rows)["faults"])
+
+    def test_good_trace_proves_pre_disable_stock_live(self):
+        r = analyze(traffic())
+        self.assertTrue(r["proof"]["stock_active_after_session_ack_before_disable"])
 
 
 if __name__ == "__main__":
