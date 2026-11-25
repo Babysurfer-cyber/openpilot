@@ -390,3 +390,67 @@ def test_gap_in_track_observation_prevents_stale_reacquisition():
   assert tracker.update(.20, 27., model("preLaneChange", "left"), ()) is None
   assert tracker.update(.25, 27., model("preLaneChange", "left"), (point,)) is None
   assert tracker.update(.30, 27., model("laneChangeStarting", "left"), (point,)) is None
+
+
+def test_active_side_lead_disengages_when_all_lane_confidence_lost():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(source="frontRadar", radar_track_state=2)
+  assert seed(tracker, point) is not None
+  invalid = model("laneChangeStarting", "left", probabilities=(0., 0., 0., 0.))
+  assert tracker.update(.35, 27., invalid, (point,)) is None
+  assert tracker.update(.40, 27., model("laneChangeStarting", "left"), (point,)) is None
+
+
+def test_active_side_lead_disengages_when_selected_lane_confidence_lost():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  invalid = model("laneChangeStarting", "left", probabilities=(.1, .1, .99, .99))
+  assert tracker.update(.35, 27., invalid, (point,)) is None
+
+
+def test_active_side_lead_disengages_when_ego_lane_geometry_breaks():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  bad = model("laneChangeStarting", "left")
+  bad.laneLines = tuple(SimpleNamespace(x=(0., 100.), y=(v, v))
+                        for v in (-5.4, -1.8, 9.0, 12.6))
+  assert tracker.update(.35, 27., bad, (point,)) is None
+
+
+def test_active_side_lead_disengages_when_selected_lane_geometry_breaks():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  bad = model("laneChangeStarting", "left")
+  bad.laneLines = tuple(SimpleNamespace(x=(0., 100.), y=(v, v))
+                        for v in (-12.0, -1.8, 1.8, 5.4))
+  assert tracker.update(.35, 27., bad, (point,)) is None
+
+
+def test_active_side_lead_valid_lane_data_stays_eligible():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  for i in range(1, 8):
+    assert tracker.update(.30 + i*.05, 27., model("laneChangeStarting", "left"), (point,)) is not None
+
+
+def test_active_side_lead_moving_into_new_ego_lane_retains_identity():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  for i in range(1, 6):
+    point = replace(point, y_rel=3.6 - .4 * i)
+    assert tracker.update(.30 + i*.05, 27., model("laneChangeStarting", "left"), (point,)) is not None
+
+
+def test_invalid_lane_at_start_does_not_latch_stale_target():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  for i in range(6):
+    assert tracker.update(i*.05, 27., model("preLaneChange", "left"), (point,)) is None
+  invalid = model("laneChangeStarting", "left", probabilities=(0., 0., 0., 0.))
+  assert tracker.update(.30, 27., invalid, (point,)) is None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "left"), (point,)) is None
