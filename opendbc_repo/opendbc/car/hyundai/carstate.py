@@ -1009,10 +1009,14 @@ class CarState(CarStateBase):
     # Register 4A3 up front so its cached dictionary also receives late data.
     msgs = [("HDA_INFO_4A3", math.nan), ("NEW_MSG_4B9", math.nan),
             ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4B4", math.nan)]
-    # Passive SPAS diagnostics on 2022 EV6: parse genuine stock frames.
-    # No ECU disable, no extra TX, and no new CAN validity requirement.
+    # Passive SPAS messages must not affect the driving parser validity.
+    # Register without expected frequency AND without counter enforcement:
+    # math.nan in the constructor disables only the frequency check.
+    pt_parser = CANParser(DBC[CP.carFingerprint][Bus.pt], msgs, CanBus(CP).ECAN)
     if CP.carFingerprint == CAR.KIA_EV6 and CanBus(CP).ECAN == 0:
-      msgs += [("SPAS1", math.nan), ("SPAS2", math.nan)]
+      for name in ("SPAS1", "SPAS2"):
+        if name in pt_parser.dbc.name_to_msg:
+          pt_parser._add_message(name, ignore_counter=True)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
@@ -1020,7 +1024,7 @@ class CarState(CarStateBase):
         ("CRUISE_BUTTONS", 50)
       ]
     return {
-      Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], msgs, CanBus(CP).ECAN),
+      Bus.pt: pt_parser,
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).CAM),
       Bus.alt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).ACAN),
     }
