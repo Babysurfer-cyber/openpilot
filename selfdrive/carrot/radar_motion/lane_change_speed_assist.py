@@ -36,6 +36,9 @@ def _side_of_point(model: Any, point: Any) -> str | None:
     return None
   if not getattr(point, "measured", False):
     return None
+  # Negative/synthetic track IDs cannot establish a reliable vehicle identity.
+  if not isinstance(getattr(point, "track_id", None), int) or point.track_id < 0:
+    return None
   # Native front-radar state 1 is a tentative track; do not promote it to leadTwo.
   if source == "frontRadar" and getattr(point, "radar_track_state", 0) == 1:
     return None
