@@ -59,6 +59,21 @@ class TestEV6ExplicitPandaOptIn(unittest.TestCase):
     self.assertEqual(len(parked), 1)
     self.assertLess(consumes[0].lineno, parked[0].lineno,
                     "failed one-shots must not wait for a later P/brake state")
+    guard = ast.unparse(parked[0].value)
+    self.assertTrue(all(f"not CC.{k}" in guard for k in ("enabled", "latActive", "longActive")),
+                    "host trial must reject any active openpilot control")
+
+
+  def test_compiled_panda_policy_must_deny_stalk_while_controls_allowed(self):
+    safety = Path(__file__).resolve().parents[1] / "safety" / "safety_hyundai_canfd.h"
+    source = safety.read_text(encoding="utf-8")
+    needle = "bool allowed = hyundai_ev6_blinker_stalk_test"
+    start = source.find(needle)
+    self.assertNotEqual(start, -1)
+    end = source.find("if (allowed)", start)
+    self.assertGreater(end, start)
+    self.assertIn("!controls_allowed", source[start:end],
+                  "panda must independently deny any experimental stalk TX during control")
 
 
 if __name__ == "__main__":
