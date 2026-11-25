@@ -113,15 +113,18 @@
   }
 
   if ('IntersectionObserver' in window) {
+    // The <img> is display:none until it has loaded. Observing that element
+    // never fires; observe its visible container instead.
     const observer = new IntersectionObserver(entries => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
           observer.unobserve(entry.target);
-          loadPreview(entry.target);
+          const img = entry.target.querySelector('img[data-segment]');
+          if (img) loadPreview(img);
         }
       }
     }, {rootMargin: '120px'});
-    images.forEach(img => observer.observe(img));
+    images.forEach(img => observer.observe(img.closest('.preview-box')));
   } else {
     images.forEach(loadPreview);
   }
