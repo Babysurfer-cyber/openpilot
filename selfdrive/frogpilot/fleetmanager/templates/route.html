@@ -218,10 +218,23 @@
 
         prevButton.addEventListener('click', () => changeSegment(-1));
         nextButton.addEventListener('click', () => changeSegment(1));
+        // The slider already tracks the absolute 0–60s position.  Reading
+        // currentTime + streamStart here can double-count the offset while a
+        // remuxed stream is loading, or use stale time after a clip switch.
+        // Reuse the same seekTo path as a working manual slider change.
+        function skipBySeconds(delta) {
+          const playhead = Number(seekBar.value);
+          const lastSecond = Number(seekBar.max);
+          if (!Number.isFinite(playhead) || !Number.isFinite(lastSecond)) return;
+          const target = Math.max(0, Math.min(lastSecond, playhead + delta));
+          if (Math.abs(target - playhead) < 0.5) return;
+          seekTo(target);
+        }
+
         document.getElementById('skipBack').addEventListener('click',
-          () => seekTo(streamStart + (Number.isFinite(video.currentTime) ? video.currentTime : 0) - 10));
+          () => skipBySeconds(-10));
         document.getElementById('skipForward').addEventListener('click',
-          () => seekTo(streamStart + (Number.isFinite(video.currentTime) ? video.currentTime : 0) + 10));
+          () => skipBySeconds(10));
         seekBar.addEventListener('input', () => {
           dragging = true;
           seekClock.textContent = clock(Number(seekBar.value));
