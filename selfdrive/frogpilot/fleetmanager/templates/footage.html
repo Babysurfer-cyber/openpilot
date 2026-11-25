@@ -119,8 +119,7 @@
             img.onerror = null;
           }
           return;
-        }
-        else if (response.status === 404) {
+        } else if (response.status === 404) {
           status.textContent = '녹화영상이 없습니다.';
           return;
         } else if (response.status === 503) {
