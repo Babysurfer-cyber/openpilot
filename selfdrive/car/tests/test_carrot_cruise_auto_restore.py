@@ -432,3 +432,51 @@ def test_camera_coast_does_not_release_on_missing_or_zero_4a3_data():
   assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(90.)
   assert helper._carrot_restore_deferred_target is None
 
+@pytest.mark.parametrize(("ego_mps", "fresh_radar", "distance_m"), (
+  (8., True, 8.),     # Moving toward a stationary obstacle
+  (0., False, 8.),    # Lost radar tracking
+  (0., True, 70.),    # Distant static object
+))
+def test_stationary_lead_auto_return_requires_confirmed_near_stop(ego_mps, fresh_radar, distance_m):
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(vEgo=ego_mps)
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 95.
+  helper._carrot_auto_shadow_target = 95.
+  helper.carrot_cruise_min_timer = 0
+  helper.stationary_lead_timer = 499
+  helper._carrot_lead_fresh = fresh_radar
+  helper.d_rel = distance_m
+  helper.v_lead_kph = 0.
+  assert helper._update_cruise_buttons(CS, CC, 0.) == pytest.approx(0.)
+  assert helper.carrot_cruise_active
+  assert helper.stationary_lead_timer == 0
+
+
+def test_manual_speed_choice_cancels_deferred_camera_target():
+  helper, (CS, CC) = make_helper(), make_inputs(mapSource=2)
+  helper._carrot_restore_deferred_target = 100.
+  helper.auto_sync_speed = 40.
+  helper.auto_mode_needs_sync = True
+  assert helper._update_auto_mode(
+    CS, CC, 45., physical_speed_button=True,
+    manual_speed_change=True, restore_speed=None,
+  ) == pytest.approx(45.)
+  assert helper._carrot_restore_deferred_target is None
+  assert helper.auto_sync_speed is None
+
+
+def test_camera_deferred_restore_not_released_on_missing_mixed_4be():
+  helper, (CS, CC) = make_helper(), make_inputs(
+    mapSource=0, navLinkClass=2, speedLimitDataValid=False,
+    navSpeedLimit=80, speedLimit=0,
+  )
+  helper._carrot_restore_deferred_target = 100.
+  helper.auto_source_high = False
+  helper.auto_sync_speed = 40.
+  helper.auto_mode_needs_sync = True
+  assert helper._update_auto_mode(
+    CS, CC, 40., physical_speed_button=False,
+    manual_speed_change=False, restore_speed=None,
+  ) == pytest.approx(40.)
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+
