@@ -70,6 +70,11 @@ def _side_of_point(model: Any, point: Any, expected_side: str | None = None) -> 
   ego_width = boundaries[2] - boundaries[1]
   if not LANE_WIDTH_MIN_M <= ego_width <= LANE_WIDTH_MAX_M:
     return None
+  # A confidently reported outer boundary with implausible width means the
+  # lane geometry is inconsistent; fail closed even during the maneuver.
+  if ((confidence[0] >= 0.5 and not LANE_WIDTH_MIN_M <= boundaries[1] - boundaries[0] <= LANE_WIDTH_MAX_M)
+      or (confidence[3] >= 0.5 and not LANE_WIDTH_MIN_M <= boundaries[3] - boundaries[2] <= LANE_WIDTH_MAX_M)):
+    return None
   # Camera lane lines use right-positive coordinates, radar uses left-positive.
   y = -float(point.y_rel)
   left_valid = (min(confidence[0], confidence[1]) >= 0.5
