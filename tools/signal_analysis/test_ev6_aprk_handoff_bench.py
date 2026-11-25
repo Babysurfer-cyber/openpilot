@@ -85,13 +85,30 @@ class TestEV6AprkHandoffBench(unittest.TestCase):
 
   def test_stock_never_quiet_blocks(self):
     b = after_disable()
-    for i in range(1, 24):
+    for i in range(1, 6):
       now = 230+20*i
       b.stock(now, 0x165, 9+i)
       b.stock(now, 0x16A, 9+i)
       b.tick(now, Context())
     self.assertEqual(b.phase, 'wait_restore_enable')
-    self.assertEqual(b.reason, 'oem_spas_not_quiet')
+    self.assertEqual(b.reason, 'stock_after_disable_grace')
+
+  def test_late_stock_cannot_create_a_delayed_false_lease(self):
+    b = after_disable()
+    b.stock(330, 0x165, 10)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'stock_after_disable_grace')
+    b.tick(460, Context())
+    self.assertFalse(any(e['event'] == 'BENCH_ONLY_ELIGIBLE_NO_CAN_TRANSMISSION'
+                         for e in b.audit))
+    self.assertEqual(b.actual_can_tx, 0)
+
+  def test_invalid_stock_during_disable_quiet_is_not_silence(self):
+    b = after_disable()
+    b.stock(240, 0x165, 10, crc_ok=False)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'stock_contract_failed')
+    self.assertFalse(any('ELIGIBLE' in e['event'] for e in b.audit))
 
   def test_stock_resumes_revokes(self):
     b = after_disable()
