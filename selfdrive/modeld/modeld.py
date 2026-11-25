@@ -545,6 +545,8 @@ def main(demo=False):
       DH.update(sm['carState'], modelv2_send.modelV2, sm['carControl'].latActive, lane_change_prob, sm['carrotMan'], sm['radarState'])
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
+      # Preserve the verified stalk origin; laneChangeStarting alone also includes ATC.
+      modelv2_send.modelV2.meta.laneChangeDriverRequest = bool(DH.lane_change_driver_request)
       modelv2_send.modelV2.meta.laneChangeBlocked = DH.lane_change_blocked
       modelv2_send.modelV2.meta.desireLog = DH.desireLog #carrot
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
