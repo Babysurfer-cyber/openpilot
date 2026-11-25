@@ -325,15 +325,6 @@ static void ui_draw_text_a2(const UIState* s) {
     if (a_time >= 100) ui_draw_text(s, x, y, a_string, size, a_color, a_font, 0.0f, 0.0f, COLOR_BLACK, COLOR_BLACK);
     else ui_draw_text(s, x, y, a_string, size, a_color, a_font, 0.0f);
 }
-static void ui_draw_text_a(const UIState* s, float x, float y, const char* string, float size, NVGcolor color, const char* font_name) {
-    a_x = x;
-    a_y = y;
-    strcpy(a_string, string);
-    a_size = size;
-    a_color = color;
-    strcpy(a_font, font_name);
-    a_time = 130;
-}
 ////////////////////  draw_text animated
 
 
@@ -1691,7 +1682,6 @@ private:
     float   show_path_width = 1.05; // 👈 1.05로 변경 (1.9m 폭으로 확장)
     Params  params;
     int     params_count = 0;
-    bool    active_lane_line = false;
 
 protected:
     void update_line_data2(const UIState* s, const cereal::XYZTData::Reader& line,
