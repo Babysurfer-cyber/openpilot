@@ -70,26 +70,45 @@ SEGMENT_PATTERN = re.compile(ROUTE_PATTERN.pattern[:-1] + r"--\d+$")
 
 def _create_preview(segment):
   segment_dir = os.path.join(Paths.log_root(), segment)
-  source = os.path.join(segment_dir, "qcamera.ts")
+  # Prefer cheap qcamera decoding, but recordings may contain only fcamera.
+  # Falling back also handles a corrupt / empty qcamera in a mixed segment.
+  sources = [os.path.join(segment_dir, name) for name in ("qcamera.ts", "fcamera.hevc")]
   preview = os.path.join(segment_dir, "preview.gif")
   temporary = os.path.join(segment_dir, "preview.part.gif")
   success = False
 
   try:
-    if not os.path.isfile(source):
-      raise FileNotFoundError(source)
-    # Seek before decoding; bound CPU usage and process duration.
-    subprocess.run(
-      ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1",
-       "-i", source, "-ss", "5", "-frames:v", "1", "-y", temporary],
-      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=True,
-    )
-    if not os.path.isfile(temporary) or os.path.getsize(temporary) == 0:
-      raise RuntimeError("ffmpeg did not produce a preview")
-    os.replace(temporary, preview)
-    success = True
-  except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
-    cloudlog.warning(f"Fleet preview failed for {segment}: {exc}")
+    for source in sources:
+      if not os.path.isfile(source) or os.path.getsize(source) == 0:
+        continue
+      # Some last segments are shorter than 2s. Retry the first frame if
+      # seeking fails, and try fcamera if qcamera cannot be decoded.
+      for seek_at in (2, 0):
+        try:
+          command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1"]
+          if source.endswith(".hevc"):
+            command += ["-f", "hevc", "-r", "20"]
+          command += ["-i", source]
+          if seek_at:
+            command += ["-ss", str(seek_at)]
+          command += ["-an", "-vf", "scale=480:-2", "-frames:v", "1", "-y", temporary]
+          subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         timeout=12, check=True)
+          if os.path.isfile(temporary) and os.path.getsize(temporary) > 0:
+            os.replace(temporary, preview)
+            success = True
+            break
+        except (OSError, subprocess.SubprocessError) as exc:
+          cloudlog.warning(f"Fleet preview source {os.path.basename(source)} failed for {segment}: {exc}")
+        finally:
+          if os.path.isfile(temporary):
+            os.remove(temporary)
+      if success:
+        break
+    if not success:
+      cloudlog.warning(f"Fleet preview unavailable for {segment}: no decodable camera recording")
+  except OSError as exc:
+    cloudlog.warning(f"Fleet preview file error for {segment}: {exc}")
   finally:
     if os.path.exists(temporary):
       try:
@@ -116,7 +135,9 @@ def preview_thumbnail(segment):
   if os.path.isfile(preview_path) and os.path.getsize(preview_path) > 0:
     return send_from_directory(preview_dir, preview_name, mimetype="image/gif", max_age=300)
 
-  if not os.path.isfile(os.path.join(preview_dir, "qcamera.ts")):
+  if not any(os.path.isfile(os.path.join(preview_dir, name))
+             and os.path.getsize(os.path.join(preview_dir, name)) > 0
+             for name in ("qcamera.ts", "fcamera.hevc")):
     return jsonify({"status": "missing_recording"}), 404
 
   with PREVIEW_LOCK:
@@ -453,7 +474,8 @@ def footage():
     camera, playable = fleet.preferred_camera_segments(route_segments, Paths.log_root())
     play_segment = playable[0] if playable else None
     previews = fleet.playable_camera_segments(route_segments, "qcamera", Paths.log_root())
-    segment = previews[0] if previews else None
+    # fcamera-only routes still have a thumbnail source even without qcamera.
+    segment = previews[0] if previews else play_segment
     try:
       date_folder = os.path.join(Paths.log_root(), f"{name}--{numbers[0]}")
       date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.stat(date_folder).st_ctime))
