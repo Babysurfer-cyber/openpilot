@@ -1,0 +1,51 @@
+name: EV6 panda safety (isolated tests)
+
+on:
+  push:
+    branches:
+      - 'safety/ev6-stalk-independent-park-gate-20261125'
+    paths:
+      - 'opendbc_repo/opendbc/safety/**'
+      - 'opendbc_repo/opendbc/car/hyundai/values.py'
+      - '.github/workflows/ev6-panda-safety.yml'
+  pull_request:
+    paths:
+      - 'opendbc_repo/opendbc/safety/**'
+      - '.github/workflows/ev6-panda-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ev6-stalk-safety:
+    name: Compile C hooks and run EV6 stalk safety regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: opendbc_repo/pyproject.toml
+      - name: Install build and test dependencies
+        working-directory: opendbc_repo
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[testing]'
+      - name: Build the real panda CAN-FD safety C library
+        working-directory: opendbc_repo
+        run: |
+          scons -j2
+          test -s opendbc/safety/tests/libsafety/libsafety.so
+      - name: Run compiled panda EV6 safety tests (not a mock)
+        working-directory: opendbc_repo
+        run: |
+          python -m pytest -q -o addopts='' opendbc/safety/tests/test_ev6_stalk_park_guard.py
+      - name: Check new test source syntax
+        working-directory: opendbc_repo
+        run: |
+          python -m py_compile opendbc/safety/tests/test_ev6_stalk_park_guard.py
