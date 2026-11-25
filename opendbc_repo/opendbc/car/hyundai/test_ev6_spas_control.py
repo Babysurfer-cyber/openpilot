@@ -191,11 +191,11 @@ class TestPlan(unittest.TestCase):
     self.c.tick(1.27, SAFE)
     self.assertEqual(self.c.phase, 'restore_stock')
     self.assertNotIn('SIMULATED_RESTORE_CONFIRMED_NO_TX', self.c.tick(1.28, SAFE))
-    for i in (12, 13):
+    for i in range(12, 22):
       t = 1.29 + .02 * (i - 12)
       for addr in SPAS_LENGTHS:
         self.c.observe_stock(addr, 0, sample(addr, i), t)
-    self.assertIn('SIMULATED_RESTORE_CONFIRMED_NO_TX', self.c.tick(1.32, SAFE))
+    self.assertIn('SIMULATED_RESTORE_CONFIRMED_NO_TX', self.c.tick(1.48, SAFE))
     self.assertEqual(self.c.phase, 'idle')
 
   def test_factory_indicator_active_blocks_new_request(self):
@@ -220,6 +220,48 @@ class TestPlan(unittest.TestCase):
     self.c.fault('bus_off_during_restore')
     self.assertEqual(self.c.phase, 'locked')
     self.assertEqual(self.c.reason, 'bus_off_during_restore')
+
+
+  def test_nine_post_default_stock_frames_not_enough(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x68, 0), 1.26)
+    self.c.tick(1.26, SAFE)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x50, 1), 1.27)
+    self.c.tick(1.27, SAFE)
+    for i in range(12, 21):
+      t = 1.29 + .02 * (i - 12)
+      for addr in SPAS_LENGTHS:
+        self.c.observe_stock(addr, 0, sample(addr, i), t)
+    self.assertNotIn('SIMULATED_RESTORE_CONFIRMED_NO_TX', self.c.tick(1.46, SAFE))
+    self.assertEqual(self.c.phase, 'restore_stock')
+
+  def test_invalid_crc_during_restore_locks(self):
+    self.start()
+    self.c.cancel(1.25)
+    bad = bytearray(sample(0x16A, 13))
+    bad[4] ^= 0x1
+    self.c.observe_stock(0x16A, 0, bytes(bad), 1.26)
+    self.assertEqual(self.c.phase, 'locked')
+    self.assertEqual(self.c.reason, 'invalid_stock_during_restore')
+
+  def test_counter_discontinuity_during_restore_locks(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x68, 0), 1.26)
+    self.c.tick(1.26, SAFE)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x50, 1), 1.27)
+    self.c.tick(1.27, SAFE)
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12), 1.29)
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 14), 1.31)
+    self.assertEqual(self.c.phase, 'locked')
+    self.assertEqual(self.c.reason, 'restore_counter_discontinuity')
+
+  def test_unsafe_inputs_during_restore_lock(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.assertIn('RESTORE_UNCONFIRMED_LOCKOUT', self.c.tick(1.26, BAD))
+    self.assertEqual(self.c.phase, 'locked')
 
 
 if __name__ == '__main__':
