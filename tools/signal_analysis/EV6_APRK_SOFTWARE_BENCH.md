@@ -102,3 +102,35 @@ the local runtime, because a complete live repo checkout is unavailable
 there; no GitHub Actions run has been confirmed. Source inspection
 and consistency checks are **not** a passing test run. Everything
 here remains an OFFLINE simulation that sends **zero** real CAN frames.
+
+## 2026-11-25: execution-grade validation after runtime NameError fix
+
+A direct Python execution check (not AST inspection) exposed a genuine
+runtime `NameError` at the post-session OEM stream-continuity gate:
+the local boolean was named `consecutive`, but the condition referred
+to the undefined name `continuous`. The mock could crash instead of
+entering its safe failure path. This was fixed in production source.
+
+Restore-phase negative ECU diagnostic responses were also found to
+be ignored by the existing generic `_abort()` return guard.
+A negative `0x7B9` during communication-enable or default-session
+restore now immediately enters **`restore_unconfirmed`**, and subsequent
+positive replies cannot override that terminal state.
+
+**Direct local execution, after fixes: 27/27 current PR #44 unittest
+cases PASSED**, Python 3.13.5. The temporary local test copy and the
+production class/report functions were independently checked against
+the exact latest GitHub branch source, with matching character counts
+and FNV32 content hashes:
+
+- Python source section (`@dataclass` through `summarize_oem_report`):
+  10,860 characters, hash `0xb8048d34`
+- `test_ev6_aprk_handoff_bench.py`: 11,174 characters,
+  hash `0xcfdb4513`
+
+These hashes are simple verification checks for this transfer, **not**
+cryptographic authenticity or a hardware trace audit. This runtime
+result supersedes earlier notes saying current tests were unexecuted;
+those notes describe intermediate revisions. There is **still no
+GitHub Actions CI run** for this branch, and no panda full C build or
+isolated physical APRK ECU test. **Vehicle use / merge remains NO-GO.**
