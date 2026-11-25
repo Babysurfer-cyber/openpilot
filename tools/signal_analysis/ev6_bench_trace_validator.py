@@ -58,7 +58,9 @@ def decode_reply(raw):
 def analyze(events):
     out = {"kind": "EV6_ISOLATED_BENCH_PASSIVE_VERIFIER", "vehicle_can_tx": 0,
            "permits_vehicle_actuation": False, "diagnostic": "NO_REQUEST_OBSERVED", "proof": {},
-           "faults": [], "stage": "stock", "external_spas_tx": 0}
+           "faults": [], "stage": "stock", "external_spas_tx": 0,
+           "offline_verifier_can_tx": 0, "captured_aprk_requests": 0,
+           "evidence_is_authenticated": False}
     faults, proof = out["faults"], out["proof"]
     stage = "stock"
     sent = {}
@@ -81,6 +83,9 @@ def analyze(events):
             faults.append(label)
 
     for event in events:
+        if not isinstance(event, dict):
+            fault("INVALID_CAPTURE_EVENT")
+            continue
         try:
             ms = float(event["ms"])
         except (ValueError, TypeError, KeyError):
@@ -92,8 +97,11 @@ def analyze(events):
         if ms < last_ms:
             fault("NONMONOTONIC_CAPTURE_TIMESTAMPS")
         last_ms = ms
-        kind = event["direction"]
-        bus = int(event.get("bus", 0))
+        kind = event.get("direction")
+        if "bus" not in event or type(event["bus"]) is not int or event["bus"] < 0:
+            fault("MISSING_OR_INVALID_CAN_BUS")
+            continue
+        bus = event["bus"]
         if kind == "health":
             if bus != 0:
                 continue
@@ -122,8 +130,15 @@ def analyze(events):
         if kind not in ("rx", "tx"):
             fault("INVALID_EVENT_DIRECTION")
             continue
-        addr = parse_address(event["address"])
-        data = bytes.fromhex(event["data"])
+        try:
+            addr = parse_address(event["address"])
+            data = bytes.fromhex(event["data"])
+        except (ValueError, TypeError, KeyError):
+            fault("INVALID_CAN_ADDRESS_OR_DATA")
+            continue
+        if addr < 0 or addr > 0x1FFFFFFF:
+            fault("INVALID_CAN_ADDRESS_OR_DATA")
+            continue
         if bus != 0:
             # Host echo on bus128 is not evidence of an ECU response.
             continue
@@ -141,6 +156,8 @@ def analyze(events):
             counter = data[2]
             continuous = (last_stock[addr] is not None and ms - last_stock[addr] < 100 and
                           counter == (prev_counter[addr] + 1) % 256)
+            if last_stock[addr] is not None and 0 <= ms - last_stock[addr] < 100 and not continuous:
+                fault("STOCK_COUNTER_DISCONTINUITY")
             valid_count[addr] = valid_count[addr] + 1 if continuous else 1
             last_stock[addr] = ms
             prev_counter[addr] = counter
@@ -158,6 +175,7 @@ def analyze(events):
             continue
 
         if kind == "tx" and addr == REQUEST:
+            out["captured_aprk_requests"] += 1
             action = next((name for name, p in REQ.items() if data.hex() == p), None)
             if action is None:
                 fault("UNEXPECTED_APRK_DIAGNOSTIC_REQUEST")
