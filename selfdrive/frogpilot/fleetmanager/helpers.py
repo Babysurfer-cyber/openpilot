@@ -157,6 +157,38 @@ def segments_in_route(route):
   return segments
 
 
+def playable_camera_segments(segments, camera, log_root):
+  """List segments that actually have a nonempty file for this camera."""
+  suffix = {
+    "qcamera": "qcamera.ts",
+    "fcamera": "fcamera.hevc",
+    "dcamera": "dcamera.hevc",
+    "ecamera": "ecamera.hevc",
+  }.get(camera)
+  if suffix is None:
+    return []
+
+  playable = []
+  for segment in segments:
+    path = os.path.join(log_root, segment, suffix)
+    try:
+      if os.path.isfile(path) and os.path.getsize(path) > 0:
+        playable.append(segment)
+    except OSError:
+      # Old segments may disappear during automatic storage cleanup.
+      continue
+  return playable
+
+
+def preferred_camera_segments(segments, log_root):
+  """On automatic selection prefer full-resolution fcamera, then qcamera."""
+  for camera in ("fcamera", "qcamera"):
+    playable = playable_camera_segments(segments, camera, log_root)
+    if playable:
+      return camera, playable
+  return "qcamera", []
+
+
 def ffmpeg_mp4_concat_wrap_process_builder(file_list, cameratype, chunk_size=1024*512):
   command_line = ["ffmpeg"]
   if not cameratype == "qcamera":
