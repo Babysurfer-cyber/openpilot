@@ -454,3 +454,33 @@ def test_invalid_lane_at_start_does_not_latch_stale_target():
   invalid = model("laneChangeStarting", "left", probabilities=(0., 0., 0., 0.))
   assert tracker.update(.30, 27., invalid, (point,)) is None
   assert tracker.update(.35, 27., model("laneChangeStarting", "left"), (point,)) is None
+
+
+def test_active_side_lead_disengages_on_confident_opposite_lane_geometry_error():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  bad = model("laneChangeStarting", "left")
+  bad.laneLines = tuple(SimpleNamespace(x=(0., 100.), y=(v, v))
+                        for v in (-5.4, -1.8, 1.8, 16.0))
+  assert tracker.update(.35, 27., bad, (point,)) is None
+
+
+def test_uncertain_opposite_outer_line_does_not_veto_valid_target():
+  tracker = LaneChangeSpeedAssist()
+  point = Point()
+  assert seed(tracker, point) is not None
+  frame = model("laneChangeStarting", "left", probabilities=(.99, .99, .99, .01))
+  frame.laneLines = tuple(SimpleNamespace(x=(0., 100.), y=(v, v))
+                          for v in (-5.4, -1.8, 1.8, 16.0))
+  assert tracker.update(.35, 27., frame, (point,)) is not None
+
+
+def test_active_right_lead_disengages_on_confident_left_lane_width_error():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(y_rel=-3.6)
+  assert seed(tracker, point, direction="right") is not None
+  bad = model("laneChangeStarting", "right")
+  bad.laneLines = tuple(SimpleNamespace(x=(0., 100.), y=(v, v))
+                        for v in (-12., -1.8, 1.8, 5.4))
+  assert tracker.update(.35, 27., bad, (point,)) is None
