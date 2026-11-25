@@ -37,7 +37,7 @@ headers are included before the safety.h global variable definitions.
 
 File: test_ev6_stalk_park_guard.py
 
-21 tests written for the actual libsafety C hooks:
+22 tests written for the actual libsafety C hooks:
 
 1. Park + brake + authentic lever tap shape (positive path)
 2. D / N / R denied even with standstill and brake
@@ -108,7 +108,7 @@ minimal test structs, and exercises 30 checks:
 
 **Local standalone result: 30/30 C checks passed.** This tests the
 extracted helper logic only. It is **not** a full panda firmware build
-or a successful run of the 21 compiled-libsafety integration tests.
+or a successful run of the 22 compiled-libsafety integration tests.
 
 Run on a developer PC with gcc:
 
@@ -118,7 +118,7 @@ python opendbc_repo/opendbc/safety/tests/test_ev6_park_gate_c_contract.py
 
 A dedicated CI workflow (`.github/workflows/ev6-panda-safety.yml`)
 was added to compile the full C library and run both this source-contract
-test and the 21 integration tests. At the time of writing GitHub
+test and the 22 integration tests. At the time of writing GitHub
 has **zero workflow runs for this PR branch**; an absent run must not
 be reported as a passing build.
 
@@ -157,7 +157,7 @@ RX 검사에 `HYUNDAI_CANFD_COMMON_RX_CHECKS(1)`가 적용된다.
 - 이번에 `test_ev6_stalk_park_guard.py`에 2개 테스트를 추가해
   HDA2 non-camera-SCC에서 bus0 및 bus1 수신 양쪽 모두
   0x3C1이 차단돼야 함을 명시했다.
-- 총 **21개** compiled-libsafety 테스트가 작성됐으나
+- 총 **22개** compiled-libsafety 테스트가 작성됐으나
   **전체 C 빌드 및 21개 테스트의 실제 실행은 아직 미확인**이다.
   기존 "19개" 테스트라는 표기는 더 이상 최신 상태가 아니다.
 - 실제 사용자 차량이 어떤 safetyParam 및 panda physical bus
@@ -200,6 +200,33 @@ RX 검사에 `HYUNDAI_CANFD_COMMON_RX_CHECKS(1)`가 적용된다.
 플래그가 설정됐다면 요청 소비 후에도 그 부팅 세션에서는
 panda의 다른 엄격한 안전 제한에 의해 관리되는 시험 권한이
 남는다. **실차 시험 허용 또는 검증 완료라고 해석하면 안 된다.**
+
+## 2026-11-25: 실행 경로 안전성 재점검
+
+반복 검토에서 두 개의 실제 취약 지점을 추가로 수정했다.
+
+1. **CI 감시 누락:** panda workflow의 push/PR 경로 필터에
+   시험용 `interface.py`, `carcontroller.py` 변경이 없었다.
+   두 파일과 `values.py`를 감시 대상으로 포함했다.
+   이 변경은 워크플로가 실제로 실행됐다는 뜻이 아니다.
+2. **오픈파일럿 제어 중 시험 명령 차단:** 기존 코드에는 P단·브레이크·
+   정차 등의 제한이 있지만, `CC.enabled` / `CC.latActive` /
+   `CC.longActive`가 활성화된 경우를 명시적으로 배제하지 않았다.
+   호스트가 요청을 먼저 소비한 뒤 세 상태가 모두 false인지 검사하도록
+   했고, **panda의 독립 TX 허용식에도 `!controls_allowed`를 추가**했다.
+   Python 호스트 상태와 panda C 상태는 별개의 이중 방어이다.
+
+새 `test_active_panda_controls_block_even_when_park_brake_and_stalk_valid`
+테스트는 P/브레이크/레버 조건을 만족시킨 뒤에도 panda control
+권한이 true일 때 송신을 거절해야 함을 검증하도록 작성했다.
+AST 정적 계약 테스트도 호스트 세 제어 상태와 C 조건을 검사하도록
+수정했다.
+
+현재 **compiled-libsafety 테스트는 22개 작성, AST 소스 계약은
+3개 작성**된 상태이며, 실제 전체 panda 컴파일·통합 실행은
+아직 검증되지 않았다. 이 변경은 제한을 **강화하는 것일 뿐**
+점등 성공이나 차량에서의 시험 허용을 뜻하지 않는다.
+기존 실차 사용 브랜치는 수정하지 않았고, 검증 전 병합은 금지한다.
 
 PR은 Draft이며, `ms-xy-radar3`에 병합되지 않았다.
 전체 panda 빌드·21개 compiled-libsafety 테스트의 실제
