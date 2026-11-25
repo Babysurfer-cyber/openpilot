@@ -35,6 +35,10 @@ jobs:
         working-directory: opendbc_repo
         run: |
           python opendbc/safety/tests/test_ev6_park_gate_c_contract.py
+      - name: Check EV6 panda experimental permission is opt-in only
+        working-directory: opendbc_repo
+        run: |
+          python -m unittest discover -s opendbc/safety/tests -p test_ev6_interface_optin.py -v
       - name: Install build and test dependencies
         working-directory: opendbc_repo
         run: |
