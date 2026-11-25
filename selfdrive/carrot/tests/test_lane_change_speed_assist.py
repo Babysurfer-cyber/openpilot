@@ -97,3 +97,82 @@ def test_does_not_overwrite_more_restrictive_existing_lead_two():
   assert not side_lead_may_replace(candidate, {"dRel": 20.0, "vLead": 20.0, "status": True})
   assert not side_lead_may_replace(candidate, {"dRel": 30.0, "vLead": 10.0, "status": True})
   assert side_lead_may_replace(candidate, {"dRel": 40.0, "vLead": 20.0, "status": True})
+
+def test_right_lane_assist_and_wrong_direction():
+  assert seed(LaneChangeSpeedAssist(), Point(y_rel=-3.6), direction="right") is not None
+  assert seed(LaneChangeSpeedAssist(), Point(y_rel=-3.6), direction="left") is None
+
+
+def test_no_pre_lane_change_always_rejects():
+  tracker = LaneChangeSpeedAssist()
+  assert tracker.update(.3, 27., model("laneChangeStarting", "left"), (Point(),)) is None
+
+
+def test_pre_lane_change_never_commands_before_start():
+  tracker = LaneChangeSpeedAssist()
+  for i in range(15):
+    assert tracker.update(i * .05, 27., model("preLaneChange", "left"), (Point(),)) is None
+  assert tracker.update(.75, 27., model("laneChangeStarting", "left"), (Point(),)) is not None
+
+
+def test_no_rapid_target_switch_mid_change():
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker) is not None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "left"), (Point(track_id=11),)) is None
+  assert tracker.update(.40, 27., model("laneChangeStarting", "left"), (Point(track_id=10),)) is None
+
+
+def test_time_out_of_order_rejects():
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker) is not None
+  assert tracker.update(.25, 27., model("laneChangeStarting", "left"), (Point(),)) is None
+
+
+def test_missing_lane_boundaries_rejects():
+  tracker = LaneChangeSpeedAssist()
+  for i in range(10):
+    frame = model("preLaneChange", "left")
+    frame.laneLines = ()
+    tracker.update(i * .05, 27., frame, (Point(),))
+  assert tracker.update(.50, 27., model("laneChangeStarting", "left"), (Point(),)) is None
+
+
+def test_unmeasured_and_invalid_radar_source_rejects():
+  assert seed(LaneChangeSpeedAssist(), Point(measured=False)) is None
+  assert seed(LaneChangeSpeedAssist(), Point(source="bogus")) is None
+
+
+def test_no_positive_accel_when_side_vehicle_pulls_away():
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker) is not None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "left"), (Point(v_rel=1.0, v_lead=28.0),)) is None
+
+
+def test_below_minimal_ego_speed_rejects():
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker) is not None
+  assert tracker.update(.35, 3., model("laneChangeStarting", "left"), (Point(),)) is None
+
+
+def test_multi_track_prefers_closest_side_vehicle():
+  tracker = LaneChangeSpeedAssist()
+  a, b = Point(track_id=3, d_rel=38.), Point(track_id=4, d_rel=30.)
+  for i in range(6):
+    tracker.update(i * .05, 27., model("off" if i < 3 else "preLaneChange", "left"), (a, b))
+  chosen = tracker.update(.30, 27., model("laneChangeStarting", "left"), (a, b))
+  assert chosen.track_id == 4
+
+
+def test_strict_preexisting_lead_two_priority():
+  candidate = {"dRel": 25., "vLead": 20., "status": True}
+  assert not side_lead_may_replace(candidate, {"dRel": 24.6, "vLead": 21., "status": True})
+  assert not side_lead_may_replace(candidate, {"dRel": 34., "vLead": 18., "status": True})
+
+
+def test_after_finish_new_prechange_can_rearm():
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker) is not None
+  assert tracker.update(.35, 27., model("laneChangeFinishing", "left"), (Point(),)) is None
+  for i in range(6):
+    assert tracker.update(.4 + i * .05, 27., model("preLaneChange", "left"), (Point(),)) is None
+  assert tracker.update(.7, 27., model("laneChangeStarting", "left"), (Point(),)) is not None
