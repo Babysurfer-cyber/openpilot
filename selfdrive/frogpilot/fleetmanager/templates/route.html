@@ -14,6 +14,7 @@
     <section class="mx-auto mt-2 mb-3 px-2" style="max-width:700px" aria-label="영상 탐색">
       <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 mb-2">
         <button type="button" id="prevSegment" class="btn btn-outline-primary btn-sm" aria-label="이전 1분 영상">◀ 이전 영상</button>
+        <button type="button" id="restartSegment" class="btn btn-outline-primary btn-sm" aria-label="현재 영상 처음부터 재생">↺ 처음부터</button>
         <button type="button" id="nextSegment" class="btn btn-outline-primary btn-sm" aria-label="다음 1분 영상">다음 영상 ▶</button>
       </div>
       <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 mb-2" role="group" aria-label="영상 재생속도 선택">
@@ -129,6 +130,7 @@
 
         const video = document.getElementById('video');
         const prevButton = document.getElementById('prevSegment');
+        const restartButton = document.getElementById('restartSegment');
         const nextButton = document.getElementById('nextSegment');
         const rateButtons = Array.from(document.querySelectorAll('[data-playback-rate]'));
         let selectedRate = 1;
@@ -203,6 +205,10 @@
         });
 
         prevButton.addEventListener('click', () => changeSegment(-1));
+        // The MP4 is streamed without random-access seeking. Reloading the
+        // SAME segment starts at 0 even when native video.currentTime = 0
+        // is not supported; the chosen playback rate is preserved.
+        restartButton.addEventListener('click', () => openStream(true));
         nextButton.addEventListener('click', () => changeSegment(1));
         // The browser can reset playbackRate when the next clip loads.
         video.addEventListener('loadedmetadata', () => {
