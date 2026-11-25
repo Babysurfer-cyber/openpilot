@@ -93,3 +93,31 @@ https://github.com/commaai/openpilot/issues/27885
 Do **not** combine this P-gear patch with experimental 0x7B1 disable or
 duplicate-id 0x165/0x16A injection on a road vehicle. Any such experiment
 requires independent isolated ECU/CAN hardware evaluation and review.
+
+## 2026-11-25: Direct GCC source-contract verification
+
+A separate, portable test now extracts the **actual** source of
+`hyundai_ev6_parked_inputs_valid()` from the production panda header,
+compiles it with GCC `-std=gnu11 -Wall -Wextra -Werror -pedantic` against
+minimal test structs, and exercises 30 checks:
+
+- valid P/gear + brake + wheel telemetry safety statuses
+- missing or wrong-bus input for each of the three required stock IDs
+- CRC, quality flag, counter, lagging, age and address failures
+- exact 120ms freshness boundary and counter threshold
+
+**Local standalone result: 30/30 C checks passed.** This tests the
+extracted helper logic only. It is **not** a full panda firmware build
+or a successful run of the 19 compiled-libsafety integration tests.
+
+Run on a developer PC with gcc:
+
+```bash
+python opendbc_repo/opendbc/safety/tests/test_ev6_park_gate_c_contract.py
+```
+
+A dedicated CI workflow (`.github/workflows/ev6-panda-safety.yml`)
+was added to compile the full C library and run both this source-contract
+test and the 19 integration tests. At the time of writing GitHub
+has **zero workflow runs for this PR branch**; an absent run must not
+be reported as a passing build.
