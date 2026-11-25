@@ -68,6 +68,17 @@ ROUTE_PATTERN = re.compile(r"^(?:\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}|[0-9a-fA-F
 SEGMENT_PATTERN = re.compile(ROUTE_PATTERN.pattern[:-1] + r"--\d+$")
 
 
+def _valid_preview_image(path):
+  """Reject empty/partial GIFs left from previous failed conversions."""
+  try:
+    if os.path.getsize(path) < 20:
+      return False
+    with open(path, "rb") as image_file:
+      return image_file.read(6) in (b"GIF87a", b"GIF89a")
+  except OSError:
+    return False
+
+
 def _create_preview(segment):
   segment_dir = os.path.join(Paths.log_root(), segment)
   # Prefer cheap qcamera decoding, but recordings may contain only fcamera.
@@ -81,10 +92,10 @@ def _create_preview(segment):
     for source in sources:
       if not os.path.isfile(source) or os.path.getsize(source) == 0:
         continue
-      # fcamera HEVC is much more expensive to decode on comma hardware:
-      # take the first frame directly. qcamera can afford a 2s seek.
-      # Retry the first qcamera frame if the recording is short.
-      seek_times = (0,) if source.endswith(".hevc") else (2, 0)
+      # Decode the first available frame, avoiding failures when the source
+      # lasts less than two seconds. A 2s fallback can bypass a damaged
+      # leading qcamera frame.
+      seek_times = (0,) if source.endswith(".hevc") else (0, 2)
       for seek_at in seek_times:
         try:
           command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1"]
@@ -96,7 +107,7 @@ def _create_preview(segment):
           command += ["-an", "-vf", "scale=480:-2", "-frames:v", "1", "-y", temporary]
           subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          timeout=12, check=True)
-          if os.path.isfile(temporary) and os.path.getsize(temporary) > 0:
+          if _valid_preview_image(temporary):
             os.replace(temporary, preview)
             success = True
             break
@@ -137,12 +148,20 @@ def preview_thumbnail(segment):
   preview_name = "preview.gif"
   preview_path = os.path.join(preview_dir, preview_name)
 
-  if os.path.isfile(preview_path) and os.path.getsize(preview_path) > 0:
+  if _valid_preview_image(preview_path):
     return send_from_directory(preview_dir, preview_name, mimetype="image/gif", max_age=300)
 
-  if not any(os.path.isfile(os.path.join(preview_dir, name))
-             and os.path.getsize(os.path.join(preview_dir, name)) > 0
-             for name in ("qcamera.ts", "fcamera.hevc")):
+  # A corrupt cached preview would otherwise be sent as a successful image
+  # forever, leaving a blank card even when the recording is valid.
+  if os.path.isfile(preview_path):
+    try:
+      os.remove(preview_path)
+    except OSError:
+      pass
+
+  has_camera = any(fleet.playable_camera_segments([segment], camera, Paths.log_root())
+                   for camera in ("qcamera", "fcamera"))
+  if not has_camera:
     return jsonify({"status": "missing_recording"}), 404
 
   with PREVIEW_LOCK:
