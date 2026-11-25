@@ -201,6 +201,9 @@ class VCruiseCarrot:
     # OpenPilot's requested set speed immediately before Carrot Cruise starts.
     # Independent of the brake/resume backup and the temporary coast setpoint.
     self._carrot_cruise_saved_op_speed = None
+    # A fresh, actually tracked lead is required to conclude that a stopped
+    # vehicle has been continuously present. Missing radar is never evidence.
+    self._carrot_lead_fresh = False
 
     #self.events = []
     self.xState = 0
@@ -208,6 +211,7 @@ class VCruiseCarrot:
     self.aTarget = 0
     self.nRoadLimitSpeed = 30
     self.desiredSpeed = 250
+    self.vturn_speed = 250
     self.road_limit_kph = 30
     self.nRoadLimitSpeed_last = 30
 
@@ -310,24 +314,37 @@ class VCruiseCarrot:
       self.autoCruiseControl_cancel_timer = max(0, self.autoCruiseControl_cancel_timer - 1)
 
     CC = sm['carControl']
-    if sm.alive['carrotMan']:
+    if sm.alive['carrotMan'] and sm.valid.get('carrotMan', True):
       carrot_man = sm['carrotMan']
       self.nRoadLimitSpeed = carrot_man.nRoadLimitSpeed
       self.desiredSpeed = carrot_man.desiredSpeed
-      self.desiredSource = carrot_man.desiredSource   # <--- 이 줄을 반드시 추가해야 합니다!
+      self.desiredSource = carrot_man.desiredSource
+      self.vturn_speed = carrot_man.vTurnSpeed
       self.carrot_cmd_index = carrot_man.carrotCmdIndex
       self.carrot_cmd = carrot_man.carrotCmd
       self.carrot_arg = carrot_man.carrotArg
+    else:
+      # Never keep treating the previous VTRUN signal as current after
+      # CarrotMan disappears; stale navigation may terminate Carrot Cruise.
+      self.desiredSource = ""
+      self.desiredSpeed = 250
+      self.vturn_speed = 250
     if sm.alive['longitudinalPlan']:
       lp = sm['longitudinalPlan']
       self.xState = lp.xState
       self.trafficState = lp.trafficState
       self.aTarget = lp.aTarget
-    if sm.alive['radarState']:
+    self._carrot_lead_fresh = False
+    if sm.alive['radarState'] and sm.valid.get('radarState', False):
       lead = sm['radarState'].leadOne
       self.d_rel = lead.dRel if lead.status else 0
       self.v_rel = lead.vRel if lead.status else 0
       self.v_lead_kph = lead.vLeadK * CV.MS_TO_KPH if lead.status else 0
+      self._carrot_lead_fresh = bool(
+        lead.status and 0 <= time.monotonic() - sm.recv_time['radarState'] <= 0.25
+      )
+    # Only the return-condition freshness flag is invalidated on loss.
+    # Leave legacy lead values for other control paths unchanged.
     if sm.alive['drivingModelData']:
       self.model_v_kph = sm['drivingModelData'].action.desiredVelocity * CV.MS_TO_KPH
 
@@ -618,6 +635,7 @@ class VCruiseCarrot:
     auto_restore_speed = None
     automatic_carrot_restore_target = None
     lfa_carrot_restored = False
+    carrot_restore_button = False
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
     
@@ -636,6 +654,7 @@ class VCruiseCarrot:
         self._v_cruise_kph_at_brake = 0
         self.carrot_cruise_active = False
         lfa_carrot_restored = True
+        carrot_restore_button = True
         button_type = ButtonType.accelCruise
         self._add_log("Carrot Cruise OFF & Restore Speed (LFA toggle)")
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
@@ -663,6 +682,9 @@ class VCruiseCarrot:
             auto_restore_speed = v_cruise_kph
             automatic_carrot_restore_target = saved_speed
             v_cruise_kph = max(v_cruise_kph, saved_speed)
+          # A '+' restore is not a new manual set-speed choice. Preserve
+          # high-speed 4A3 selection and don't teach a new auto offset.
+          carrot_restore_button = True
           # Never fall back to a possibly stale brake backup in Carrot Cruise.
           self._carrot_cruise_saved_op_speed = None
           self._v_cruise_kph_at_brake = 0
@@ -816,7 +838,9 @@ class VCruiseCarrot:
       self._carrot_cruise_saved_op_speed = (previous_op_speed if
         math.isfinite(previous_op_speed) and 0 < previous_op_speed <= self._cruise_speed_max
         and previous_op_speed != V_CRUISE_UNSET else None)
-      self.carrot_cruise_min_timer = 500  # <--- [추가] 당근크루즈 켜지면 5초(500프레임) 장전
+      self.carrot_cruise_min_timer = 500  # 5 seconds at 100 Hz
+      self.stationary_lead_timer = 0
+      self.target_speed_reach_timer = 0
 
     # ==============================================================
     # ▼ [통합 복귀 로직] 가속 페달, 정지차량 5초, 목표속도 5초 도달 시 
@@ -840,7 +864,11 @@ class VCruiseCarrot:
         restore_reason = "Gas Override"
         
       # 2. 전방 정지차량 5초 연속 감지
-      elif self.d_rel > 0 and self.v_lead_kph < 3:
+      elif (CC.enabled and getattr(self, "_carrot_lead_fresh", False)
+            and 0 < self.d_rel <= 20 and self.v_lead_kph < 3
+            and CS.vEgo < 0.5):
+        # Require ego standstill and a fresh, nearby radar lead. A distant
+        # static object while moving must never trigger high-speed restore.
         self.stationary_lead_timer += 1
         if self.stationary_lead_timer >= 500:  # 5초
           restore_triggered = True
@@ -856,6 +884,12 @@ class VCruiseCarrot:
         if is_vturn_decel and self.desiredSpeed < 70 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
           restore_triggered = True
           restore_reason = f"VTRUN Speed {self.desiredSpeed} Reached"
+        elif (not is_vturn_decel and 0 < abs(self.vturn_speed) < 70
+              and self.v_ego_kph_set <= abs(self.vturn_speed) + 1
+              and self.v_ego_kph_set <= 60 and self.frame % 500 == 0):
+          # A lower MODEL/camera/turn target has priority over VTRUN.
+          # Do not restore early: log which competing source holds the coast.
+          self._add_log(f"Carrot VTRUN return held by {current_source}: {self.desiredSpeed} km/h")
 
       # 🚀 복귀 트리거 발동
       if restore_triggered:
@@ -894,9 +928,14 @@ class VCruiseCarrot:
     v_cruise_kph = self._update_cruise_state(CS, CC, v_cruise_kph)
     if self.current_driving_mode == 5:
       pedal_speed_change = CS.gasPressed and v_cruise_kph != before_state_speed
-      self._auto_mode_manual_speed_change = physical_speed_button or remote_speed_command or pedal_speed_change
+      # Returning via '+' or LFA, or automatically from a gas override, is
+      # not choosing a new auto-mode speed reference.
+      auto_returning = automatic_carrot_restore_target is not None
+      real_speed_choice = physical_speed_button and not carrot_restore_button
+      self._auto_mode_manual_speed_change = (real_speed_choice or remote_speed_command
+                                             or (pedal_speed_change and not auto_returning))
       automatic_target = self._update_auto_mode(
-        CS, CC, v_cruise_kph, physical_speed_button=physical_speed_button,
+        CS, CC, v_cruise_kph, physical_speed_button=real_speed_choice,
         manual_speed_change=self._auto_mode_manual_speed_change,
         restore_speed=auto_restore_speed,
         automatic_carrot_restore_target=automatic_carrot_restore_target,
@@ -917,6 +956,7 @@ class VCruiseCarrot:
   def _reset_auto_mode_session(self):
     self.auto_prev_limit = 0
     self._carrot_auto_shadow_target = None
+    self._carrot_restore_deferred_target = None
     self.auto_source_high = None
     self.auto_mode_needs_sync = True
     self.auto_sync_speed = None
@@ -975,6 +1015,10 @@ class VCruiseCarrot:
     # Cruise. Separately advance the regular mode-5 setpoint so road-limit
     # changes during the coast are not lost when it automatically disengages.
     shadow_target = getattr(self, "_carrot_auto_shadow_target", None)
+    if manual_speed_change and automatic_carrot_restore_target is None:
+      # An actual driver speed choice (+/- outside the return action, or
+      # remote SPEED) cancels a deferred camera restore.
+      self._carrot_restore_deferred_target = None
     if self.carrot_cruise_active:
       if shadow_target is None:
         saved = self._carrot_cruise_saved_op_speed
@@ -1009,9 +1053,40 @@ class VCruiseCarrot:
                      and getattr(CS, "navLinkClass", 0) == 1)
       camera_active = getattr(CS, "mapSource", 0) == 2
       nav_valid = bool(CS.canValid and getattr(CS, "navDataValid", False))
+      if (self.camera_pending or (nav_valid and camera_active and not section_active
+                                  and not self.auto_camera_override)):
+        # The lower coasting speed remains a temporary camera hold; retain
+        # the independent auto-mode target so it can recover after clearance.
+        if math.isfinite(v_cruise_kph) and v_cruise_kph > 0:
+          self._carrot_restore_deferred_target = v_cruise_kph
       if ((nav_valid and not (camera_active or section_active or toll_active or self.prev_is_tollgate))
           or (not nav_valid and not self.camera_pending)):
         restore_speed = None
+
+    # An automatic return that occurred during a camera warning must not
+    # become a permanent low cruise setting when the warning clears.
+    deferred = getattr(self, "_carrot_restore_deferred_target", None)
+    if deferred is not None and not self.carrot_cruise_active and automatic_carrot_restore_target is None:
+      # Do not release a higher target on an unknown 4BE source either.
+      use_mixed = (getattr(CS, "navLinkClass", 0) in (2, 3)
+                   or (getattr(CS, "navLinkClass", 0) != 1 and not self.auto_source_high))
+      selected_limit = (self._auto_road_limit(getattr(CS, "speedLimit", 0))
+                        if use_mixed and getattr(CS, "speedLimitDataValid", False)
+                        else self._auto_road_limit(getattr(CS, "navSpeedLimit", 0)) if not use_mixed else 0)
+      fresh = bool(CS.canValid and getattr(CS, "navDataValid", False)
+                   and selected_limit > 0)
+      section_active = bool(getattr(CS, "navSectionValid", False)
+                            and getattr(CS, "navSectionActive", False))
+      toll_active = getattr(CS, "navTollExist", 0) == 1 and getattr(CS, "navLinkClass", 0) == 1
+      if fresh and getattr(CS, "mapSource", 0) != 2 and not section_active and not toll_active and not CS.gasPressed:
+        v_cruise_kph = deferred
+        self._carrot_restore_deferred_target = None
+        # Never use the old coasting speed as the source for the next road
+        # limit calculation. A verified camera clear may resync on its own.
+        self.auto_sync_speed = None
+        self.auto_mode_needs_sync = False
+        restore_speed = None
+        self._add_log(f"Carrot Cruise deferred restore released: {deferred:g} km/h")
 
     self._carrot_auto_shadow_target = None
     return self._update_auto_mode_target(

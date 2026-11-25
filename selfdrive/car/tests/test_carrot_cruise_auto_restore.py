@@ -39,6 +39,9 @@ def make_helper():
   helper.carrot_cruise_active = False
   helper._carrot_cruise_saved_op_speed = None
   helper.auto_speed_offset = 0.0
+  helper.vturn_speed = 250
+  helper._carrot_restore_deferred_target = None
+  helper._carrot_lead_fresh = False
   helper._add_log = lambda _: None
   helper._auto_mode_prompt = lambda _: None
   return helper
@@ -51,7 +54,7 @@ def make_inputs(**overrides):
     navDataValid=True, mapSource=0, navSectionValid=False,
     navSectionActive=False, navSpeedLimit=80, navTollExist=0,
     navLinkClass=1, speedLimit=80, speedLimitDataValid=True,
-    gasPressed=False,
+    gasPressed=False, vEgo=0.0,
   )
   state.update(overrides)
   return SimpleNamespace(**state), SimpleNamespace(enabled=True)
@@ -128,6 +131,7 @@ def coast_frame(helper, CS, CC, speed=60):
 def test_auto_mode_speed_limit_reduction_is_remembered_during_coast():
   helper, (CS, CC) = make_helper(), make_inputs()
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
 
   # At first the normal auto target remains 100, while coast is limited to 60.
@@ -150,6 +154,7 @@ def test_auto_mode_speed_limit_increase_is_remembered_during_coast():
   helper, (CS, CC) = make_helper(), make_inputs()
   helper._v_cruise_kph_at_brake = 100
   helper.auto_speed_offset = 10
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
   assert coast_frame(helper, CS, CC) == pytest.approx(60)
 
@@ -165,6 +170,7 @@ def test_auto_mode_speed_limit_increase_is_remembered_during_coast():
 def test_camera_pending_during_coast_still_holds_lower_restore_speed():
   helper, (CS, CC) = make_helper(), make_inputs(mapSource=2)
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
   assert coast_frame(helper, CS, CC) == pytest.approx(60)
   assert helper.camera_pending
@@ -177,6 +183,7 @@ def test_camera_pending_during_coast_still_holds_lower_restore_speed():
 def test_tollgate_transition_is_tracked_in_shadow_not_by_coasting_speed():
   helper, (CS, CC) = make_helper(), make_inputs(navTollExist=1)
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
   assert coast_frame(helper, CS, CC, 60) == pytest.approx(60)
   assert helper._carrot_auto_shadow_target == pytest.approx(80)
@@ -286,6 +293,7 @@ def test_stationary_lead_exit_recovers_prior_openpilot_setpoint_after_zero_coast
   # The stationary-lead timer reaches its existing five-second threshold.
   helper.carrot_cruise_min_timer = 0
   helper.stationary_lead_timer = 499
+  helper._carrot_lead_fresh = True
   result = helper._update_cruise_buttons(CS, CC, 0)
   assert not helper.carrot_cruise_active
   assert result == pytest.approx(95)
@@ -355,3 +363,136 @@ def test_zero_op_target_on_entry_does_not_invent_vehicle_or_scc_speed():
   assert result == pytest.approx(0)
   assert helper._carrot_cruise_saved_op_speed is None
   assert helper._carrot_auto_shadow_target == pytest.approx(0)
+
+@pytest.mark.parametrize("button", (ButtonType.accelCruise, ButtonType.lfaButton))
+def test_plus_or_lfa_restore_keeps_high_4a3_selection(button):
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(
+    navLinkClass=0, navSpeedLimit=80, speedLimit=50)
+  helper._lfa_button_mode = 2
+  helper.v_cruise_kph = 40.
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 100.
+  helper._carrot_auto_shadow_target = 80.
+  helper.auto_prev_limit = 80.
+  helper.auto_source_high = True
+  helper.auto_speed_offset = 10.
+  helper._prepare_buttons = lambda _cs, speed: (speed, button, False)
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(80.)
+  assert helper.auto_source_high is True
+  assert not helper._auto_mode_manual_speed_change
+  assert not helper.carrot_cruise_active
+
+
+def camera_coast():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(
+    navLinkClass=1, navSpeedLimit=80, speedLimit=50, mapSource=2)
+  helper.v_cruise_kph = 40.
+  helper.v_ego_kph_set = 40.
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 100.
+  helper._carrot_auto_shadow_target = 100.
+  helper.auto_prev_limit = 80.
+  helper.auto_speed_offset = 10.
+  helper.carrot_cruise_min_timer = 0
+  helper.desiredSource = "VTRUN"
+  helper.desiredSpeed = 40
+  return helper, CS, CC
+
+
+def test_camera_coast_restores_saved_auto_reference_on_verified_clear():
+  helper, CS, CC = camera_coast()
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  assert not helper.carrot_cruise_active
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+  assert helper.auto_sync_speed == pytest.approx(40.)
+
+  helper.v_cruise_kph = 40.
+  helper.desiredSource = ""
+  CS.mapSource = 0
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(90.)
+  assert helper._carrot_restore_deferred_target is None
+  assert helper.auto_source_high is True
+
+
+def test_camera_coast_does_not_release_on_missing_or_zero_4a3_data():
+  helper, CS, CC = camera_coast()
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  helper.v_cruise_kph = 40.
+  helper.desiredSource = ""
+  CS.navDataValid = False
+  CS.mapSource = 0
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+
+  CS.navDataValid = True
+  CS.navSpeedLimit = 0
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+
+  CS.navSpeedLimit = 80
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(90.)
+  assert helper._carrot_restore_deferred_target is None
+
+@pytest.mark.parametrize(("ego_mps", "fresh_radar", "distance_m"), (
+  (8., True, 8.),     # Moving toward a stationary obstacle
+  (0., False, 8.),    # Lost radar tracking
+  (0., True, 70.),    # Distant static object
+))
+def test_stationary_lead_auto_return_requires_confirmed_near_stop(ego_mps, fresh_radar, distance_m):
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(vEgo=ego_mps)
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 95.
+  helper._carrot_auto_shadow_target = 95.
+  helper.carrot_cruise_min_timer = 0
+  helper.stationary_lead_timer = 499
+  helper._carrot_lead_fresh = fresh_radar
+  helper.d_rel = distance_m
+  helper.v_lead_kph = 0.
+  assert helper._update_cruise_buttons(CS, CC, 0.) == pytest.approx(0.)
+  assert helper.carrot_cruise_active
+  assert helper.stationary_lead_timer == 0
+
+
+def test_manual_speed_choice_cancels_deferred_camera_target():
+  helper, (CS, CC) = make_helper(), make_inputs(mapSource=2)
+  helper._carrot_restore_deferred_target = 100.
+  helper.auto_sync_speed = 40.
+  helper.auto_mode_needs_sync = True
+  assert helper._update_auto_mode(
+    CS, CC, 45., physical_speed_button=True,
+    manual_speed_change=True, restore_speed=None,
+  ) == pytest.approx(45.)
+  assert helper._carrot_restore_deferred_target is None
+  assert helper.auto_sync_speed is None
+
+
+def test_camera_deferred_restore_not_released_on_missing_mixed_4be():
+  helper, (CS, CC) = make_helper(), make_inputs(
+    mapSource=0, navLinkClass=2, speedLimitDataValid=False,
+    navSpeedLimit=80, speedLimit=0,
+  )
+  helper._carrot_restore_deferred_target = 100.
+  helper.auto_source_high = False
+  helper.auto_sync_speed = 40.
+  helper.auto_mode_needs_sync = True
+  assert helper._update_auto_mode(
+    CS, CC, 40., physical_speed_button=False,
+    manual_speed_change=False, restore_speed=None,
+  ) == pytest.approx(40.)
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+
+def test_stricter_model_turn_speed_keeps_carrot_cruise_active():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(vEgo=10.)
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 95.
+  helper._carrot_auto_shadow_target = 95.
+  helper.carrot_cruise_min_timer = 0
+  helper.v_ego_kph_set = 36
+  helper.desiredSource = "MODEL"
+  helper.desiredSpeed = 35
+  helper.vturn_speed = 40
+  # Reaching the independently reported VTRUN speed does not override the
+  # lower MODEL speed target; longitudinal safety remains authoritative.
+  assert helper._update_cruise_buttons(CS, CC, 36.) == pytest.approx(36.)
+  assert helper.carrot_cruise_active
+
