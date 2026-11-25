@@ -344,6 +344,109 @@ class OneTouchOriginGate(unittest.TestCase):
     self.assertTrue(read().blinkerStalkValid)
     self.assertEqual(car.left_blinker_stalk_count, 1)
 
+  def test_stalk_5000_5hz_dropout_and_rearm_episodes(self):
+    # Execute the exact production function AST, not a reimplemented gate.
+    # 5Hz is based on sampled 2022 EV6 0x3C1 neutral CAN captures. This
+    # does NOT reproduce a real tap's pulse duration or the native CANParser.
+    from random import Random
+    rng = Random(20261126)
+    path = ROOT / "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "CarState")
+    function = next(node for node in cls.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "_update_blinker_stalks")
+    now = [1_000_000_000]
+    namespace = {"time": SimpleNamespace(monotonic_ns=lambda: now[0])}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
+                 str(path), "exec"), namespace)
+    parse = namespace["_update_blinker_stalks"]
+
+    for trial in range(5000):
+      side = "LEFT" if trial % 2 == 0 else "RIGHT"
+      now[0] = 1_000_000_000 + trial * 20_000_000_000
+      neutral = {f"{d}_BLINKER": 0 for d in ("LEFT", "RIGHT")}
+      neutral.update({f"{d}_BLINKER_TAP": 0 for d in ("LEFT", "RIGHT")})
+      pressed = dict(neutral)
+      pressed[f"{side}_BLINKER"] = pressed[f"{side}_BLINKER_TAP"] = 1
+      car = SimpleNamespace(
+        blinker_stalks=neutral, blinker_stalk_armed=False,
+        left_stalk_prev=False, right_stalk_prev=False,
+        left_blinker_stalk_count=0, right_blinker_stalk_count=0,
+        _vehicle_navi_message_timestamp=lambda cp, name:
+          max(cp.ts_nanos.get(name, {}).values(), default=0))
+      cp = SimpleNamespace(_last_update_nanos=now[0],
+                           ts_nanos={"BLINKER_STALKS": {"LEFT_BLINKER": now[0]}})
+      count_name = f"{side.lower()}_blinker_stalk_count"
+
+      def receive(delta_ns, data, *, parser_updated=True, timestamp_updated=True):
+        now[0] += delta_ns
+        car.blinker_stalks = data
+        if parser_updated:
+          cp._last_update_nanos = now[0]
+        if timestamp_updated:
+          cp.ts_nanos["BLINKER_STALKS"]["LEFT_BLINKER"] = now[0]
+        ret = SimpleNamespace(blinkerLever=0, blinkerStalkValid=False)
+        parse(car, ret, cp)
+        return ret
+
+      self.assertTrue(receive(0, neutral).blinkerStalkValid, trial)
+      for _ in range(7):
+        self.assertTrue(receive(200_000_000 + rng.randint(-13_000_000, 13_000_000),
+                                neutral).blinkerStalkValid, trial)
+      ret = receive(200_000_000, pressed)
+      self.assertTrue(ret.blinkerStalkValid, trial)
+      self.assertEqual((ret.blinkerLever, getattr(car, count_name)), (1, 1), trial)
+      self.assertTrue(receive(20_000_000, pressed, timestamp_updated=False).blinkerStalkValid, trial)
+      self.assertEqual(getattr(car, count_name), 1, trial)
+      # Fully frozen parser timestamp while wall monotonic time advances.
+      ret = receive(251_000_000, pressed, parser_updated=False, timestamp_updated=False)
+      self.assertFalse(ret.blinkerStalkValid, trial)
+      self.assertFalse(car.blinker_stalk_armed, trial)
+      self.assertFalse(receive(10_000_000, pressed).blinkerStalkValid, trial)
+      self.assertEqual(getattr(car, count_name), 1, trial)
+      self.assertTrue(receive(200_000_000, neutral).blinkerStalkValid, trial)
+      self.assertEqual(receive(200_000_000, pressed).blinkerLever, 1, trial)
+      self.assertEqual(getattr(car, count_name), 2, trial)
+
+  def test_stalk_monotonic_clock_and_parser_timestamp_independent_bounds(self):
+    path = ROOT / "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "CarState")
+    function = next(node for node in cls.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "_update_blinker_stalks")
+    now = [1_100_000_000]
+    namespace = {"time": SimpleNamespace(monotonic_ns=lambda: now[0])}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
+                 str(path), "exec"), namespace)
+    parse = namespace["_update_blinker_stalks"]
+    neutral = {"LEFT_BLINKER": 0, "RIGHT_BLINKER": 0,
+               "LEFT_BLINKER_TAP": 0, "RIGHT_BLINKER_TAP": 0}
+    car = SimpleNamespace(
+      blinker_stalks=neutral, blinker_stalk_armed=False,
+      left_stalk_prev=False, right_stalk_prev=False,
+      left_blinker_stalk_count=0, right_blinker_stalk_count=0,
+      _vehicle_navi_message_timestamp=lambda cp, name:
+        max(cp.ts_nanos.get(name, {}).values(), default=0))
+    cp = SimpleNamespace(_last_update_nanos=1_100_000_000,
+                         ts_nanos={"BLINKER_STALKS": {"LEFT_BLINKER": 1_000_000_000}})
+
+    def valid():
+      ret = SimpleNamespace(blinkerLever=0, blinkerStalkValid=False)
+      parse(car, ret, cp)
+      return ret.blinkerStalkValid
+
+    self.assertTrue(valid())
+    now[0] = cp._last_update_nanos = 1_250_000_000
+    self.assertTrue(valid())  # exact 250ms boundary
+    now[0] = 1_250_000_001
+    self.assertFalse(valid())  # real clock elapsed but parser clock frozen
+    now[0] = 1_010_000_000
+    cp._last_update_nanos = 1_250_000_001
+    self.assertFalse(valid())  # stale parser timestamp independently rejects
+    now[0] = 999_999_999
+    cp._last_update_nanos = 1_000_000_000
+    self.assertFalse(valid())  # future timestamp is also invalid
+
   def test_modeld_retracts_stalk_provenance_after_message_timeout(self):
     path = ROOT / "selfdrive/modeld/modeld.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
