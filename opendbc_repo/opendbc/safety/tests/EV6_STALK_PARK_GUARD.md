@@ -18,8 +18,11 @@ message 0x35 (32 bytes, byte24 bits[2:0]) to require P=0. In the
 user-supplied captures D=5, N=6, R=7.
 
 * Fresh CRC-valid stock message; age at most 120 ms
-* The panda safety framework RX status must also show a valid checksum,
-  acceptable counter history, valid quality and non-lagging state
+* The panda safety framework must have **three** fresh input messages,
+  0x35 (gear/gas), 0x175 (foot brake), 0xA0 (wheel speeds), each on bus 0.
+  All three must have a valid checksum, acceptable counter history,
+  valid quality, a non-lagging state and an age of at most 120 ms.
+  Missing or unsupported messages always fail closed.
 * A cached P value is insufficient: bad CRC arriving after a valid P
   causes the framework to mark the RX checksum invalid and block TX
 * Zero wheel speed, foot brake held, gas not pressed, original stalk
@@ -34,7 +37,7 @@ headers are included before the safety.h global variable definitions.
 
 File: test_ev6_stalk_park_guard.py
 
-12 tests written for the actual libsafety C hooks:
+19 tests written for the actual libsafety C hooks:
 
 1. Park + brake + authentic lever tap shape (positive path)
 2. D / N / R denied even with standstill and brake
@@ -48,6 +51,13 @@ File: test_ev6_stalk_park_guard.py
 10. Brake release denied
 11. No authentic stock lever sample denied
 12. 0x165 / 0x16A / 0x7B1 remain disallowed
+13. Missing wheel-speed message denied
+14. Bad foot-brake CRC after a valid brake message denied
+15. Bad wheel-speed CRC after a valid message denied
+16. Stale foot-brake sample rejected with other inputs fresh
+17. Stale wheel-speed sample rejected with other inputs fresh
+18. Wheel movement rejected despite other stationary conditions
+19. No EV6 test opt-in flag means no 0x3C1 permission
 
 The tests deliberately do not communicate with any car. A test file
 present in GitHub is **not** evidence that it passed. Compile the C hooks
