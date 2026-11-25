@@ -1,0 +1,35 @@
+name: Main audit safety regression
+
+on:
+  push:
+    branches: [fix/audit-safety-regressions-20261126]
+  pull_request:
+    branches: [ms-xy-radar3]
+    paths:
+      - opendbc_repo/opendbc/car/hyundai/carstate.py
+      - opendbc_repo/opendbc/car/hyundai/carcontroller.py
+      - opendbc_repo/opendbc/safety/safety/safety_hyundai_canfd.h
+      - selfdrive/car/cruise.py
+      - selfdrive/car/tests/test_main_audit_safety_standalone.py
+      - .github/workflows/main-audit-safety-regression.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python syntax
+        run: |
+          python -m py_compile opendbc_repo/opendbc/car/hyundai/carstate.py opendbc_repo/opendbc/car/hyundai/carcontroller.py selfdrive/car/cruise.py selfdrive/car/tests/test_main_audit_safety_standalone.py
+      - name: Source-backed safety regression checks
+        run: python selfdrive/car/tests/test_main_audit_safety_standalone.py -v
