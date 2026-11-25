@@ -61,10 +61,11 @@ PREVIEW_QUEUE_LIMIT = 8
 PREVIEW_FAILURE_COOLDOWN = 180.0
 FOOTAGE_PAGE_SIZE = 20
 ROUTE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}$")
+SEGMENT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}--\d+$")
 
 
-def _create_preview(route):
-  segment_dir = os.path.join(Paths.log_root(), f"{route}--0")
+def _create_preview(segment):
+  segment_dir = os.path.join(Paths.log_root(), segment)
   source = os.path.join(segment_dir, "qcamera.ts")
   preview = os.path.join(segment_dir, "preview.gif")
   temporary = os.path.join(segment_dir, "preview.part.gif")
@@ -84,7 +85,7 @@ def _create_preview(route):
     os.replace(temporary, preview)
     success = True
   except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
-    cloudlog.warning(f"Fleet preview failed for {route}: {exc}")
+    cloudlog.warning(f"Fleet preview failed for {segment}: {exc}")
   finally:
     if os.path.exists(temporary):
       try:
@@ -92,19 +93,19 @@ def _create_preview(route):
       except OSError:
         pass
     with PREVIEW_LOCK:
-      PREVIEW_PENDING.discard(route)
+      PREVIEW_PENDING.discard(segment)
       if success:
-        PREVIEW_RETRY_AFTER.pop(route, None)
+        PREVIEW_RETRY_AFTER.pop(segment, None)
       else:
-        PREVIEW_RETRY_AFTER[route] = time.monotonic() + PREVIEW_FAILURE_COOLDOWN
+        PREVIEW_RETRY_AFTER[segment] = time.monotonic() + PREVIEW_FAILURE_COOLDOWN
 
 
-@app.route("/preview-thumbnail/<route>")
-def preview_thumbnail(route):
-  if not ROUTE_PATTERN.fullmatch(route):
+@app.segment("/preview-thumbnail/<segment>")
+def preview_thumbnail(segment):
+  if not SEGMENT_PATTERN.fullmatch(segment):
     abort(404)
 
-  preview_dir = os.path.join(Paths.log_root(), f"{route}--0")
+  preview_dir = os.path.join(Paths.log_root(), segment)
   preview_name = "preview.gif"
   preview_path = os.path.join(preview_dir, preview_name)
 
@@ -116,14 +117,14 @@ def preview_thumbnail(route):
 
   with PREVIEW_LOCK:
     now = time.monotonic()
-    if now < PREVIEW_RETRY_AFTER.get(route, 0):
+    if now < PREVIEW_RETRY_AFTER.get(segment, 0):
       return jsonify({"status": "failed_retry_later"}), 503
-    if route not in PREVIEW_PENDING and len(PREVIEW_PENDING) < PREVIEW_QUEUE_LIMIT:
-      PREVIEW_PENDING.add(route)
+    if segment not in PREVIEW_PENDING and len(PREVIEW_PENDING) < PREVIEW_QUEUE_LIMIT:
+      PREVIEW_PENDING.add(segment)
       try:
-        PREVIEW_EXECUTOR.submit(_create_preview, route)
+        PREVIEW_EXECUTOR.submit(_create_preview, segment)
       except RuntimeError:
-        PREVIEW_PENDING.discard(route)
+        PREVIEW_PENDING.discard(segment)
         return jsonify({"status": "unavailable"}), 503
 
   return jsonify({"status": "pending"}), 202
