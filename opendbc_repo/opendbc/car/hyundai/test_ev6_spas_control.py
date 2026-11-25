@@ -54,6 +54,12 @@ class TestPlan(unittest.TestCase):
     self.c.observe_reply(APRK_RESPONSE, 0, reply(0x68, 3), 1.30)
     self.c.tick(1.30, SAFE)
 
+  def enter_eligible_with_heartbeat(self):
+    events = []
+    for now in (1.34, 1.39, 1.45, 1.50):
+      events.extend(self.c.tick(now, SAFE))
+    return events
+
   def test_crc_check_rejects_tampered_sample(self):
     self.assertTrue(check_stock_frame(0x16A, sample(0x16A, 1, 3)))
     altered = bytearray(sample(0x16A, 1))
@@ -116,14 +122,14 @@ class TestPlan(unittest.TestCase):
   def test_successful_synthetic_handoff_is_no_tx_only(self):
     self.start()
     self.disable_ack()
-    events = self.c.tick(1.50, SAFE)
+    events = self.enter_eligible_with_heartbeat()
     self.assertEqual(events, ['SIMULATED_HANDOFF_ONLY_NO_CAN_TX'])
     self.assertEqual(self.c.phase, 'eligible')
 
   def test_stock_resuming_revokes_eligibility(self):
     self.start()
     self.disable_ack()
-    self.c.tick(1.50, SAFE)
+    self.enter_eligible_with_heartbeat()
     self.c.observe_stock(0x16A, 0, sample(0x16A, 14), 1.51)
     self.assertIn('WOULD_REQUEST_COMMUNICATION_ENABLE', self.c.tick(1.52, SAFE))
     self.assertEqual(self.c.reason, 'original_ecu_resumed')
@@ -150,7 +156,7 @@ class TestPlan(unittest.TestCase):
   def test_expired_eligibility_stops_without_repeating(self):
     self.start()
     self.disable_ack()
-    self.c.tick(1.50, SAFE)
+    self.enter_eligible_with_heartbeat()
     events = self.c.tick(1.86, SAFE)
     self.assertEqual(events, ['WOULD_REQUEST_COMMUNICATION_ENABLE'])
     self.assertEqual(self.c.reason, 'plan_duration_expired')
@@ -297,6 +303,26 @@ class TestPlan(unittest.TestCase):
       self.assertEqual(self.c.stock[addr].post_session_consecutive, 0)
     self.assertEqual(self.c.tick(1.26, SAFE), [])
     self.assertEqual(self.c.phase, 'post_session_stock')
+
+
+
+  def test_200ms_monitoring_gap_is_not_silence_proof(self):
+    self.start()
+    self.disable_ack()
+    # 200 ms between planner ticks; an external capture may have disconnected.
+    events = self.c.tick(1.50, SAFE)
+    self.assertIn('WOULD_REQUEST_COMMUNICATION_ENABLE', events)
+    self.assertNotIn('SIMULATED_HANDOFF_ONLY_NO_CAN_TX', events)
+    self.assertEqual(self.c.phase, 'restore_enable')
+    self.assertEqual(self.c.reason, 'monitor_continuity_lost')
+
+  def test_monotonic_heartbeat_during_quiet_is_still_only_simulated(self):
+    self.start()
+    self.disable_ack()
+    events = self.enter_eligible_with_heartbeat()
+    self.assertEqual(events, ['SIMULATED_HANDOFF_ONLY_NO_CAN_TX'])
+    self.assertEqual(self.c.phase, 'eligible')
+    self.assertFalse(hasattr(self.c, 'send'))
 
 
 
