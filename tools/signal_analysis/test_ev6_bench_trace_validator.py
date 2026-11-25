@@ -211,7 +211,7 @@ class TestEvidence(unittest.TestCase):
     def test_bad_health_types_fault(self):
         rows = traffic()
         next(r for r in rows if r["direction"] == "health")["bus_off"] = "false"
-        self.assertIn("INVALID_CAN_HEALTH_SAMPLE", analyze(rows)["faults"]
+        self.assertIn("INVALID_CAN_HEALTH_SAMPLE", analyze(rows)["faults"])
 
     def test_missing_bus_must_fail(self):
         rows = traffic()
