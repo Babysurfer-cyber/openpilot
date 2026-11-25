@@ -1,136 +1,130 @@
 {% extends "layout.html" %}
 
-{% block title %}
-    Dashcam Routes
-{% endblock %}
+{% block title %}Dashcam Routes{% endblock %}
 
 {% block main %}
 <div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-5">
-        <h1 class="display-5 fw-bold text-white text-shadow-bold">Dashcam Recordings</h1>
-        <i class="fas fa-video fa-2x text-primary"></i>
-    </div>
+  <h1 class="display-5 fw-bold">Dashcam Recordings</h1>
+  <p class="text-muted">{{ total_routes }} routes · Page {{ page }} / {{ total_pages }}</p>
+  {% if not routes %}
+    <p class="text-muted">저장된 주행 기록이 없습니다.</p>
+  {% endif %}
 
-    <div class="row g-4">
-        {% for row, gif in zipped %}
-        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-            <div class="card h-100 border-0 shadow-lg hover-effect">
-                <div class="image-container" style="height: 200px; overflow: hidden;">
-                    <img src="/previewgif/{{ gif }}" 
-                         class="card-img-top img-fluid h-100 object-fit-cover" 
-                         alt="Recording preview"
-                         style="filter: brightness(0.9);">
-                </div>
-                
-                <div class="card-body bg-dark-gradient position-relative" style="z-index: 10;">
-                    <hr class="text-white-50 mt-0 mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge bg-dark bg-opacity-75 fs-6 text-nowrap">
-                            <i class="fas fa-clock me-2"></i>{{ row }}
-                        </span>
-                        <a href="/footage/{{ row }}" 
-                           class="btn btn-primary btn-sm rounded-pill px-3 hover-grow position-relative" 
-                           style="z-index: 11;">
-                            <i class="fas fa-play me-2"></i>View
-                        </a>
-                    </div>
-                    <div class="text-white-50 small" id="date-{{ row|replace('--', '__') }}">
-                        <i class="fas fa-calendar-day me-1"></i> Loading date...
-                    </div>
-                </div>
-            </div>
+  <div class="row g-4">
+    {% for row in routes %}
+      <div class="col-12 col-md-6 col-lg-4 col-xl-3">
+        <div class="card h-100 shadow-sm">
+          <div class="preview-box">
+            {% if row.segment %}
+              <img class="preview-img" data-segment="{{ row.segment }}" alt="Dashcam preview" loading="lazy">
+              <span class="preview-status">미리보기 준비 중...</span>
+            {% else %}
+              <span class="preview-status">녹화영상 없음 (로그만 존재)</span>
+            {% endif %}
+          </div>
+          <div class="card-body">
+            <div class="small text-muted">{{ row.name }}</div>
+            <div class="small">{{ row.date }}</div>
+            {% if row.segment %}
+              <a class="btn btn-primary btn-sm mt-3" href="/footage/{{ row.name }}?{{ row.segment.rsplit('--', 1)[-1] }},qcamera">View</a>
+            {% else %}
+              <button class="btn btn-secondary btn-sm mt-3" disabled>영상 없음</button>
+            {% endif %}
+          </div>
         </div>
-        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <nav class="mt-4 mb-4" aria-label="Dashcam pages">
+    <div class="d-flex justify-content-center gap-3">
+      {% if page > 1 %}
+        <a class="btn btn-outline-primary" href="/footage?page={{ page - 1 }}">이전 20개</a>
+      {% endif %}
+      {% if page < total_pages %}
+        <a class="btn btn-outline-primary" href="/footage?page={{ page + 1 }}">다음 20개</a>
+      {% endif %}
     </div>
+  </nav>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('[id^="date-"]').forEach(element => {
-        const route = element.id.replace('date-', '').replace('__', '--');
-        fetchFolderDate(route, element);
-    });
-});
-
-async function fetchFolderDate(route, element) {
-    try {
-        const seg0Path = `/data/media/0/realdata/${route}--0`;
-        const seg1Path = `/data/media/0/realdata/${route}--1`;
-        
-        let response;
-        
-        const seg1Exists = await checkFolderExists(seg1Path);
-        
-        if (seg1Exists) {
-            response = await fetch(`/folder-date?path=${encodeURIComponent(seg1Path)}&subtract_minutes=1`);
-        } else {
-            response = await fetch(`/folder-date?path=${encodeURIComponent(seg0Path)}`);
-        }
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data.date) {
-                element.innerHTML = `<i class="fas fa-calendar-day me-1"></i> ${data.date}`;
-            } else {
-                element.textContent = "Date not available";
-            }
-        } else {
-            throw new Error('Failed to fetch date');
-        }
-    } catch (error) {
-        console.error(`Error fetching date for ${route}:`, error);
-        element.textContent = "Date not available";
-    }
-}
-
-async function checkFolderExists(path) {
-    try {
-        const response = await fetch(`/folder-exists?path=${encodeURIComponent(path)}`);
-        const data = await response.json();
-        return data.exists;
-    } catch (error) {
-        console.error(`Error checking folder existence for ${path}:`, error);
-        return false;
-    }
-}
-</script>
-
 <style>
-    .hover-effect {
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-        background: linear-gradient(145deg, #1a1e21, #23282b);
-        border-radius: 12px!important;
-    }
-    
-    .hover-effect:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-    }
-
-    .bg-dark-gradient {
-        background: linear-gradient(to bottom, #2a2e32, #1f2327);
-    }
-
-    .text-shadow-bold {
-        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-    }
-
-    .hover-grow {
-        transition: transform 0.2s ease-in-out;
-    }
-
-    .hover-grow:hover {
-        transform: scale(1.05);
-        opacity: 0.9;
-    }
-
-    .object-fit-cover {
-        object-fit: cover;
-        object-position: center;
-    }
-    .badge.bg-dark {
-        font-size: 1rem !important;
-        padding: 0.5em 0.8em;
-    }
+  .preview-box {
+    height: 190px;
+    position: relative;
+    background: #222933;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+  }
+  .preview-status {
+    color: #b6bdc7;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 0.6rem;
+  }
 </style>
+
+<script>
+(function () {
+  const images = Array.from(document.querySelectorAll('img[data-segment]'));
+  async function loadPreview(img) {
+    if (img.dataset.loading === '1') return;
+    img.dataset.loading = '1';
+    const status = img.parentElement.querySelector('.preview-status');
+    const segment = img.dataset.segment;
+    const url = '/preview-thumbnail/' + encodeURIComponent(segment);
+    for (let attempt = 0; attempt < 45; attempt++) {
+      try {
+        const response = await fetch(url, {cache: 'no-store'});
+        if (response.ok) {
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          img.onload = () => URL.revokeObjectURL(objectUrl);
+          img.src = objectUrl;
+          img.style.display = 'block';
+          status.hidden = true;
+          return;
+        }
+        if (response.status === 404) {
+          status.textContent = '녹화영상이 없습니다.';
+          return;
+        }
+        if (response.status !== 202 && response.status !== 503) {
+          status.textContent = '미리보기를 불러올 수 없습니다.';
+          return;
+        }
+        if (response.status === 503) {
+          status.textContent = '미리보기 생성 지연';
+        }
+      } catch (error) {
+        status.textContent = '일시적인 연결 오류';
+      }
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    status.textContent = '미리보기 생성에 실패했습니다. 새로고침해 주세요.';
+  }
+
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          observer.unobserve(entry.target);
+          loadPreview(entry.target);
+        }
+      }
+    }, {rootMargin: '120px'});
+    images.forEach(img => observer.observe(img));
+  } else {
+    images.forEach(loadPreview);
+  }
+})();
+</script>
 {% endblock %}
