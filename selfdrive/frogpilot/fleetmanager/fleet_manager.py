@@ -83,6 +83,8 @@ def _valid_preview_image(path):
           or int.from_bytes(header[6:8], "little") == 0
           or int.from_bytes(header[8:10], "little") == 0):
         return False
+      screen_width = int.from_bytes(header[6:8], "little")
+      screen_height = int.from_bytes(header[8:10], "little")
       # Skip global color table, if present.
       if header[10] & 0x80:
         image_file.seek(3 * (1 << ((header[10] & 0x07) + 1)), 1)
@@ -110,9 +112,18 @@ def _valid_preview_image(path):
           descriptor = image_file.read(9)
           if len(descriptor) != 9:
             return False
+          left = int.from_bytes(descriptor[0:2], "little")
+          top = int.from_bytes(descriptor[2:4], "little")
+          width = int.from_bytes(descriptor[4:6], "little")
+          height = int.from_bytes(descriptor[6:8], "little")
+          # The image rectangle must be nonempty and fully inside the canvas.
+          if not width or not height or left + width > screen_width or top + height > screen_height:
+            return False
           if descriptor[8] & 0x80:
             image_file.seek(3 * (1 << ((descriptor[8] & 0x07) + 1)), 1)
-          if len(image_file.read(1)) != 1 or not skip_blocks():
+          # GIF LZW minimum code size is limited to 2..8.
+          lzw_min = image_file.read(1)
+          if len(lzw_min) != 1 or not 2 <= lzw_min[0] <= 8 or not skip_blocks():
             return False
           saw_image = True
         else:
