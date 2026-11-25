@@ -224,6 +224,39 @@ class TestEV6AprkHandoffBench(unittest.TestCase):
     b.tick(1330, Context())
     self.assertEqual(b.reason, 'lease_duration_limit')
 
+  def test_negative_restore_enable_reply_is_terminal(self):
+    b = after_disable()
+    b.tick(330, Context())
+    b.stop(360)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    b.response(365, RESPONSE, 0, NEGATIVE)
+    self.assertEqual(b.phase, 'restore_unconfirmed')
+    self.assertEqual(b.reason, 'ecu_negative_response_during_restore')
+    # A subsequently injected positive ACK must not reverse the failure.
+    b.response(366, RESPONSE, 0, POS_ENABLE)
+    b.response(367, RESPONSE, 0, POS_DEFAULT)
+    self.assertEqual(b.phase, 'restore_unconfirmed')
+    self.assertNotIn('SIMULATED_TWO_RESTORE_ACKS_AND_STOCK_RESUMPTION',
+                     [event['event'] for event in b.audit])
+    self.assertEqual(b.actual_can_tx, 0)
+
+  def test_negative_restore_default_reply_is_terminal(self):
+    b = after_disable()
+    b.tick(330, Context())
+    b.stop(360)
+    b.response(365, RESPONSE, 0, POS_ENABLE)
+    self.assertEqual(b.phase, 'wait_restore_default')
+    b.response(366, RESPONSE, 0, NEGATIVE)
+    self.assertEqual(b.phase, 'restore_unconfirmed')
+    self.assertEqual(b.reason, 'ecu_negative_response_during_restore')
+    b.response(367, RESPONSE, 0, POS_DEFAULT)
+    for i in range(10):
+      b.stock(380+i*20, 0x165, 11+i)
+      b.stock(380+i*20, 0x16A, 11+i)
+    b.tick(560, Context())
+    self.assertEqual(b.phase, 'restore_unconfirmed')
+    self.assertEqual(b.actual_can_tx, 0)
+
   def test_restore_missing_confirmation_not_success(self):
     b = initial()
     b.start(190, Context())
