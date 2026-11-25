@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ev6_spas_factory_replay import analyze_capture
+from ev6_spas_factory_replay import analyze_capture, lever_checksum
 from ev6_spas_control import crc16_xmodem
 
 
@@ -38,6 +38,24 @@ def scenario(side, foreign=False):
     if i in (10, 11, 12, 13):
       rows.append((round(t+.01, 4), '0x413', 0, frame(0x413, lamp=lamp_bit if i>=12 else 0)))
   return sorted(rows, key=lambda row: row[0])
+
+
+def sample_lever(*, active=False, corrupt=False):
+  raw = bytearray.fromhex('49e0300000000000')
+  if active:
+    raw[3] = 1  # synthetic nonzero stalk direction byte
+    raw[0] = lever_checksum(raw)
+  if corrupt:
+    raw[0] ^= 1
+  return raw.hex()
+
+
+def with_lever(rows, before=True, after=True, active=False, corrupt=False, bus=0):
+  if before:
+    rows.append((1.17, '0x3c1', bus, sample_lever(active=active, corrupt=corrupt)))
+  if after:
+    rows.append((1.29, '0x3c1', bus, sample_lever(active=active, corrupt=corrupt)))
+  return sorted(rows, key=lambda item:item[0])
 
 
 class TestFactoryReplay(unittest.TestCase):
@@ -114,6 +132,56 @@ class TestFactoryReplay(unittest.TestCase):
     bad=list(rows[i]);bad[-1]='0102';rows[i]=tuple(bad)
     with self.assertRaisesRegex(ValueError, 'Invalid lamp feedback length'):
       analyze_capture(self.save(rows), 'left')
+
+
+  def test_factory_lamp_observed_without_stalk_does_not_imply_neutral_lever(self):
+    r = analyze_capture(self.save(scenario('left')), 'left')
+    self.assertTrue(r['factory_indicator_observed_in_log'])
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+    self.assertEqual(r['lever_onset_context']['window_samples'], 0)
+
+  def test_valid_neutral_stalk_before_and_after_corrobates_recorded_event(self):
+    r = analyze_capture(self.save(with_lever(scenario('left'))), 'left')
+    self.assertTrue(r['factory_event_neutral_lever_corroborated'])
+    self.assertEqual(r['lever_original_bus0_frames'], 2)
+    self.assertEqual(r['lever_non_neutral_observed_frames'], 0)
+    self.assertTrue(r['lever_onset_context']['does_not_exclude_inter_sample_driver_action'])
+    self.assertEqual(r['lever_onset_context']['before_onset_ms'], -70.)
+    self.assertEqual(r['lever_onset_context']['after_onset_ms'], 50.)
+
+  def test_driver_lever_active_during_onset_prevents_neutral_corrob(self):
+    r = analyze_capture(self.save(with_lever(scenario('left'), active=True)), 'left')
+    self.assertTrue(r['factory_indicator_observed_in_log'])
+    self.assertEqual(r['lever_non_neutral_observed_frames'], 2)
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+
+  def test_invalid_lever_crc_is_rejected(self):
+    with self.assertRaisesRegex(ValueError, 'Invalid OEM 0x3C1 lever CRC'):
+      analyze_capture(self.save(with_lever(scenario('left'), corrupt=True)), 'left')
+
+  def test_wrong_bus_neutral_lever_is_not_independent_evidence(self):
+    r = analyze_capture(self.save(with_lever(scenario('left'), bus=130)), 'left')
+    self.assertEqual(r['lever_original_bus0_frames'], 0)
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+
+  def test_missing_pre_onset_lever_prevents_neutral_corroboration(self):
+    r = analyze_capture(self.save(with_lever(scenario('left'), before=False)), 'left')
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+    self.assertIsNone(r['lever_onset_context']['before_onset_ms'])
+
+  def test_missing_post_onset_lever_prevents_neutral_corroboration(self):
+    r = analyze_capture(self.save(with_lever(scenario('left'), after=False)), 'left')
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+    self.assertIsNone(r['lever_onset_context']['after_onset_ms'])
+
+  def test_diagnostic_messages_prevent_pure_factory_corroboration(self):
+    rows = with_lever(scenario('left'))
+    rows.append((1.25, '0x7b1', 0, '0210030000000000'))
+    rows.sort(key=lambda item:item[0])
+    r = analyze_capture(self.save(rows), 'left')
+    self.assertTrue(r['factory_indicator_observed_in_log'])
+    self.assertFalse(r['factory_event_neutral_lever_corroborated'])
+    self.assertEqual(r['aprk_request_or_reply_frames_seen_on_bus0'], 1)
 
 
 if __name__ == '__main__':
