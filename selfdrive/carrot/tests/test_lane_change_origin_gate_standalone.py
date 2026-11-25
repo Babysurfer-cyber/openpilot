@@ -169,6 +169,9 @@ class OneTouchOriginGate(unittest.TestCase):
     self.assertIn("DH.lane_change_driver_request and sm.alive['carState'] and sm.valid['carState']", text)
     self.assertIn("and sm['carState'].canValid", text)
     self.assertIn("getattr(sm['carState'], 'blinkerStalkValid', False)", text)
+    self.assertIn("DH.stalk_max_level == 1", text)
+    self.assertIn("sm['carState'].blinkerLever in (0, 1)", text)
+    self.assertIn("not DH.one_touch_completed and not DH.bsd_stalk_cancelled", text)
     self.assertLess(text.index("DH.update(sm['carState']"), text.index(origin))
 
   def test_desirehelper_uses_driver_stalk_not_atc_for_provenance(self):
@@ -305,14 +308,19 @@ class OneTouchOriginGate(unittest.TestCase):
               and n.targets[0].attr == "laneChangeDriverRequest"]
     self.assertEqual(len(writes), 1)
     expression = compile(ast.Expression(body=writes[0].value), str(path), "eval")
-    def decide(*, lane=True, can_valid=True, stalk_valid=True, alive=True, valid=True):
-      inputs = {"carState": SimpleNamespace(canValid=can_valid, blinkerStalkValid=stalk_valid)}
+    def decide(*, lane=True, can_valid=True, stalk_valid=True, alive=True, valid=True,
+               level=1, lever=0, completed=False, bsd=False):
+      inputs = {"carState": SimpleNamespace(canValid=can_valid, blinkerStalkValid=stalk_valid,
+                                            blinkerLever=lever)}
       class SubMasterStub(dict):
         def __init__(self):
           super().__init__(inputs)
           self.alive = {"carState": alive}
           self.valid = {"carState": valid}
-      return eval(expression, {"DH": SimpleNamespace(lane_change_driver_request=lane),
+      return eval(expression, {"DH": SimpleNamespace(lane_change_driver_request=lane,
+                                                      stalk_max_level=level,
+                                                      one_touch_completed=completed,
+                                                      bsd_stalk_cancelled=bsd),
                                "sm": SubMasterStub()})
     self.assertTrue(decide())
     self.assertFalse(decide(lane=False))
@@ -320,6 +328,12 @@ class OneTouchOriginGate(unittest.TestCase):
     self.assertFalse(decide(stalk_valid=False))
     self.assertFalse(decide(alive=False))
     self.assertFalse(decide(valid=False))
+    self.assertTrue(decide(lever=1))
+    self.assertFalse(decide(level=0))  # A counter edge alone is not a tap
+    self.assertFalse(decide(level=2))  # A latched lever after start revokes assist
+    self.assertFalse(decide(lever=2))
+    self.assertFalse(decide(completed=True))
+    self.assertFalse(decide(bsd=True))
 
   def test_helper_fails_closed_for_absent_field(self):
     text = SOURCE.read_text(encoding="utf-8")
