@@ -211,6 +211,7 @@ class VCruiseCarrot:
     self.aTarget = 0
     self.nRoadLimitSpeed = 30
     self.desiredSpeed = 250
+    self.vturn_speed = 250
     self.road_limit_kph = 30
     self.nRoadLimitSpeed_last = 30
 
@@ -317,7 +318,8 @@ class VCruiseCarrot:
       carrot_man = sm['carrotMan']
       self.nRoadLimitSpeed = carrot_man.nRoadLimitSpeed
       self.desiredSpeed = carrot_man.desiredSpeed
-      self.desiredSource = carrot_man.desiredSource   # <--- 이 줄을 반드시 추가해야 합니다!
+      self.desiredSource = carrot_man.desiredSource
+      self.vturn_speed = carrot_man.vTurnSpeed
       self.carrot_cmd_index = carrot_man.carrotCmdIndex
       self.carrot_cmd = carrot_man.carrotCmd
       self.carrot_arg = carrot_man.carrotArg
@@ -326,6 +328,7 @@ class VCruiseCarrot:
       # CarrotMan disappears; stale navigation may terminate Carrot Cruise.
       self.desiredSource = ""
       self.desiredSpeed = 250
+      self.vturn_speed = 250
     if sm.alive['longitudinalPlan']:
       lp = sm['longitudinalPlan']
       self.xState = lp.xState
@@ -882,6 +885,12 @@ class VCruiseCarrot:
         if is_vturn_decel and self.desiredSpeed < 70 and self.v_ego_kph_set <= self.desiredSpeed + 1 and self.v_ego_kph_set <= 60:
           restore_triggered = True
           restore_reason = f"VTRUN Speed {self.desiredSpeed} Reached"
+        elif (not is_vturn_decel and 0 < abs(self.vturn_speed) < 70
+              and self.v_ego_kph_set <= abs(self.vturn_speed) + 1
+              and self.v_ego_kph_set <= 60 and self.frame % 500 == 0):
+          # A lower MODEL/camera/turn target has priority over VTRUN.
+          # Do not restore early: log which competing source holds the coast.
+          self._add_log(f"Carrot VTRUN return held by {current_source}: {self.desiredSpeed} km/h")
 
       # 🚀 복귀 트리거 발동
       if restore_triggered:
@@ -1049,7 +1058,8 @@ class VCruiseCarrot:
                                   and not self.auto_camera_override)):
         # The lower coasting speed remains a temporary camera hold; retain
         # the independent auto-mode target so it can recover after clearance.
-        self._carrot_restore_deferred_target = v_cruise_kph
+        if math.isfinite(v_cruise_kph) and v_cruise_kph > 0:
+          self._carrot_restore_deferred_target = v_cruise_kph
       if ((nav_valid and not (camera_active or section_active or toll_active or self.prev_is_tollgate))
           or (not nav_valid and not self.camera_pending)):
         restore_speed = None
