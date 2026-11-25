@@ -124,6 +124,27 @@ class OneTouchOriginGate(unittest.TestCase):
         result = assist.update(frame*.05, 27., model(state, direction, origin=False), (point,))
         self.assertIsNone(result)
 
+  def test_adversarial_nonphysical_origin_never_accepts_stable_side_track(self):
+    # A coherent track, healthy lane geometry and active FSM cannot substitute
+    # for the verified physical one-touch origin.
+    rng = Random(12632026)
+    for origin in (None, False, 0, 1, "True"):
+      for trial in range(100):
+        direction = "left" if trial % 2 == 0 else "right"
+        point = Point(y_rel=3.6 if direction == "left" else -3.6,
+                      d_rel=rng.uniform(15., 60.), v_rel=rng.uniform(-9., -0.01),
+                      v_lead=rng.uniform(3., 25.))
+        assist = ASSIST.LaneChangeSpeedAssist()
+        self.assertIsNone(seed(assist, direction=direction, point=point, origin=origin),
+                          (origin, direction, trial))
+
+  def test_nonphysical_origin_cannot_reacquire_after_real_one_touch(self):
+    assist = ASSIST.LaneChangeSpeedAssist()
+    self.assertIsNotNone(seed(assist))
+    self.assertIsNone(assist.update(.35, 27., model("laneChangeStarting", origin=None), (Point(),)))
+    self.assertIsNone(assist.update(.40, 27., model("laneChangeStarting", origin=True), (Point(),)))
+    self.assertIsNone(assist.update(.45, 27., model("laneChangeStarting", origin=True), (Point(),)))
+
   def test_source_contract_has_unique_bool_schema_field(self):
     schema = (ROOT / "cereal/log.capnp").read_text(encoding="utf-8")
     self.assertEqual(schema.count("laneChangeDriverRequest @21 :Bool;"), 1)
