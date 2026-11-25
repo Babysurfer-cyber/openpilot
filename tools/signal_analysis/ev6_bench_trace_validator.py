@@ -73,6 +73,7 @@ def analyze(events):
     health_records = []
     last_ms = -1.0
     disable_ack_ms = None
+    stock_after_session_ack = {a: None for a in SPAS}
     default_ack_ms = None
     last_good_stock_after_default = {a: None for a in SPAS}
     stock_resume_count = {a: 0 for a in SPAS}
@@ -161,6 +162,8 @@ def analyze(events):
             valid_count[addr] = valid_count[addr] + 1 if continuous else 1
             last_stock[addr] = ms
             prev_counter[addr] = counter
+            if "session" in acked and "disable" not in sent and ms >= acked["session"]:
+                stock_after_session_ack[addr] = ms
             if stage == "quiet":
                 if disable_ack_ms is not None and ms >= disable_ack_ms + 100:
                     fault("OEM_SPAS_STILL_TRANSMITTING_AFTER_DISABLE_GRACE")
@@ -195,8 +198,23 @@ def analyze(events):
                 out["diagnostic"] = "REQUEST_OBSERVED"
                 stage = "session"
             elif action == "disable":
+                # Require evidence that BOTH genuine OEM SPAS streams were
+                # active during the session after the positive ACK and shortly
+                # before communication-disable. Otherwise a silent/unplugged
+                # ECU could be mistaken for a successful handoff.
+                if any(stock_after_session_ack[a] is None or
+                       not (0 <= ms - stock_after_session_ack[a] <= 50)
+                       for a in SPAS):
+                    fault("OEM_SPAS_NOT_ACTIVE_IMMEDIATELY_BEFORE_DISABLE")
+                proof["stock_active_after_session_ack_before_disable"] = all(
+                    stock_after_session_ack[a] is not None and
+                    0 <= ms - stock_after_session_ack[a] <= 50 for a in SPAS)
                 stage = "disable"
             elif action == "enable":
+                # An indefinitely silent ECU is a separate fault, not a
+                # permanent delegated lease. Only short, bounded probes count.
+                if disable_ack_ms is not None and ms - disable_ack_ms > 500:
+                    fault("UNBOUNDED_OEM_QUIET_INTERVAL")
                 if disable_ack_ms is None or ms - disable_ack_ms < 100 or any(
                     ms - last_stock[a] < 100 for a in SPAS if last_stock[a] is not None):
                     fault("OEM_SPAS_NOT_BOTH_QUIET_BEFORE_RESTORE")
