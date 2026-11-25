@@ -69,13 +69,55 @@ SEGMENT_PATTERN = re.compile(ROUTE_PATTERN.pattern[:-1] + r"--\d+$")
 
 
 def _valid_preview_image(path):
-  """Reject empty/partial GIFs left from previous failed conversions."""
+  """Validate a complete single-frame GIF, not just the 6-byte magic.
+
+  A truncated ffmpeg output can have a valid header but no image-data
+  terminator or trailer. Such a cache must be deleted and regenerated.
+  """
   try:
-    if os.path.getsize(path) < 20:
+    if not 20 <= os.path.getsize(path) <= 16 * 1024 * 1024:
       return False
     with open(path, "rb") as image_file:
-      return image_file.read(6) in (b"GIF87a", b"GIF89a")
-  except OSError:
+      header = image_file.read(13)
+      if (len(header) != 13 or header[:6] not in (b"GIF87a", b"GIF89a")
+          or int.from_bytes(header[6:8], "little") == 0
+          or int.from_bytes(header[8:10], "little") == 0):
+        return False
+      # Skip global color table, if present.
+      if header[10] & 0x80:
+        image_file.seek(3 * (1 << ((header[10] & 0x07) + 1)), 1)
+
+      def skip_blocks():
+        while True:
+          length = image_file.read(1)
+          if not length:
+            return False
+          size = length[0]
+          if size == 0:
+            return True
+          if len(image_file.read(size)) != size:
+            return False
+
+      saw_image = False
+      while True:
+        tag = image_file.read(1)
+        if tag == b";":
+          return saw_image and image_file.read(1) == b""
+        if tag == b"!":
+          if len(image_file.read(1)) != 1 or not skip_blocks():
+            return False
+        elif tag == b",":
+          descriptor = image_file.read(9)
+          if len(descriptor) != 9:
+            return False
+          if descriptor[8] & 0x80:
+            image_file.seek(3 * (1 << ((descriptor[8] & 0x07) + 1)), 1)
+          if len(image_file.read(1)) != 1 or not skip_blocks():
+            return False
+          saw_image = True
+        else:
+          return False
+  except (OSError, ValueError):
     return False
 
 
@@ -415,6 +457,12 @@ def fcamera(cameratype, segment):
       abort(400)
     if not math.isfinite(start_seconds) or not 0 <= start_seconds < 60:
       abort(400)
+
+  # Werkzeug automatically handles HEAD for GET routes. Do not spawn an
+  # ffmpeg process: the response generator would never iterate/cleanup.
+  if request.method == "HEAD":
+    return Response(status=200, mimetype="video/mp4",
+                    headers={"Cache-Control": "no-store", "Accept-Ranges": "none"})
 
   process = fleet.ffmpeg_mp4_wrap_process_builder(file_name, start_seconds=start_seconds)
 
