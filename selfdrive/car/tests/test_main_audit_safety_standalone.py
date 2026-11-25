@@ -91,11 +91,15 @@ class AuditSafetyRegression(unittest.TestCase):
   def test_f2_panda_requires_valid_rx_and_park(self):
     text = (ROOT / "opendbc_repo/opendbc/safety/safety/safety_hyundai_canfd.h").read_text()
     gate = text.split("if (addr == 0x3C1) {", 1)[1].split("return allowed;", 1)[0]
-    for guard in ("!safety_rx_checks_invalid", "hyundai_ev6_park_confirmed",
-                  "hyundai_ev6_wheel_rx_us", "hyundai_ev6_brake_rx_us",
+    for guard in ("!safety_rx_checks_invalid", "!controls_allowed",
+                  "hyundai_ev6_gear_park", "hyundai_ev6_parked_inputs_valid(now)",
                   "hyundai_ev6_gear_rx_us"):
       self.assertIn(guard, gate)
     self.assertIn("GET_BYTE(to_push, 24) & 0x7U", text)
+    self.assertIn("valid_checksum", text)
+    self.assertIn("wrong_counters", text)
+    self.assertIn("valid_quality_flag", text)
+    self.assertIn("120000U", text)
 
   def test_f3_cancel_and_disabled_controls_block_restore(self):
     path = "selfdrive/car/cruise.py"
