@@ -343,9 +343,8 @@ class VCruiseCarrot:
       self._carrot_lead_fresh = bool(
         lead.status and 0 <= time.monotonic() - sm.recv_time['radarState'] <= 0.25
       )
-    else:
-      # Other cruise paths must not use last frame's stale lead either.
-      self.d_rel = self.v_rel = self.v_lead_kph = 0
+    # Only the return-condition freshness flag is invalidated on loss.
+    # Leave legacy lead values for other control paths unchanged.
     if sm.alive['drivingModelData']:
       self.model_v_kph = sm['drivingModelData'].action.desiredVelocity * CV.MS_TO_KPH
 
