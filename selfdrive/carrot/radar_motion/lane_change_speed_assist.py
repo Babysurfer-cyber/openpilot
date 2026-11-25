@@ -36,6 +36,9 @@ def _side_of_point(model: Any, point: Any) -> str | None:
     return None
   if not getattr(point, "measured", False):
     return None
+  # Native front-radar state 1 is a tentative track; do not promote it to leadTwo.
+  if source == "frontRadar" and getattr(point, "radar_track_state", 0) == 1:
+    return None
   try:
     radar_values = (point.d_rel, point.y_rel, point.v_rel, point.v_lead, point.yv_rel)
     if not all(math.isfinite(float(v)) for v in radar_values) or not 0.0 < point.d_rel < 80.0:
@@ -80,6 +83,7 @@ def _side_of_point(model: Any, point: Any) -> str | None:
 def _continuous(previous: Any, point: Any, dt: float) -> bool:
   return (0.0 < dt <= MAX_FRAME_GAP_S
           and point.measured
+          and not (point.source == "frontRadar" and getattr(point, "radar_track_state", 0) == 1)
           and abs(point.d_rel - (previous.d_rel + previous.v_rel * dt)) <= 2.5
           and abs(point.y_rel - (previous.y_rel + previous.yv_rel * dt)) <= 0.8
           and abs(point.v_lead - previous.v_lead) <= 3.0)
