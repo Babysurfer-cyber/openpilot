@@ -252,6 +252,9 @@ def main():
   ctx = Context()
   model.start(190, ctx)
   model.response(210, RESPONSE, 0, bytes.fromhex('0350030000000000'))
+  # The OEM stream must remain live after entering extended session.
+  model.stock(212, 0x165, 10)
+  model.stock(214, 0x16A, 10)
   model.response(230, RESPONSE, 0, bytes.fromhex('0368030000000000'))
   model.tick(300, ctx)
   model.tick(330, ctx)
