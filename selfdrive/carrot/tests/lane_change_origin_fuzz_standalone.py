@@ -28,6 +28,8 @@ def point(direction, distance, ego, lead):
                          v_rel=lead-ego, v_lead=lead, yv_rel=0.,
                          measured=True, radar_track_state=2)
 
+positive_count = 0
+negative_count = 0
 for trial in range(7500):
   side = "left" if rng.randrange(2) == 0 else "right"
   ego = rng.uniform(18., 35.)
@@ -42,11 +44,17 @@ for trial in range(7500):
   physical = bool(trial % 4)
   candidate = assist.update(.30, ego, model("laneChangeStarting", side, physical),
                             (point(side, dist+(lead-ego)*.30, ego, lead),))
+  eligible = physical and max(8., ego*.5) < dist+(lead-ego)*.30 < min(80., ego*2.5)
+  # The helper must accept valid slower-lead cases; testing only the absence
+  # of unsafe selections would also let an always-disabled regression pass.
+  assert (candidate is not None) == eligible, (trial, ego, dist, lead, physical)
   if not physical:
+    negative_count += 1
     assert candidate is None
     assert assist.update(.35, ego, model("laneChangeStarting", side, True),
                          (point(side, dist+(lead-ego)*.35, ego, lead),)) is None
   elif candidate is not None:
+    positive_count += 1
     assert candidate.source == "corner235" and candidate.track_id == 7
     assert candidate.v_rel <= 0.
     assert max(8., ego * .5) < candidate.d_rel < min(80., ego * 2.5)
@@ -54,6 +62,9 @@ for trial in range(7500):
                          (point(side, dist+(lead-ego)*.35, ego, lead),)) is None
     assert assist.update(.40, ego, model("laneChangeStarting", side, True),
                          (point(side, dist+(lead-ego)*.40, ego, lead),)) is None
+
+assert positive_count >= 5000, positive_count
+assert negative_count == 1875, negative_count
 
 for trial in range(20000):
   existing = {"status": True, "dRel": rng.uniform(12., 75.), "vLead": rng.uniform(2., 35.)}
@@ -63,4 +74,5 @@ for trial in range(20000):
               and candidate["vLead"] <= existing["vLead"])
   assert actual == expected, (trial, candidate, existing)
 
-print("PASS 27,500 deterministic side-lead origin and priority trials; not a native MPC solve")
+print(f"PASS 27,500 deterministic trials: {positive_count} eligible leads selected; "
+      f"{negative_count} missing-origin leads rejected; not a native MPC solve")
