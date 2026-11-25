@@ -77,25 +77,39 @@ def lever_neutral(data):
 
 
 def factory_lamp_without_stalk(frames, side):
-  """Evidence for the *observed* OEM auto-park path, not external control."""
+  """OEM lamp-on observations supported by time-near, CRC-valid neutral stalk RX.
+
+  Stock 0x3C1 is ~5 Hz. A missing lever stream cannot establish that a
+  physical stalk was neutral during the lamp-on period. Require a genuine
+  neutral sample within 150 ms of EVERY lamp-on observation.
+  """
+  from bisect import bisect_left
   levers = frames.get(LEVER, [])
   lamps = frames.get(LAMP, [])
   lamp_on = [f for f in lamps if lamp_active(f.data, side)]
-  lever_invalid = sum(not stalk_crc8_ok(f.data) for f in levers)
-  lever_active = sum(stalk_crc8_ok(f.data) and not lever_neutral(f.data) for f in levers)
-  # All stalks must be checksum-valid and neutral across the entire capture.
-  # Don't infer lever independence from a missing/invalid stalk feed.
-  supported = bool(lamp_on and levers) and lever_invalid == 0 and lever_active == 0
+  invalid = sum(not stalk_crc8_ok(f.data) for f in levers)
+  active = sum(stalk_crc8_ok(f.data) and not lever_neutral(f.data) for f in levers)
+  neutral = sorted(f.ns for f in levers if stalk_crc8_ok(f.data) and lever_neutral(f.data))
+  nearest_ms = []
+  for lamp in lamp_on:
+    i = bisect_left(neutral, lamp.ns)
+    dist = min((abs(lamp.ns - neutral[j]) / 1e6 for j in (i - 1, i)
+                if 0 <= j < len(neutral)), default=float('inf'))
+    nearest_ms.append(dist)
+  uncovered = sum(d > 150 for d in nearest_ms)
+  supported = bool(lamp_on and levers) and invalid == 0 and active == 0 and uncovered == 0
   return {
     'physical_lamp_on_frames': len(lamp_on),
     'stock_stalk_bus0_frames': len(levers),
-    'stock_stalk_crc_invalid': lever_invalid,
-    'stock_stalk_active_frames': lever_active,
-    'stock_stalk_neutral_frames': sum(stalk_crc8_ok(f.data) and lever_neutral(f.data) for f in levers),
+    'stock_stalk_crc_invalid': invalid,
+    'stock_stalk_active_frames': active,
+    'stock_stalk_neutral_frames': len(neutral),
+    'lamp_on_frames_without_neutral_stalk_within_150ms': uncovered,
+    'max_lamp_on_to_neutral_stalk_distance_ms': round(max(nearest_ms), 2) if nearest_ms and uncovered == 0 else None,
     'factory_lamp_with_all_observed_stalk_frames_neutral': supported,
-    'interpretation': ('OEM auto-park lamps illuminated while all observed stock stalk frames were neutral; '
-                       'does not establish external CAN/ECU control' if supported else
-                       'Insufficient or conflicting observations; no inference'),
+    'interpretation': ('OEM auto-park lamps illuminated while all observed stock stalk frames were valid/neutral, '
+                       'with time-near neutral coverage for each lamp-on sample. Not external actuation proof.'
+                       if supported else 'Insufficient or conflicting temporal stalk evidence; no inference'),
   }
 
 
