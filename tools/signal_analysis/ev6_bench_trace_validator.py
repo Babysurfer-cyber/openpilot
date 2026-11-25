@@ -56,7 +56,7 @@ def decode_reply(raw):
 
 
 def analyze(events):
-    out = {"kind": "EV6_ISOLATED_BENCH_PASSIVE_VERIFIER", "vehicle_can_tx": 0,
+    out = {"kind": "EV6_ISOLATED_BENCH_PASSIVE_VERIFIER", "vehicle_can_tx": None,  # unknown; JSONL is NOT a vehicle TX audit
            "permits_vehicle_actuation": False, "diagnostic": "NO_REQUEST_OBSERVED", "proof": {},
            "faults": [], "stage": "stock", "external_spas_tx": 0,
            "offline_verifier_can_tx": 0, "captured_aprk_requests": 0,
@@ -120,6 +120,8 @@ def analyze(events):
             health_records.append((ms, h))
             if first_health is None:
                 first_health = h
+                if any(h.values()):
+                    fault("NONZERO_INITIAL_CAN_ERROR_OR_LOSS_COUNTER")
             if event["bus_off"] or event["error_warning"] or event["error_passive"]:
                 fault("CAN_CONTROLLER_REPORTED_ERROR_STATE")
             for metric in h:
@@ -238,6 +240,9 @@ def analyze(events):
             if wanted is None or wanted not in sent or not reply.startswith(ACK[wanted]) or \
                not (0 <= ms - sent[wanted] <= 400):
                 fault("UNSOLICITED_WRONG_OR_LATE_ECU_RESPONSE")
+                continue
+            if wanted in acked:
+                fault("DUPLICATE_POSITIVE_ECU_RESPONSE:" + wanted)
                 continue
             acked[wanted] = ms
             proof[wanted + "_response_latency_ms"] = round(ms - sent[wanted], 2)
