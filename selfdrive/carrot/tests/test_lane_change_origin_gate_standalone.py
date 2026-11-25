@@ -6,6 +6,7 @@ No native MPC solver, Panda hardware, CAN TX, or vehicle control is exercised.
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
 import unittest
@@ -139,9 +140,55 @@ class OneTouchOriginGate(unittest.TestCase):
 
   def test_desirehelper_uses_driver_stalk_not_atc_for_provenance(self):
     text = (ROOT / "selfdrive/controls/lib/desire_helper.py").read_text(encoding="utf-8")
-    self.assertIn("self.lane_change_driver_request = driver_enabled and self.one_touch_triggered", text)
+    self.assertIn("self.lane_change_driver_request = physical_one_touch", text)
+    self.assertIn("and self.stalk_max_level == 1", text)
+    self.assertIn("carstate.blinkerLever in (0, 1)", text)
+    self.assertIn("self.stalk_direction == BLINKER_LEFT", text)
+    self.assertIn("self.stalk_direction == BLINKER_RIGHT", text)
     self.assertIn("if self.stalk_max_level == 2:", text)
-    self.assertIn("self.one_touch_triggered = False", text)
+
+  def test_desirehelper_origin_assignment_rejects_count_only_and_held_stalk(self):
+    # Extract and execute the production condition without requiring cereal.
+    path = ROOT / "selfdrive/controls/lib/desire_helper.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "DesireHelper")
+    update = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "update")
+    candidates = [
+      n for n in ast.walk(update)
+      if isinstance(n, ast.Assign) and len(n.targets) == 1
+      and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "physical_one_touch"
+    ]
+    self.assertEqual(len(candidates), 1)
+    expr_code = compile(ast.Expression(body=candidates[0].value), str(path), "eval")
+
+    def check(*, lever=0, max_level=1, triggered=True, driver=True,
+              side=1, direction=1, completed=False, bsd=False):
+      obj = SimpleNamespace(one_touch_triggered=triggered, stalk_max_level=max_level,
+                            stalk_direction=side, lane_change_direction=direction,
+                            one_touch_completed=completed, bsd_stalk_cancelled=bsd)
+      context = {"self": obj, "driver_enabled": driver,
+                 "carstate": SimpleNamespace(blinkerLever=lever),
+                 "BLINKER_LEFT": 1, "BLINKER_RIGHT": 2,
+                 "LaneChangeDirection": SimpleNamespace(left=1, right=2)}
+      return eval(expr_code, context)
+
+    self.assertTrue(check())
+    self.assertTrue(check(lever=1))
+    self.assertTrue(check(side=2, direction=2))
+    for scenario in (
+      {"max_level": 0},             # Counter edge, no observed depth 1
+      {"max_level": 2},             # Full-lock/held lever
+      {"lever": 2},
+      {"triggered": False},
+      {"driver": False},
+      {"side": 2, "direction": 1},  # Opposite source direction
+      {"side": 0},                  # Ambiguous stalk counts
+      {"completed": True},
+      {"bsd": True},
+    ):
+      with self.subTest(**scenario):
+        self.assertFalse(check(**scenario))
+
 
   def test_helper_fails_closed_for_absent_field(self):
     text = SOURCE.read_text(encoding="utf-8")
