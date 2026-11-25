@@ -48,7 +48,8 @@ jobs:
             selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py \
             selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py \
-            selfdrive/modeld/modeld.py
+            selfdrive/modeld/modeld.py \
+            selfdrive/controls/lib/desire_helper.py
       - name: Run direct and production-AST regression tests
         run: |
           export PYTHONPATH="$(dirname "$PWD")"
