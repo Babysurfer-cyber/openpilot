@@ -88,6 +88,7 @@ class EV6SpasControlPlan:
     self.response = None
     self.events = []
     self.stock_direction = None
+    self.stock_spas2_rx = None  # passive donor-compatibility evidence, never a TX template
     self.last_tick_at = -1.
     self.hard_fault = False
 
@@ -129,6 +130,20 @@ class EV6SpasControlPlan:
       0 <= now - s.last_time <= POST_SESSION_MAX_AGE_S
       for s in self.stock.values())
 
+  def passive_spas2_snapshot(self, now):
+    """Only the last CRC-valid, fresh OEM SPAS2 fields; never a CAN frame.
+
+    Useful for comparing donor's zero-fill vs stock-template approaches with
+    EV6's genuine factory state transitions. Neither authenticates physical
+    CAN origin nor provides permission to construct or send a packet.
+    """
+    if (not isinstance(now, (int, float)) or not 0 <= now < float('inf') or
+        not self.stock_ready(now) or self.stock_spas2_rx is None or
+        not 0 <= now - self.stock_spas2_rx['time_s'] <= STOCK_MAX_AGE_S):
+      return None
+    return {**self.stock_spas2_rx, 'source': 'PASSIVE_OEM_RX_ONLY', 'vehicle_can_tx': 0,
+            'authenticates_ecu_origin': False}
+
   def observe_stock(self, addr, bus, data, now):
     if not self._record_time(now):
       return
@@ -139,6 +154,7 @@ class EV6SpasControlPlan:
       st.consecutive, st.post_session_consecutive, st.restore_consecutive = 0, 0, 0
       if addr == 0x16A:
         self.stock_direction = None
+        self.stock_spas2_rx = None
       if self.phase.startswith('restore_'):
         self._lock(now, 'invalid_stock_during_restore')
       elif self.phase not in ('idle', 'locked'):
@@ -150,6 +166,8 @@ class EV6SpasControlPlan:
     st.counter, st.last_time = counter, now
     if addr == 0x16A:
       self.stock_direction = (data[16] >> 5) & 7
+      self.stock_spas2_rx = {'time_s': now, 'byte7': data[7], 'byte18': data[18],
+                             'blinker_control': self.stock_direction}
       if self.stock_direction != 0 and self.phase in ('session', 'post_session_stock',
                                                        'disable', 'quiet', 'eligible'):
         self._restore(now, 'factory_indicator_active')
