@@ -335,6 +335,35 @@ class OneTouchOriginGate(unittest.TestCase):
     self.assertFalse(decide(completed=True))
     self.assertFalse(decide(bsd=True))
 
+  def test_modeld_provenance_all_1152_binary_and_lever_combinations(self):
+    import itertools
+    path = ROOT / "selfdrive/modeld/modeld.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    assignments = [node for node in ast.walk(tree)
+                   if isinstance(node, ast.Assign) and len(node.targets) == 1
+                   and isinstance(node.targets[0], ast.Attribute)
+                   and node.targets[0].attr == "laneChangeDriverRequest"]
+    self.assertEqual(len(assignments), 1)
+    expr = compile(ast.Expression(body=assignments[0].value), str(path), "eval")
+    count = 0
+    for origin, alive, valid, can_valid, stalk_valid, completed, bsd in itertools.product((False, True), repeat=7):
+      for level in (0, 1, 2):
+        for lever in (0, 1, 2):
+          class SubMasterStub(dict):
+            pass
+          sm = SubMasterStub(carState=SimpleNamespace(
+            canValid=can_valid, blinkerStalkValid=stalk_valid, blinkerLever=lever))
+          sm.alive = {"carState": alive}
+          sm.valid = {"carState": valid}
+          DH = SimpleNamespace(lane_change_driver_request=origin, stalk_max_level=level,
+                               one_touch_completed=completed, bsd_stalk_cancelled=bsd)
+          actual = eval(expr, {"DH": DH, "sm": sm})
+          expected = all((origin, alive, valid, can_valid, stalk_valid,
+                          not completed, not bsd, level == 1, lever in (0, 1)))
+          self.assertIs(bool(actual), expected)
+          count += 1
+    self.assertEqual(count, 1152)
+
   def test_helper_fails_closed_for_absent_field(self):
     text = SOURCE.read_text(encoding="utf-8")
     self.assertIn('getattr(meta, "laneChangeDriverRequest", False) is not True', text)
