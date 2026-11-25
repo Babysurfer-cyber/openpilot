@@ -254,3 +254,23 @@ merely to expose a CI button.** Compile and run the exact PR branch
 under an isolated developer CI/workstation first, then obtain an
 independent safety review. Until then, compiled C tests: NOT RUN,
 vehicle operation: NO-GO.
+
+
+## 2026-11-25: fresh exact-source GCC contract rerun
+
+Following the PR #44/#45 Python test repair work, the **current PR #46**
+`hyundai_ev6_parked_inputs_valid(uint32_t now)` C function was
+extracted from the live GitHub Draft branch and compiled locally with
+the **exact current** `test_ev6_park_gate_c_contract.py` test script.
+
+- Source C gate: 1,068 characters, FNV32 `0xd2903584`
+- Test script: 4,877 trimmed characters, FNV32 `0x2c4736c2`
+- Local GCC executable run: **30/30 C source-contract assertions PASSED**
+- No automotive CAN, ECU diagnostics, or TX occurred during this run.
+
+These are transfer-consistency hashes, **not** proof of authentic ECU
+provenance. The compiled helper uses minimal local ABI definitions;
+**the full panda `libsafety.so` build, 22 compiled-libsafety tests, and
+hardware panda tests remain UNRUN/UNVERIFIED**. No remote GitHub
+Actions success has been observed. The original experimental 0x3C1
+transmit path still must NOT be deployed to or tested on the road car.
