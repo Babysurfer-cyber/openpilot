@@ -1,0 +1,87 @@
+name: EV6 combined PR61-PR62-PR63 validation
+on:
+  push:
+    branches:
+      - test/ev6-pr61-pr62-pr63-integration-20261126
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-protocol-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install isolated regression dependencies
+        run: python -m pip install numpy pytest pycapnp
+      - name: Syntax and canonical CarState schema link
+        run: |
+          test -L cereal/car.capnp
+          test "$(readlink cereal/car.capnp)" = "../opendbc_repo/opendbc/car/car.capnp"
+          python -m py_compile \
+            selfdrive/car/cruise.py \
+            opendbc_repo/opendbc/car/hyundai/carstate.py \
+            opendbc_repo/opendbc/car/hyundai/carcontroller.py \
+            opendbc_repo/opendbc/car/hyundai/interface.py \
+            selfdrive/carrot/carrot_navi_cereal.py \
+            selfdrive/frogpilot/fleetmanager/fleet_manager.py \
+            selfdrive/modeld/modeld.py \
+            selfdrive/controls/lib/desire_helper.py \
+            selfdrive/carrot/radar_motion/controller.py \
+            selfdrive/carrot/radar_motion/lane_change_speed_assist.py
+      - name: PR61 source-backed safety and stock-cruise parser regression
+        run: |
+          python selfdrive/car/tests/test_main_audit_safety_standalone.py -v
+          python opendbc_repo/opendbc/safety/tests/test_ev6_park_gate_c_contract.py
+      - name: PR62 Fleet/UI/navigation source-backed regression
+        run: python selfdrive/carrot/tests/test_main_audit_ui_standalone.py -v
+      - name: PR63 one-touch provenance and MPC source-input regression
+        run: |
+          python selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py -v
+          python selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py
+          python selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py -v
+          python selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py -v
+      - name: Cereal CarState and ModelDataV2 roundtrip
+        run: |
+          python - <<'PY'
+          import capnp
+          from pathlib import Path
+          car = capnp.load(str(Path("opendbc_repo/opendbc/car/car.capnp").resolve()))
+          x = car.CarState.new_message()
+          x.blinkerStalkValid = True
+          with car.CarState.from_bytes(x.to_bytes()) as y:
+            assert y.blinkerStalkValid
+          log = capnp.load(str(Path("cereal/log.capnp").resolve()))
+          x = log.ModelDataV2.new_message()
+          x.meta.laneChangeDriverRequest = True
+          with log.ModelDataV2.from_bytes(x.to_bytes()) as y:
+            assert y.meta.laneChangeDriverRequest
+          PY
+  panda-native-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: opendbc_repo/pyproject.toml
+      - name: Install and compile native opendbc safety
+        working-directory: opendbc_repo
+        run: |
+          python -m pip install -e '.[testing]'
+          scons -j2
+          test -s opendbc/safety/tests/libsafety/libsafety.so
+      - name: Run compiled Panda EV6 park gate checks
+        working-directory: opendbc_repo
+        run: python -m pytest -q -o addopts='' opendbc/safety/tests/test_ev6_stalk_park_guard.py
