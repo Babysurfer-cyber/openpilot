@@ -481,3 +481,18 @@ def test_camera_deferred_restore_not_released_on_missing_mixed_4be():
   ) == pytest.approx(40.)
   assert helper._carrot_restore_deferred_target == pytest.approx(100.)
 
+def test_stricter_model_turn_speed_keeps_carrot_cruise_active():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(vEgo=10.)
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 95.
+  helper._carrot_auto_shadow_target = 95.
+  helper.carrot_cruise_min_timer = 0
+  helper.v_ego_kph_set = 36
+  helper.desiredSource = "MODEL"
+  helper.desiredSpeed = 35
+  helper.vturn_speed = 40
+  # Reaching the independently reported VTRUN speed does not override the
+  # lower MODEL speed target; longitudinal safety remains authoritative.
+  assert helper._update_cruise_buttons(CS, CC, 36.) == pytest.approx(36.)
+  assert helper.carrot_cruise_active
+
