@@ -101,15 +101,19 @@ class TestEvidence(unittest.TestCase):
                 self.assertEqual(verdict["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
                 self.assertIn("EXTERNAL_SPAS_TRANSMISSION_PRESENT_IN_PASSIVE_PROBE", verdict["faults"])
 
-    def test_panda_returned_bus_is_not_a_physical_tx_capture(self):
-        # Pseudo-bus / host echo data cannot prove a physical ECU response
-        # or a separate physical SPAS TX on bus 0.
-        rows = traffic()
-        rows.append(e(345, "tx", 0x16a, stock_frame(0x16a, 10), bus=128))
-        rows.sort(key=lambda row: row["ms"])
-        verdict = analyze(rows)
-        self.assertNotIn("EXTERNAL_SPAS_TRANSMISSION_PRESENT_IN_PASSIVE_PROBE", verdict["faults"])
-        self.assertEqual(verdict["diagnostic"], "ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED")
+    def test_panda_returned_bus_spas_tx_is_untrustworthy_not_success(self):
+        # Pseudo-bus TX is NOT independent physical source evidence, but a
+        # purportedly passive capture containing such an observation must
+        # still fail closed, not silently report a safe handoff.
+        for bus in (128, 130, 192):
+            with self.subTest(bus=bus):
+                rows = traffic()
+                rows.append(e(345, "tx", 0x16a, stock_frame(0x16a, 10), bus=bus))
+                rows.sort(key=lambda row: row["ms"])
+                verdict = analyze(rows)
+                self.assertEqual(verdict["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
+                self.assertIn("UNTRUSTWORTHY_SPAS_TX_PSEUDO_BUS", verdict["faults"])
+                self.assertEqual(verdict["external_spas_tx"], 0)
 
     def test_bus_error_increment(self):
         rows = traffic()
