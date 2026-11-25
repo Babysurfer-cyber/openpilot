@@ -660,7 +660,8 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
                       (GET_BYTE(to_send, 7) == hyundai_ev6_stock_stalk[7]);
     bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
                    (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
-                   !vehicle_moving && brake_pressed && !gas_pressed &&
+                   // An off-road stalk experiment must not run while panda is in active control.
+                   !controls_allowed && !vehicle_moving && brake_pressed && !gas_pressed &&
                    hyundai_ev6_gear_park && hyundai_ev6_parked_inputs_valid(now) &&
                    (hyundai_ev6_gear_rx_us != 0U) &&
                    (get_ts_elapsed(now, hyundai_ev6_gear_rx_us) <= 120000U) &&
