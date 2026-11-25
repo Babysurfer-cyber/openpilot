@@ -223,7 +223,7 @@ def test_synthetic_state_sequences_fail_closed():
       direction = rng.choice(directions)
       m = model(state, direction, probabilities=tuple(rng.choice(probs) for _ in range(4)))
       point = Point(
-        track_id=rng.choice((0, 1, 10)),
+        track_id=rng.choice((-5, -1, 0, 1, 10)),
         source=rng.choice(("frontRadar", "corner180", "corner235", "scc", "other")),
         d_rel=rng.choice((0, 1, 4, 10, 35, 78, 100, nan, inf)),
         y_rel=rng.choice(values),
@@ -236,6 +236,7 @@ def test_synthetic_state_sequences_fail_closed():
         assert state == "laneChangeStarting"
         assert direction in ("left", "right")
         assert result is point
+        assert result.track_id >= 0
         assert result.v_rel <= 0
         assert result.d_rel > 0
         assert all(isfinite(v) for v in (result.d_rel, result.y_rel, result.v_rel, result.v_lead))
@@ -358,3 +359,34 @@ def test_direction_change_after_front_confirmation_fails_closed():
   tracker = LaneChangeSpeedAssist()
   assert seed(tracker, p) is not None
   assert tracker.update(.35, 27., model("laneChangeStarting", "right"), (p,)) is None
+
+
+def test_negative_track_id_never_becomes_lane_change_lead():
+  for source, state in (("frontRadar", 2), ("corner180", 0), ("corner235", 0)):
+    for track_id in (-1, -5, -999):
+      point = Point(source=source, radar_track_state=state, track_id=track_id)
+      assert seed(LaneChangeSpeedAssist(), point) is None, (source, track_id)
+
+
+def test_zero_track_id_remains_valid_for_compatibility():
+  assert seed(LaneChangeSpeedAssist(), Point(source="frontRadar", radar_track_state=2, track_id=0)) is not None
+  assert seed(LaneChangeSpeedAssist(), Point(source="corner235", track_id=0)) is not None
+
+
+def test_invalid_id_mid_maneuver_drops_assist_permanently():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(track_id=31)
+  assert seed(tracker, point) is not None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "left"),
+                        (replace(point, track_id=-1),)) is None
+  assert tracker.update(.40, 27., model("laneChangeStarting", "left"), (point,)) is None
+
+
+def test_gap_in_track_observation_prevents_stale_reacquisition():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(track_id=31)
+  for i in range(4):
+    assert tracker.update(.05*i, 27., model("preLaneChange", "left"), (point,)) is None
+  assert tracker.update(.20, 27., model("preLaneChange", "left"), ()) is None
+  assert tracker.update(.25, 27., model("preLaneChange", "left"), (point,)) is None
+  assert tracker.update(.30, 27., model("laneChangeStarting", "left"), (point,)) is None
