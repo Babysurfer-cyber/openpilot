@@ -106,6 +106,23 @@ class TestEV6StalkParkGuard(unittest.TestCase):
     self._rx(_hyundai_canfd(0x35, 32, counter=1, gear=5))
     self.assertFalse(self._tx_left())
 
+  def test_bad_crc_after_valid_p_revokes_permission(self):
+    self._prime(gear=0)
+    corrupted = bytearray(32)
+    corrupted[2] = 1
+    corrupted[24] = 0  # P; but an invalid checksum must invalidate RX proof
+    self.assertFalse(self._rx(_frame(0x35, bytes(corrupted))))
+    self.assertFalse(self._tx_left())
+
+  def test_reinitialize_clears_park_authorization(self):
+    self._prime(gear=0)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, self.flags)
+    self.safety.init_tests()
+    self.safety.set_timer(1_000_000)
+    self._rx(_hyundai_canfd(0x175, 24, braking=True))
+    self._rx(_frame(0x3C1, STOCK_STALK))
+    self.assertFalse(self._tx_left())
+
   def test_stale_p_gear_frame_does_not_authorize(self):
     self._prime(gear=0)
     self.safety.set_timer(1_120_001)
