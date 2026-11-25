@@ -12,6 +12,7 @@ on:
       - selfdrive/frogpilot/fleetmanager/templates/route.html
       - selfdrive/frogpilot/fleetmanager/templates/layout.html
       - selfdrive/carrot/carrot_navi_cereal.py
+      - selfdrive/carrot/tests/test_carrot_navi_atc.py
       - selfdrive/carrot/tests/test_main_audit_ui_standalone.py
       - .github/workflows/main-audit-ui-regression.yml
   workflow_dispatch:
@@ -32,6 +33,6 @@ jobs:
           python-version: '3.11'
       - name: Python syntax check
         run: |
-          python -m py_compile selfdrive/frogpilot/fleetmanager/fleet_manager.py selfdrive/carrot/carrot_navi_cereal.py selfdrive/carrot/tests/test_main_audit_ui_standalone.py
+          python -m py_compile selfdrive/frogpilot/fleetmanager/fleet_manager.py selfdrive/carrot/carrot_navi_cereal.py selfdrive/carrot/tests/test_main_audit_ui_standalone.py selfdrive/carrot/tests/test_carrot_navi_atc.py
       - name: Execute standalone UI Fleet navigation regressions
         run: python selfdrive/carrot/tests/test_main_audit_ui_standalone.py -v
