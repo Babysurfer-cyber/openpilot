@@ -617,6 +617,7 @@ class VCruiseCarrot:
                             and (self.carrot_cmd == "SPEED" or (self.carrot_cmd == "CRUISE" and self.carrot_arg == "GO")))
     auto_restore_speed = None
     automatic_carrot_restore_target = None
+    lfa_carrot_restored = False
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
     
@@ -634,6 +635,7 @@ class VCruiseCarrot:
         self._carrot_cruise_saved_op_speed = None
         self._v_cruise_kph_at_brake = 0
         self.carrot_cruise_active = False
+        lfa_carrot_restored = True
         button_type = ButtonType.accelCruise
         self._add_log("Carrot Cruise OFF & Restore Speed (LFA toggle)")
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
@@ -651,15 +653,22 @@ class VCruiseCarrot:
       if button_type == ButtonType.accelCruise:
         self._lat_enabled = True
         self._pause_auto_speed_up = False
-        if self._soft_hold_active > 0:
+        if lfa_carrot_restored:
+          # LFA has already restored the target; it is not an extra '+'.
           self._soft_hold_active = 0
-        elif self.carrot_cruise_active and self._carrot_cruise_saved_op_speed is not None:
-          auto_restore_speed = v_cruise_kph
-          automatic_carrot_restore_target = self._carrot_cruise_saved_op_speed
-          v_cruise_kph = max(v_cruise_kph, self._carrot_cruise_saved_op_speed)
+        elif self.carrot_cruise_active:
+          self._soft_hold_active = 0
+          saved_speed = self._carrot_cruise_saved_op_speed
+          if saved_speed is not None:
+            auto_restore_speed = v_cruise_kph
+            automatic_carrot_restore_target = saved_speed
+            v_cruise_kph = max(v_cruise_kph, saved_speed)
+          # Never fall back to a possibly stale brake backup in Carrot Cruise.
           self._carrot_cruise_saved_op_speed = None
           self._v_cruise_kph_at_brake = 0
           self.carrot_cruise_active = False
+        elif self._soft_hold_active > 0:
+          self._soft_hold_active = 0
         elif self._v_cruise_kph_at_brake > 0 and v_cruise_kph < self._v_cruise_kph_at_brake:
           auto_restore_speed = v_cruise_kph
           v_cruise_kph = self._v_cruise_kph_at_brake
