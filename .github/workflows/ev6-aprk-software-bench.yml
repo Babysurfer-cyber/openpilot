@@ -1,0 +1,37 @@
+name: EV6 APRK mock bench verification
+on:
+  pull_request:
+    paths:
+      - "tools/signal_analysis/test_ev6_aprk_handoff_bench.py"
+      - "tools/signal_analysis/ev6_aprk_handoff_bench.py"
+      - ".github/workflows/ev6-aprk-software-bench.yml"
+  push:
+    branches:
+      - "test/ev6-aprk-handoff-software-bench-20261125"
+    paths:
+      - "tools/signal_analysis/test_ev6_aprk_handoff_bench.py"
+      - "tools/signal_analysis/ev6_aprk_handoff_bench.py"
+      - ".github/workflows/ev6-aprk-software-bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile \
+            tools/signal_analysis/ev6_aprk_handoff_bench.py \
+            tools/signal_analysis/test_ev6_aprk_handoff_bench.py
+      - name: Run deterministic offline tests (no CAN)
+        run: |
+          python -m unittest discover -s tools/signal_analysis \
+            -p 'test_ev6_aprk_handoff_bench.py' -v
