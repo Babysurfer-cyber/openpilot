@@ -25,7 +25,7 @@ def _frame(address, data, bus=0):
   return libsafety_py.make_CANPacket(address, bus, data)
 
 
-def _hyundai_canfd(address, length, counter=0, *, gear=0, braking=False, bus=0):
+def _hyundai_canfd(address, length, counter=0, *, gear=0, braking=False, moving=False, bus=0):
   """Minimal checksum-valid test frames. 0x35 gear is in byte24 bits[2:0]."""
   assert length in (24, 32)
   data = bytearray(length)
@@ -34,6 +34,8 @@ def _hyundai_canfd(address, length, counter=0, *, gear=0, braking=False, bus=0):
     data[24] = gear & 0x7
   if address == 0x175 and braking:
     data[10] |= 0x02  # bit81: DriverBraking
+  if address == 0xA0 and moving:
+    data[8] = 100  # FL wheel raw speed above STANDSTILL_THRESHOLD=12
   xor = {24: 0x819D, 32: 0x9F5B}[length]
   checksum = _crc16_xmodem(data[2:] + address.to_bytes(2, "little")) ^ xor
   data[0:2] = checksum.to_bytes(2, "little")
@@ -74,6 +76,7 @@ class TestEV6StalkParkGuard(unittest.TestCase):
       gear_frame = _frame(0x35, bytes(damaged), bus=gear_bus)
     self._rx(gear_frame)
     self._rx(_hyundai_canfd(0x175, 24, braking=True))
+    self._rx(_hyundai_canfd(0xA0, 24))
     if include_stalk:
       self._rx(_frame(0x3C1, STOCK_STALK))
 
@@ -126,8 +129,9 @@ class TestEV6StalkParkGuard(unittest.TestCase):
   def test_stale_p_gear_frame_does_not_authorize(self):
     self._prime(gear=0)
     self.safety.set_timer(1_120_001)
-    # Refresh stalk only, so the failure must be from the expired gear
-    # evidence rather than the stalk freshness guard.
+    # Refresh the other three inputs, leaving only gear information stale.
+    self._rx(_hyundai_canfd(0x175, 24, counter=1, braking=True))
+    self._rx(_hyundai_canfd(0xA0, 24, counter=1))
     self._rx(_frame(0x3C1, STOCK_STALK))
     self.assertFalse(self._tx_left())
 
@@ -138,6 +142,55 @@ class TestEV6StalkParkGuard(unittest.TestCase):
 
   def test_missing_stock_stalk_blocks(self):
     self._prime(gear=0, include_stalk=False)
+    self.assertFalse(self._tx_left())
+
+
+  def test_missing_wheel_speeds_blocks(self):
+    self._rx(_hyundai_canfd(0x35, 32, gear=0))
+    self._rx(_hyundai_canfd(0x175, 24, braking=True))
+    self._rx(_frame(0x3C1, STOCK_STALK))
+    self.assertFalse(self._tx_left())
+
+  def test_invalid_brake_crc_after_valid_brake_blocks(self):
+    self._prime(gear=0)
+    bad = bytearray(24)
+    bad[10] |= 0x02
+    self.assertFalse(self._rx(_frame(0x175, bytes(bad))))
+    self.assertFalse(self._tx_left())
+
+  def test_invalid_wheel_speed_crc_after_valid_frame_blocks(self):
+    self._prime(gear=0)
+    bad = bytearray(24)
+    self.assertFalse(self._rx(_frame(0xA0, bytes(bad))))
+    self.assertFalse(self._tx_left())
+
+  def test_stale_brake_frame_blocks_with_fresh_gear_and_wheels(self):
+    self._prime(gear=0)
+    self.safety.set_timer(1_120_001)
+    self._rx(_hyundai_canfd(0x35, 32, counter=1, gear=0))
+    self._rx(_hyundai_canfd(0xA0, 24, counter=1))
+    self._rx(_frame(0x3C1, STOCK_STALK))
+    self.assertFalse(self._tx_left())
+
+  def test_stale_wheel_frame_blocks_with_fresh_gear_and_brake(self):
+    self._prime(gear=0)
+    self.safety.set_timer(1_120_001)
+    self._rx(_hyundai_canfd(0x35, 32, counter=1, gear=0))
+    self._rx(_hyundai_canfd(0x175, 24, counter=1, braking=True))
+    self._rx(_frame(0x3C1, STOCK_STALK))
+    self.assertFalse(self._tx_left())
+
+  def test_vehicle_moving_never_authorized(self):
+    self._prime(gear=0)
+    self._rx(_hyundai_canfd(0xA0, 24, counter=1, moving=True))
+    self.assertFalse(self._tx_left())
+
+  def test_missing_safety_opt_in_flag_still_blocks(self):
+    no_stalk_flag = self.flags & ~HyundaiSafetyFlags.EV6_BLINKER_STALK_TEST
+    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, no_stalk_flag)
+    self.safety.init_tests()
+    self.safety.set_timer(1_000_000)
+    self._prime(gear=0)
     self.assertFalse(self._tx_left())
 
   def test_spas_and_diagnostic_ids_remain_disallowed(self):
