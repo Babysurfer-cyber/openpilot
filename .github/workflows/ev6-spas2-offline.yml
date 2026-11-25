@@ -34,7 +34,8 @@ jobs:
             tools/signal_analysis/ev6_spas_bus_route_audit.py \
             tools/signal_analysis/ev6_spas_onset_sequence.py \
             tools/signal_analysis/test_ev6_spas_oem_stalk_independence.py \
-            tools/signal_analysis/test_ev6_spas_onset_sequence.py
+            tools/signal_analysis/test_ev6_spas_onset_sequence.py \
+            tools/signal_analysis/test_ev6_spas_bus_route_audit.py
       - name: Run offline read-only unit tests
         run: |
           python -m unittest discover -s tools/signal_analysis \
