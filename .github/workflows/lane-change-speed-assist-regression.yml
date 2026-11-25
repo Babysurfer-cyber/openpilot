@@ -1,0 +1,47 @@
+name: Lane change side-lead regression
+
+on:
+  push:
+    branches:
+      - feature/side-lead-lane-change-20261125
+  pull_request:
+    branches:
+      - ms-xy-radar3
+    paths:
+      - .github/workflows/lane-change-speed-assist-regression.yml
+      - selfdrive/carrot/radar_motion/controller.py
+      - selfdrive/carrot/radar_motion/lead_selection.py
+      - selfdrive/carrot/radar_motion/lane_change_speed_assist.py
+      - selfdrive/carrot/tests/test_lane_change_speed_assist.py
+      - selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  side-lead-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install minimal test dependencies
+        run: python -m pip install --disable-pip-version-check numpy pytest
+      - name: Syntax check
+        run: |
+          python -m py_compile \
+            selfdrive/carrot/radar_motion/controller.py \
+            selfdrive/carrot/radar_motion/lead_selection.py \
+            selfdrive/carrot/radar_motion/lane_change_speed_assist.py \
+            selfdrive/carrot/tests/test_lane_change_speed_assist.py \
+            selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py
+      - name: Run direct and production-AST regression tests
+        run: |
+          export PYTHONPATH="$(dirname "$PWD")"
+          python -m pytest -q selfdrive/carrot/tests/test_lane_change_speed_assist.py
+          python selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py -v
