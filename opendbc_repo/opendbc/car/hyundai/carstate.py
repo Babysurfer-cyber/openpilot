@@ -1,6 +1,7 @@
 from collections import deque
 import copy
 import math
+import time
 import numpy as np
 import ast
 
@@ -602,13 +603,17 @@ class CarState(CarStateBase):
   def _update_blinker_stalks(self, ret, cp):
     """Parse physical stalk only when this optional CAN frame is fresh."""
     timestamp = self._vehicle_navi_message_timestamp(cp, "BLINKER_STALKS")
-    age_ns = cp._last_update_nanos - timestamp
+    parser_age_ns = cp._last_update_nanos - timestamp
+    monotonic_age_ns = time.monotonic_ns() - timestamp
     # A valid main CAN bus does not imply that the optional stalk message is
-    # fresh. Observed EV6 0x3C1 is about 5 Hz (~200ms); 250ms tolerates
-    # normal jitter but intentionally drops assistance if a frame is missed.
+    # fresh. The parser clock stops advancing if the *whole* CAN bus stops,
+    # so require independently advancing monotonic time as well.
+    # Observed EV6 0x3C1 is about 5 Hz (~200ms); 250ms tolerates normal
+    # jitter but intentionally drops assistance if a frame is missed.
     frame_fresh = bool(
       self.blinker_stalks is not None and timestamp > 0
-      and 0 <= age_ns <= 250_000_000
+      and 0 <= parser_age_ns <= 250_000_000
+      and 0 <= monotonic_age_ns <= 250_000_000
     )
     if not frame_fresh:
       self.blinker_stalk_armed = False
