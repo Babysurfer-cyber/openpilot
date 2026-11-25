@@ -222,3 +222,36 @@ python tools/signal_analysis/ev6_spas_bus_route_audit.py extract_6.csv extract_7
   **사용자 명령으로 SPAS2를 송신해도 안전하다는 뜻이 아닙니다.**
 
 실제 차량 제어 시험은 현재 **NO-GO**입니다.
+
+## 2026-11-25: 최신 PR #43 원본 코드 직접 재검증
+
+이전 ZIP의 과거 테스트만 실행하는 대신, **현재 GitHub PR #43에 있는
+소스·테스트 파일 4개**를 로컬 실행본으로 옮겨 각 파일의 문자 수와
+FNV32 내용 해시가 모두 일치하는지 확인했다.
+
+| 파일 | 문자 수 | FNV32 |
+| --- | ---: | --- |
+| `ev6_spas_oem_transition_test.py` | 9750 | `0x536bad36` |
+| `test_ev6_spas_oem_stalk_independence.py` | 6064 | `0x2ed9edfa` |
+| `ev6_spas_onset_sequence.py` | 5434 | `0x2d179061` |
+| `test_ev6_spas_onset_sequence.py` | 2584 | `0x7d6986bb` |
+
+현재 GitHub 소스와 일치하는 Python 코드로 **24/24 unittest 통과**.
+추가로 사용자의 실제 좌우 자동주차 CSV `extract_6.csv`,
+`extract_7.csv`에 대해 최신 읽기 전용 시작 시점 분석기를 다시
+실행하여 다음을 확인했다.
+
+- 왼쪽: 버스0 순정 SPAS2 3104프레임, 방향값 0→3,
+  램프 OFF→ON 지연 **29.4 ms**, 변경 바이트 [7, 16, 18]
+- 오른쪽: 버스0 순정 SPAS2 3066프레임, 방향값 0→4,
+  램프 OFF→ON 지연 **10.2 ms**, 변경 바이트 [16]
+- 오른쪽 raw byte7/18 전환은 방향값 변화보다 **21.6 ms 선행**.
+  왼쪽은 동시 전환이므로 일률적인 선행 필수 조건이라고 추정하지 않는다.
+- 분석 도구가 생성하는 실제 CAN 송신은 **0건**.
+
+FNV32 해시는 수동 이전 과정의 내용 일치 확인용이지 ECU 정품성
+검증이나 보안 인증은 아니다. 이 검증은 오프라인 테스트와 실제 OEM
+**수신 로그의 분석**이며, 독립 물리 ECU 제어권 획득, SPAS2 외부
+송신 승인, panda C 통합 안전성 또는 실차 점등 성공을 의미하지
+않는다. GitHub Actions 실행 및 물리 ECU 벤치 검증은 여전히 별도로
+필요하다. **주행 브랜치 병합과 실차 시험은 NO-GO**다.
