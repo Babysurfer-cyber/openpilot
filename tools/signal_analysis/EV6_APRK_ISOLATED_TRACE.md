@@ -185,3 +185,35 @@ checked locally against pseudo-bus inputs 128/130/192, all rejected.
   or establish safe external ECU control.
 
 **No real car action, CAN TX or ECU-disable command is enabled.**
+
+
+## 2026-11-25: unverified-bus diagnostic TX / response-ID spoof checks
+
+The bus-0 evidence filter also silently ignored other-bus `tx` records
+with APRK diagnostic request ID `0x7B1`, and it did not reject an
+externally transmitted ECU response ID `0x7B9`. An otherwise-clean
+synthetic trace plus either unexpected transmission was previously
+classified as an isolated handoff-and-restore success.
+
+The read-only validator now fails closed when:
+
+- a `tx` `0x7B1` request is seen outside the independently monitored
+  bus 0, including another physical bus or an untrustworthy panda echo
+  source (`APRK_DIAGNOSTIC_TX_ON_UNVERIFIED_BUS`);
+- **any** external `tx` on response ID `0x7B9` appears, on bus 0
+  or any other source (`EXTERNAL_APRK_RESPONSE_ID_TRANSMISSION`).
+
+These checks **do not claim that the capture can authenticate a genuine
+ECU sender**. They prevent a log containing known contradictory TX
+observations from producing a clean bench proof.
+
+Validation: a local archived validator was patched with these identical
+two guard rules and ran its existing **22 tests successfully**. An
+additional **11 synthetic negative bus/ID combinations** were
+executed successfully. Latest PR #45 now contains **45 written test
+methods**; the 45-test latest GitHub version has **not** been executed
+end-to-end, and there is no passing GitHub Actions run. These local
+results are not hardware proof.
+
+Real vehicle testing remains NO-GO; do not merge this as a signal
+that physical APRK ECU handoff or turn-indicator control works.
