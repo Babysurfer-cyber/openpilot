@@ -77,7 +77,7 @@ def _create_preview(segment):
     # Seek before decoding; bound CPU usage and process duration.
     subprocess.run(
       ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1",
-       "-ss", "5", "-i", source, "-frames:v", "1", "-y", temporary],
+       "-i", source, "-ss", "5", "-frames:v", "1", "-y", temporary],
       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=True,
     )
     if not os.path.isfile(temporary) or os.path.getsize(temporary) == 0:
