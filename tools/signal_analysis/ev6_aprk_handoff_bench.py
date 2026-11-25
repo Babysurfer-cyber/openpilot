@@ -80,7 +80,9 @@ class AprkHandoffBench:
       return
     if not crc_ok or not 0 <= counter <= 255:
       self.consecutive[addr] = 0
-      if self.phase == 'lease_eligible':
+      # Never silently treat malformed OEM telemetry during a handoff as
+      # proof of silence. An invalid observed stock frame is not "no frame".
+      if self.phase in ('wait_quiet', 'lease_eligible'):
         self._abort(now_ms, 'stock_contract_failed')
       return
     old_ms, old_counter = self.last_stock[addr], self.last_counter[addr]
@@ -92,7 +94,13 @@ class AprkHandoffBench:
     if self.phase == 'lease_eligible':
       self._abort(now_ms, 'stock_resumed_during_lease')
     if self.phase == 'wait_quiet':
-      self._event(now_ms, 'OEM_STILL_TRANSMITTING')
+      # Match the passive PR #45 trace gate: OEM SPAS continuing at or
+      # beyond the 100 ms disable grace is a failed handoff. Do not grant a
+      # lease merely because the stream happens to stop at some later time.
+      if now_ms - self.phase_ms >= QUIET_MS:
+        self._abort(now_ms, 'stock_after_disable_grace')
+      else:
+        self._event(now_ms, 'OEM_STILL_TRANSMITTING')
 
   def stock_ready(self, now_ms: int) -> bool:
     return all(self.consecutive[a] >= 10 and self.last_stock[a] >= 0 and
