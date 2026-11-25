@@ -28,8 +28,8 @@ one event per line, in nondecreasing monotonic millisecond order:
 - Stock ECU bus traffic: {"ms":10,"direction":"rx","bus":0,"address":"0x165","data":"HEX"}
 - Bench controller diagnostic request OBSERVATION:
   {"ms":15,"direction":"tx","bus":0,"address":"0x7b1","data":"HEX"}
-- Independent CAN-FD analyzer health:
-  {"ms":20,"direction":"health","bus":0,"bus_off":false,"errors":0,"tx_lost":0,"rx_lost":0}
+- Independent CAN-FD analyzer health (all fields mandatory):
+  {"ms":20,"direction":"health","bus":0,"bus_off":false,"error_warning":false,"error_passive":false,"errors":0,"tx_lost":0,"rx_lost":0,"capture_dropped":0}
 
 Capture direction **rx** means actual bus receive, not host sendcan, return
 echo bus 128, or rejected bus 192. Real bench equipment and an isolated OEM
@@ -55,8 +55,14 @@ From repository root, using Python 3.10+:
   insufficient.
 - Restore both ECU communication and default session, receive positive
   responses and see 10 fresh consecutive OEM SPAS frames per address again.
-- Independent before/after CAN-FD health samples with no bus-off or error
-  counter increase. Reject any externally generated SPAS in the passive probe.
+- Independent CAN-FD health samples with explicit nonnegative integer counters
+  (`errors`, `tx_lost`, `rx_lost`, `capture_dropped`) and true boolean state flags;
+  **no default values** for absent fields. Reject any increase or reset.
+- Health samples must cover the period before the session request, the ECU
+  silence interval, and after the last restored OEM SPAS frame, with no
+  monitoring interval exceeding **100 ms**. Missing coverage, including an
+  unobserved gap during the apparent OEM silence, is not proof of silence.
+- Reject any externally generated SPAS in the passive probe.
 - Fail closed on missing response, invalid CRC, stale data, continuing stock,
   absent restoration, or CAN error counters.
 
@@ -72,3 +78,13 @@ so the correct conclusion is NOT_TESTED_NO_EXTERNAL_SESSION_REQUEST. The real
 next experiment requires a physical isolated ECU/CAN bench and trained
 supervision. The old rlogs or a more detailed software simulation cannot
 replace that evidence.
+
+## Review finding corrected in PR #45
+
+The original validator could report a successful synthetic handoff even when
+all CAN health counters were absent or both health samples were before the
+session. The updated parser fails closed on missing fields, type errors,
+counter reset/increase, missing post-restore sample and >100ms monitor gaps.
+The added negative cases are regression-tested; the tests still use synthetic
+capture events, NOT a real parking ECU. An independent monitor cannot prove
+physical CAN origin from ID alone, so an isolated hardware setup is essential.
