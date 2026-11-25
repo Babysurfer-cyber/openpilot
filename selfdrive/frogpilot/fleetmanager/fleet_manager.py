@@ -381,15 +381,30 @@ def route(route):
 @app.route("/footage/")
 @app.route("/footage")
 def footage():
-  # List routes only; thumbnail generation happens after the page is sent.
-  all_routes = fleet.all_routes()
-  total_routes = len(all_routes)
+  # Read directory names once. Segment 0 can be absent after retention cleanup.
+  groups = {}
+  for item in fleet.all_segment_names():
+    groups.setdefault(item.time_str, []).append(item.segment_num)
+  names = sorted(groups, reverse=True)
+  total_routes = len(names)
   total_pages = max(1, (total_routes + FOOTAGE_PAGE_SIZE - 1) // FOOTAGE_PAGE_SIZE)
   page = request.args.get("page", default=1, type=int) or 1
   page = min(max(1, page), total_pages)
-  start = (page - 1) * FOOTAGE_PAGE_SIZE
-  routes = all_routes[start:start + FOOTAGE_PAGE_SIZE]
-  return render_template("footage.html", routes=routes, page=page,
+  page_names = names[(page - 1) * FOOTAGE_PAGE_SIZE:page * FOOTAGE_PAGE_SIZE]
+  rows = []
+  for name in page_names:
+    numbers = sorted(groups[name])
+    segment = next(
+      (f"{name}--{n}" for n in numbers
+       if os.path.isfile(os.path.join(Paths.log_root(), f"{name}--{n}", "qcamera.ts"))), None
+    )
+    try:
+      date_folder = os.path.join(Paths.log_root(), f"{name}--{numbers[0]}")
+      date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.stat(date_folder).st_ctime))
+    except (IndexError, OSError):
+      date_text = "저장된 날짜 정보 없음"
+    rows.append({"name": name, "segment": segment, "date": date_text})
+  return render_template("footage.html", routes=rows, page=page,
                          total_pages=total_pages, total_routes=total_routes)
 
 @app.route("/preserved/")
