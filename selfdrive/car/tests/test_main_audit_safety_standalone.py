@@ -184,6 +184,36 @@ class AuditSafetyRegression(unittest.TestCase):
       self.assertEqual(variables["carrot_fresh"], age == 0.1)
 
 
+
+  def test_f4_expired_remote_command_cannot_be_replayed(self):
+    path = "selfdrive/car/cruise.py"
+    cls = next(n for n in read_tree(path).body if isinstance(n, ast.ClassDef) and n.name == "VCruiseCarrot")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "update_v_cruise")
+    branches = [n for n in method.body if isinstance(n, ast.If)
+                and isinstance(n.test, ast.Name) and n.test.id == "carrot_fresh"]
+    self.assertEqual(len(branches), 1)
+    target = ast.Module(body=[copy.deepcopy(branches[0])], type_ignores=[])
+    stale = SimpleNamespace(carrot_cmd_index_last=3, carrot_cmd_index=4,
+                            carrot_cmd="SPEED", carrot_arg="150",
+                            desiredSource="vtrun", desiredSpeed=90, vturn_speed=50)
+    exec(compile(ast.fix_missing_locations(target), path, "exec"),
+         {"self": stale, "carrot_fresh": False})
+    self.assertEqual(stale.carrot_cmd_index_last, 4)
+    self.assertEqual(stale.carrot_cmd, "")
+    self.assertEqual(stale.carrot_arg, "")
+    self.assertEqual(stale.desiredSource, "")
+    self.assertEqual(stale.desiredSpeed, 250)
+    self.assertEqual(stale.vturn_speed, 250)
+    # Valid fresh commands remain accepted; only the expired payload is invalidated.
+    fresh = SimpleNamespace(carrot_cmd_index_last=4, carrot_cmd_index=4,
+                            carrot_cmd="", carrot_arg="")
+    valid = SimpleNamespace(nRoadLimitSpeed=60, desiredSpeed=80, desiredSource="atc",
+                            vTurnSpeed=55, carrotCmdIndex=5, carrotCmd="SPEED", carrotArg="70")
+    exec(compile(ast.fix_missing_locations(copy.deepcopy(target)), path, "exec"),
+         {"self": fresh, "carrot_fresh": True, "carrot_man": valid})
+    self.assertEqual((fresh.carrot_cmd_index, fresh.carrot_cmd, fresh.carrot_arg),
+                     (5, "SPEED", "70"))
+
   def test_o1_navigation_loss_without_prior_camera_does_not_create_hold(self):
     path = "selfdrive/car/cruise.py"
     cls = next(n for n in read_tree(path).body if isinstance(n, ast.ClassDef) and n.name == "VCruiseCarrot")
