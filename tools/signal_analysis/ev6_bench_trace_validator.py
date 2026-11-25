@@ -291,7 +291,11 @@ def analyze(events):
         fault("ECU_RESTORE_NOT_ATTEMPTED")
     if "default" in acked and any(stock_resume_count[a] < 10 for a in SPAS):
         fault("STOCK_SPAS_NOT_RESTORED_WITH_VALID_COUNTERS")
-    if set(acked) == set(STEPS) and not faults and all(stock_resume_count[a] >= 10 for a in SPAS):
+    # A malformed or untrustworthy capture must never be downgraded to
+    # "NOT_TESTED" simply because the probe request cannot be decoded.
+    if faults:
+        out["diagnostic"] = "INCOMPLETE_OR_UNSAFE_BENCH_TRACE"
+    elif set(acked) == set(STEPS) and all(stock_resume_count[a] >= 10 for a in SPAS):
         out["diagnostic"] = "ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED"
         out["stage"] = "complete"
     elif out["diagnostic"] != "NO_REQUEST_OBSERVED":
