@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - test/ev6-pr61-pr62-pr63-integration-20261126
+  pull_request:
+    branches:
+      - ms-xy-radar3
   workflow_dispatch:
 
 permissions:
