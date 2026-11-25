@@ -39,6 +39,7 @@ def make_helper():
   helper.carrot_cruise_active = False
   helper._carrot_cruise_saved_op_speed = None
   helper.auto_speed_offset = 0.0
+  helper.vturn_speed = 250
   helper._carrot_restore_deferred_target = None
   helper._carrot_lead_fresh = False
   helper._add_log = lambda _: None
