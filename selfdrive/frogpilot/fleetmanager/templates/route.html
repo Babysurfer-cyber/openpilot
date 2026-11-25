@@ -67,11 +67,11 @@
                 <div class="d-flex align-items-center gap-2">
                     <span>Segment Downloads:</span>
                     <div class="d-flex flex-wrap gap-2">
-                        <a download="{{ route }}-rlog-{{query_segment}}.mp4" href="/footage/full/rlog/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">rlog</a>
-                        <a download="{{ route }}-qcamera-{{query_segment}}.mp4" href="/footage/full/qcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">qcamera</a>
-                        <a download="{{ route }}-fcamera-{{query_segment}}.mp4" href="/footage/full/fcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">fcamera</a>
-                        <a download="{{ route }}-dcamera-{{query_segment}}.mp4" href="/footage/full/dcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">dcamera</a>
-                        <a download="{{ route }}-ecamera-{{query_segment}}.mp4" href="/footage/full/ecamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">ecamera</a>
+                        <a download="{{ route }}-rlog-{{query_segment}}.mp4" href="/footage/full/rlog/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="rlog">rlog</a>
+                        <a download="{{ route }}-qcamera-{{query_segment}}.mp4" href="/footage/full/qcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="qcamera">qcamera</a>
+                        <a download="{{ route }}-fcamera-{{query_segment}}.mp4" href="/footage/full/fcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="fcamera">fcamera</a>
+                        <a download="{{ route }}-dcamera-{{query_segment}}.mp4" href="/footage/full/dcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="dcamera">dcamera</a>
+                        <a download="{{ route }}-ecamera-{{query_segment}}.mp4" href="/footage/full/ecamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="ecamera">ecamera</a>
                     </div>
                 </div>
             </div>
@@ -97,7 +97,7 @@
                        class="form-check-input me-3 segment-checkbox mt-1"
                        style="transform: scale(1.5)">
                 <div class="d-flex flex-column">
-                    <a href="{{ route }}?{{ seg_num }},{{ query_type }}" class="text-decoration-none">
+                    <a href="{{ route }}?{{ seg_num }},{{ query_type }}" class="text-decoration-none" data-clip-link="{{ clean_segment }}">
                         {{ clean_segment }}
                     </a>
                     <small class="text-muted" id="segment-info-{{ seg_num }}">
@@ -140,7 +140,7 @@
         let streamStart = 0;
         let dragging = false;
         let clipDuration = 60;
-        const segmentNumber = segment => segment.rsplit ? segment.rsplit('--', 1)[1] : segment.split('--').at(-1);
+        const segmentNumber = segment => segment.split('--').slice(-1)[0];
         const clampPosition = seconds => Math.min(Math.max(Number(seconds) || 0, 0), Math.max(0, clipDuration - 0.5));
         const clock = seconds => {
           const value = Math.max(0, Math.floor(seconds));
@@ -191,16 +191,30 @@
           updateCurrentFolderInfo();
         }
 
-        function changeSegment(delta) {
-          const newIndex = currentSegmentIndex + delta;
-          if (newIndex < 0 || newIndex >= playableSegments.length) return;
-          currentSegmentIndex = newIndex;
+        function switchSegment(index) {
+          if (index < 0 || index >= playableSegments.length) return;
+          currentSegmentIndex = index;
           currentSegment = playableSegments[currentSegmentIndex];
           clipDuration = 60;
           seekBar.max = '59';
           showSegment();
           openStream(0, true);
         }
+
+        function changeSegment(delta) {
+          switchSegment(currentSegmentIndex + delta);
+        }
+
+        // Clicking one of the one-minute segment labels also switches
+        // immediately without reloading the full Fleet Manager page.
+        document.querySelectorAll('a[data-clip-link]').forEach(link => {
+          link.addEventListener('click', event => {
+            const index = playableSegments.indexOf(link.dataset.clipLink);
+            if (index === -1) return;
+            event.preventDefault();
+            switchSegment(index);
+          });
+        });
 
         prevButton.addEventListener('click', () => changeSegment(-1));
         nextButton.addEventListener('click', () => changeSegment(1));
