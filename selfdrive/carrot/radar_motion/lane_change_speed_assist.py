@@ -84,9 +84,9 @@ def _side_of_point(model: Any, point: Any, expected_side: str | None = None) -> 
   if expected_side == "left":
     # During a lane change the same car can move from adjacent to current lane.
     # Keep its identity, but reject broken lane geometry or an opposite-lane car.
-    return "left" if left_valid and y < boundaries[2] - LANE_MARGIN_M else None
+    return "left" if left_valid and boundaries[0] + LANE_MARGIN_M < y < boundaries[2] - LANE_MARGIN_M else None
   if expected_side == "right":
-    return "right" if right_valid and y > boundaries[1] + LANE_MARGIN_M else None
+    return "right" if right_valid and boundaries[1] + LANE_MARGIN_M < y < boundaries[3] - LANE_MARGIN_M else None
   if left_valid and boundaries[0] + LANE_MARGIN_M < y < boundaries[1] - LANE_MARGIN_M:
     return "left"
   if right_valid and boundaries[2] + LANE_MARGIN_M < y < boundaries[3] - LANE_MARGIN_M:
