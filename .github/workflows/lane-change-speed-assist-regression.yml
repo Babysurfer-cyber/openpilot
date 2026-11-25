@@ -39,7 +39,31 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install minimal test dependencies
-        run: python -m pip install --disable-pip-version-check numpy pytest
+        run: python -m pip install --disable-pip-version-check numpy pytest pycapnp
+      - name: Native Cap'n Proto CarState and ModelDataV2 roundtrip
+        run: |
+          python - <<'PY'
+          import capnp
+          from pathlib import Path
+          schema = capnp.load(str(Path('opendbc_repo/opendbc/car/car.capnp').resolve()))
+          msg = schema.CarState.new_message()
+          assert not msg.blinkerStalkValid
+          msg.blinkerStalkValid = True
+          with schema.CarState.from_bytes(msg.to_bytes()) as parsed:
+            assert parsed.blinkerStalkValid
+          print("CarState stalk field serialized and decoded")
+          PY
+          python - <<'PY'
+          import capnp
+          from pathlib import Path
+          schema = capnp.load(str(Path('cereal/log.capnp').resolve()))
+          msg = schema.ModelDataV2.new_message()
+          assert not msg.meta.laneChangeDriverRequest
+          msg.meta.laneChangeDriverRequest = True
+          with schema.ModelDataV2.from_bytes(msg.to_bytes()) as parsed:
+            assert parsed.meta.laneChangeDriverRequest
+          print("modelV2 one-touch field serialized and decoded")
+          PY
       - name: Verify canonical CarState schema symlink
         run: |
           test -L cereal/car.capnp
