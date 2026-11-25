@@ -88,6 +88,46 @@ class AuditSafetyRegression(unittest.TestCase):
     self.assertEqual(controller._ev6_blinker_stalk_trial(None, cs, 10**9), [])
     self.assertEqual(params.writes, [("Ev6BlinkerTest", 0)])
 
+  def test_f2_host_fail_closed_for_each_missing_precondition(self):
+    path = "opendbc_repo/opendbc/car/hyundai/carcontroller.py"
+    impl = production_method(path, "CarController", "_ev6_blinker_stalk_trial", {
+      "Params": lambda: params, "CAR": SimpleNamespace(KIA_EV6="ev6"),
+      "structs": SimpleNamespace(CarState=SimpleNamespace(GearShifter=GearShifter)),
+    })
+    names = ("WHEEL_SPEEDS", "TCS", "ACCELERATOR", "BLINKER_STALKS")
+    faults = (("canValid", False), ("canTimeout", True),
+              *((f"stale:{name}", True) for name in names),
+              ("cc.enabled", True), ("cc.latActive", True), ("cc.longActive", True),
+              ("brakePressed", False), ("standstill", False),
+              ("gearShifter", GearShifter.drive))
+    now_ns = 1_000_000_000
+    for field, value in faults:
+      with self.subTest(field=field):
+        params = FakeParams(1)
+        obj = impl()
+        obj.frame = 100
+        obj.CP = SimpleNamespace(carFingerprint="ev6")
+        obj.CAN = SimpleNamespace(ECAN=0)
+        obj.ev6_last_blinker_trial_frame = -1000
+        obj.packer = SimpleNamespace(make_can_msg=lambda *args: self.fail("unsafe CAN TX packed"))
+        out = SimpleNamespace(canValid=True, canTimeout=False,
+                              gearShifter=GearShifter.park, standstill=True,
+                              vEgo=0., brakePressed=True, steeringPressed=False,
+                              leftBlinker=False, rightBlinker=False)
+        control = SimpleNamespace(enabled=False, latActive=False, longActive=False)
+        stamps = {name: {"SIGNAL": now_ns-1_000} for name in names}
+        cs = SimpleNamespace(out=out, gear_msg_canfd="ACCELERATOR",
+                             cp=SimpleNamespace(ts_nanos=stamps),
+                             blinker_stalks={"COUNTER_ALT": 0})
+        if field.startswith("stale:"):
+          stamps[field.split(":", 1)[1]]["SIGNAL"] = now_ns-200_000_000
+        elif field.startswith("cc."):
+          setattr(control, field[3:], value)
+        else:
+          setattr(out, field, value)
+        self.assertEqual(obj._ev6_blinker_stalk_trial(control, cs, now_ns), [])
+        self.assertEqual(params.writes, [("Ev6BlinkerTest", 0)])
+
   def test_f2_panda_requires_valid_rx_and_park(self):
     text = (ROOT / "opendbc_repo/opendbc/safety/safety/safety_hyundai_canfd.h").read_text()
     gate = text.split("if (addr == 0x3C1) {", 1)[1].split("return allowed;", 1)[0]
