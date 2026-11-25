@@ -91,6 +91,31 @@ class TestEV6StalkParkGuard(unittest.TestCase):
         self._prime(gear=gear)
         self.assertFalse(self._tx_left())
 
+  def test_hda2_non_camera_scc_bus0_park_inputs_remain_blocked(self):
+    # HDA2 without CAMERA_SCC tracks 0x35/0x175/0xA0 through bus 1
+    # (HYUNDAI_CANFD_COMMON_RX_CHECKS(1)). The experimental guard requires
+    # validated bus-0 evidence and therefore MUST fail closed.
+    no_camera_scc = self.flags & ~HyundaiSafetyFlags.CAMERA_SCC
+    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, no_camera_scc)
+    self.safety.init_tests()
+    self.safety.set_timer(1_000_000)
+    self._prime(gear=0, gear_bus=0)
+    self.assertFalse(self._tx_left())
+
+  def test_hda2_non_camera_scc_bus1_valid_inputs_still_blocked(self):
+    # Even if pt_bus=1 reports park/brake/standstill, bus-0 source ownership
+    # has not been independently proven. Do NOT weaken this interlock to
+    # make a positive test pass on an unverified physical topology.
+    no_camera_scc = self.flags & ~HyundaiSafetyFlags.CAMERA_SCC
+    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, no_camera_scc)
+    self.safety.init_tests()
+    self.safety.set_timer(1_000_000)
+    self._rx(_hyundai_canfd(0x35, 32, gear=0, bus=1))
+    self._rx(_hyundai_canfd(0x175, 24, braking=True, bus=1))
+    self._rx(_hyundai_canfd(0xA0, 24, bus=1))
+    self._rx(_frame(0x3C1, STOCK_STALK))
+    self.assertFalse(self._tx_left())
+
   def test_no_gear_frame_is_not_park(self):
     self._rx(_hyundai_canfd(0x175, 24, braking=True))
     self._rx(_frame(0x3C1, STOCK_STALK))
