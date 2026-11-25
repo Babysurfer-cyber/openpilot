@@ -81,16 +81,38 @@
     const status = img.parentElement.querySelector('.preview-status');
     const segment = img.dataset.segment;
     const url = '/preview-thumbnail/' + encodeURIComponent(segment);
-    for (let attempt = 0; attempt < 45; attempt++) {
+    // One preview worker serves multiple cards; allow extra time for
+    // queued work instead of declaring failure after ~one minute.
+    for (let attempt = 0; attempt < 90; attempt++) {
       try {
         const response = await fetch(url, {cache: 'no-store'});
         if (response.ok) {
           const blob = await response.blob();
+          if (!blob.size || !blob.type.startsWith('image/')) {
+            status.textContent = '미리보기 이미지 형식 오류';
+            return;
+          }
           const objectUrl = URL.createObjectURL(blob);
-          img.onload = () => URL.revokeObjectURL(objectUrl);
-          img.src = objectUrl;
-          img.style.display = 'block';
-          status.hidden = true;
+          try {
+            // A successful HTTP response isn't proof the browser decoded the
+            // image. Only hide the status after the onload event fires.
+            const decoded = new Promise((resolve, reject) => {
+              img.onload = resolve;
+              img.onerror = reject;
+            });
+            img.loading = 'eager';
+            img.style.display = 'block';
+            img.src = objectUrl;
+            await decoded;
+            status.hidden = true;
+          } catch (error) {
+            img.style.display = 'none';
+            status.textContent = '미리보기 이미지 표시 오류 · 새로고침해 주세요';
+          } finally {
+            URL.revokeObjectURL(objectUrl);
+            img.onload = null;
+            img.onerror = null;
+          }
           return;
         }
         if (response.status === 404) {
@@ -107,7 +129,7 @@
       } catch (error) {
         status.textContent = '일시적인 연결 오류';
       }
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
     status.textContent = '미리보기 생성에 실패했습니다. 새로고침해 주세요.';
   }
