@@ -56,7 +56,7 @@ class MainAuditUiRegression(unittest.TestCase):
     tree = ast.parse((ROOT / "selfdrive/frogpilot/fleetmanager/fleet_manager.py").read_text())
     func = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "fcamera")
     early_returns = [i for i, n in enumerate(func.body)
-                     if isinstance(n, ast.If) and 'request.method == "HEAD"' in ast.unparse(n.test)]
+                     if isinstance(n, ast.If) and ast.unparse(n.test) == "request.method == 'HEAD'"]
     processes = [i for i, n in enumerate(func.body)
                  if isinstance(n, ast.Assign)
                  and any(isinstance(t, ast.Name) and t.id == "process" for t in n.targets)]
