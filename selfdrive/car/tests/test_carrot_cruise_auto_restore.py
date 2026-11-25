@@ -290,6 +290,13 @@ def test_stationary_lead_exit_recovers_prior_openpilot_setpoint_after_zero_coast
   assert not helper.carrot_cruise_active
   assert result == pytest.approx(95)
   assert helper._carrot_cruise_saved_op_speed is None
+  assert helper.prev_carrot_active is False  # The exit is recorded immediately.
+  # Re-entering on the next update must capture a fresh OpenPilot target.
+  helper.carrot_cruise_active = True
+  helper.v_cruise_kph = 80
+  helper.d_rel = 0
+  assert helper._update_cruise_buttons(CS, CC, 0) == pytest.approx(0)
+  assert helper._carrot_cruise_saved_op_speed == pytest.approx(80)
 
 
 def test_brake_exit_preserves_openpilot_setpoint_but_never_requests_reengagement():
