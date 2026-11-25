@@ -58,6 +58,8 @@ class AprkHandoffBench:
     self.phase_ms = 0
     self.lease_ms = 0
     self.last_stock = {addr: -1 for addr in SPAS}
+    self.session_ack_ms = -1
+    self.stock_after_session_ack = {addr: -1 for addr in SPAS}
     self.last_counter = {addr: None for addr in SPAS}
     self.consecutive = {addr: 0 for addr in SPAS}
     self.reason = None
@@ -82,7 +84,7 @@ class AprkHandoffBench:
       self.consecutive[addr] = 0
       # Never silently treat malformed OEM telemetry during a handoff as
       # proof of silence. An invalid observed stock frame is not "no frame".
-      if self.phase in ('wait_quiet', 'lease_eligible'):
+      if self.phase in ('wait_disable', 'wait_quiet', 'lease_eligible'):
         self._abort(now_ms, 'stock_contract_failed')
       return
     old_ms, old_counter = self.last_stock[addr], self.last_counter[addr]
@@ -91,6 +93,8 @@ class AprkHandoffBench:
     self.consecutive[addr] = min(20, self.consecutive[addr] + 1) if consecutive else 1
     self.last_stock[addr] = now_ms
     self.last_counter[addr] = counter
+    if self.phase == 'wait_disable' and now_ms > self.session_ack_ms:
+      self.stock_after_session_ack[addr] = now_ms
     if self.phase == 'lease_eligible':
       self._abort(now_ms, 'stock_resumed_during_lease')
     if self.phase == 'wait_quiet':
@@ -136,11 +140,22 @@ class AprkHandoffBench:
     if response.startswith(b'\x7f'):
       self._abort(now_ms, 'ecu_negative_response')
     elif self.phase == 'wait_extended' and response.startswith(b'\x50\x03'):
+      self.session_ack_ms = now_ms
+      self.stock_after_session_ack = {addr: -1 for addr in SPAS}
       self.phase, self.phase_ms = 'wait_disable', now_ms
       self._event(now_ms, 'WOULD_REQUEST_COMMUNICATION_DISABLE')
     elif self.phase == 'wait_disable' and response.startswith(b'\x68\x03'):
-      self.phase, self.phase_ms = 'wait_quiet', now_ms
-      self._event(now_ms, 'AWAIT_OEM_SPAS1_AND_SPAS2_QUIET')
+      # Without original SPAS1/2 still live after extended-session ACK,
+      # a subsequent silent bus cannot prove communication was disabled.
+      # This model has no real request timestamp; require both streams
+      # recently seen after session ACK before accepting this fake ACK.
+      recent = all(self.stock_after_session_ack[addr] > self.session_ack_ms and
+                   0 <= now_ms - self.stock_after_session_ack[addr] <= 50 for addr in SPAS)
+      if not recent:
+        self._abort(now_ms, 'oem_spas_not_live_after_session_ack')
+      else:
+        self.phase, self.phase_ms = 'wait_quiet', now_ms
+        self._event(now_ms, 'AWAIT_OEM_SPAS1_AND_SPAS2_QUIET')
     elif self.phase == 'wait_restore_enable' and response.startswith(b'\x68\x00'):
       self.restore_enable_ack = True
       self.phase, self.phase_ms = 'wait_restore_default', now_ms
