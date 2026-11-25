@@ -9,9 +9,29 @@
     <br>
     <h1>Dashcam Segments (one per minute)</h1>
     <br>
-    <video id="video" width="640" height="480" controls autoplay style="background:black">
-    </video>
-    <br><br>
+    <video id="video" width="640" height="480" controls playsinline preload="metadata"
+           style="background:black; max-width:100%; height:auto"></video>
+    <section class="mx-auto mt-2 mb-3 px-2" style="max-width:700px" aria-label="영상 탐색">
+      <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 mb-2">
+        <button type="button" id="prevSegment" class="btn btn-outline-primary btn-sm" aria-label="이전 1분 영상">◀ 이전 영상</button>
+        <button type="button" id="skipBack" class="btn btn-outline-primary btn-sm" aria-label="10초 뒤로">↶ 10초</button>
+        <button type="button" id="skipForward" class="btn btn-outline-primary btn-sm" aria-label="10초 앞으로">10초 ↷</button>
+        <button type="button" id="nextSegment" class="btn btn-outline-primary btn-sm" aria-label="다음 1분 영상">다음 영상 ▶</button>
+        <label for="playbackRate" class="small mb-0">재생속도</label>
+        <select id="playbackRate" class="form-select form-select-sm" style="width:86px" aria-label="재생속도">
+          <option value="1">1×</option><option value="1.5">1.5×</option>
+          <option value="2">2×</option><option value="4">4×</option>
+        </select>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span id="seekClock" class="small text-nowrap">00:00</span>
+        <input id="seekPosition" class="form-range flex-grow-1" style="min-width:0" type="range"
+               min="0" max="59" step="1" value="0" aria-label="현재 1분 영상의 재생 위치">
+        <span class="small text-nowrap">01:00</span>
+      </div>
+      <div id="playbackHint" class="small text-center text-muted">탐색바 또는 ±10초 버튼으로 이동 · 영상 좌우 밀기로 이전/다음</div>
+    </section>
+    <br>
     <div class="camera-switcher d-flex justify-content-center gap-2 mb-3">
         <a href="{{ route }}?{{ query_segment }},qcamera" 
            class="btn btn-sm {% if query_type == 'qcamera' %}btn-primary{% else %}btn-outline-primary{% endif %}">qcamera</a>
@@ -47,11 +67,11 @@
                 <div class="d-flex align-items-center gap-2">
                     <span>Segment Downloads:</span>
                     <div class="d-flex flex-wrap gap-2">
-                        <a download="{{ route }}-rlog-{{query_segment}}.mp4" href="/footage/full/rlog/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">rlog</a>
-                        <a download="{{ route }}-qcamera-{{query_segment}}.mp4" href="/footage/full/qcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">qcamera</a>
-                        <a download="{{ route }}-fcamera-{{query_segment}}.mp4" href="/footage/full/fcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">fcamera</a>
-                        <a download="{{ route }}-dcamera-{{query_segment}}.mp4" href="/footage/full/dcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">dcamera</a>
-                        <a download="{{ route }}-ecamera-{{query_segment}}.mp4" href="/footage/full/ecamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary">ecamera</a>
+                        <a download="{{ route }}-rlog-{{query_segment}}.mp4" href="/footage/full/rlog/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="rlog">rlog</a>
+                        <a download="{{ route }}-qcamera-{{query_segment}}.mp4" href="/footage/full/qcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="qcamera">qcamera</a>
+                        <a download="{{ route }}-fcamera-{{query_segment}}.mp4" href="/footage/full/fcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="fcamera">fcamera</a>
+                        <a download="{{ route }}-dcamera-{{query_segment}}.mp4" href="/footage/full/dcamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="dcamera">dcamera</a>
+                        <a download="{{ route }}-ecamera-{{query_segment}}.mp4" href="/footage/full/ecamera/{{ route }}/{{query_segment}}" class="btn btn-sm btn-outline-secondary" data-segment-download="ecamera">ecamera</a>
                     </div>
                 </div>
             </div>
@@ -77,7 +97,7 @@
                        class="form-check-input me-3 segment-checkbox mt-1"
                        style="transform: scale(1.5)">
                 <div class="d-flex flex-column">
-                    <a href="{{ route }}?{{ seg_num }},{{ query_type }}" class="text-decoration-none">
+                    <a href="{{ route }}?{{ seg_num }},{{ query_type }}" class="text-decoration-none" data-clip-link="{{ clean_segment }}">
                         {{ clean_segment }}
                     </a>
                     <small class="text-muted" id="segment-info-{{ seg_num }}">
@@ -102,24 +122,157 @@
     </div>
 
     <script>
-        const segments = [{{ segments }}];
-        const currentSegment = "{{ route }}--{{ query_segment }}";
-        let currentSegmentIndex = segments.findIndex(seg => seg === currentSegment);
-        if (currentSegmentIndex === -1) currentSegmentIndex = 0;
+        const segments = {{ segment_list | tojson }};
+        const playableSegments = {{ playable_segments | tojson }};
+        const routeId = {{ route | tojson }};
+        const cameraType = {{ query_type | tojson }};
+        const initialSegment = {{ (route ~ '--' ~ query_segment) | tojson }};
+        let currentSegmentIndex = playableSegments.indexOf(initialSegment);
+        if (currentSegmentIndex < 0) currentSegmentIndex = 0;
+        let currentSegment = playableSegments[currentSegmentIndex];
 
         const video = document.getElementById('video');
-        video.src = `/footage/{{ query_type }}/${currentSegment}`;
-        document.getElementById("currentsegment").textContent = currentSegment;
-        document.getElementById("currentview").textContent = "{{ query_type }}";
-        video.load();
-        video.play().catch(e => console.log("Autoplay prevented:", e));
+        const seekBar = document.getElementById('seekPosition');
+        const seekClock = document.getElementById('seekClock');
+        const rateSelect = document.getElementById('playbackRate');
+        const prevButton = document.getElementById('prevSegment');
+        const nextButton = document.getElementById('nextSegment');
+        let streamStart = 0;
+        let dragging = false;
+        let clipDuration = 60;
+        const segmentNumber = segment => segment.split('--').slice(-1)[0];
+        const clampPosition = seconds => Math.min(Math.max(Number(seconds) || 0, 0), Math.max(0, clipDuration - 0.5));
+        const clock = seconds => {
+          const value = Math.max(0, Math.floor(seconds));
+          return String(Math.floor(value / 60)).padStart(2, '0') + ':' +
+                 String(value % 60).padStart(2, '0');
+        };
 
-        video.addEventListener('ended', function() {
-            currentSegmentIndex = (currentSegmentIndex + 1) % segments.length;
-            const nextSegment = segments[currentSegmentIndex];
-            const segNum = nextSegment.split('--')[2];
-            window.location.href = `{{ route }}?${segNum},{{ query_type }}`;
+        function refreshPosition(seconds) {
+          const position = Math.min(60, Math.max(0, seconds));
+          if (!dragging) seekBar.value = Math.min(Number(seekBar.max), position);
+          seekClock.textContent = clock(position);
+        }
+
+        function openStream(fromSeconds, shouldPlay) {
+          streamStart = clampPosition(fromSeconds);
+          refreshPosition(streamStart);
+          video.pause();
+          video.src = '/footage/' + encodeURIComponent(cameraType) + '/' +
+                      encodeURIComponent(currentSegment) + '?start=' + streamStart.toFixed(1);
+          video.load();
+          video.playbackRate = Number(rateSelect.value);
+          if (shouldPlay) video.play().catch(() => {
+            document.getElementById('playbackHint').textContent = '자동재생이 차단되었습니다. ▶ 재생을 눌러주세요.';
+          });
+        }
+
+        function seekTo(seconds) {
+          const wasPlaying = !video.paused && !video.ended;
+          openStream(seconds, wasPlaying);
+        }
+
+        function showSegment() {
+          const number = segmentNumber(currentSegment);
+          document.getElementById('currentsegment').textContent = currentSegment;
+          document.getElementById('currentview').textContent = cameraType;
+          prevButton.disabled = currentSegmentIndex === 0;
+          nextButton.disabled = currentSegmentIndex === playableSegments.length - 1;
+          document.querySelectorAll('[data-segment-download]').forEach(link => {
+            const type = link.dataset.segmentDownload;
+            link.href = '/footage/full/' + type + '/' + encodeURIComponent(routeId) + '/' + number;
+            link.download = routeId + '-' + type + '-' + number + (type === 'rlog' ? '.zst' : '.mp4');
+          });
+          document.querySelectorAll('.segment-item').forEach(item => {
+            const link = item.querySelector('a[data-clip-link]');
+            item.classList.toggle('bg-primary-subtle', !!link && link.dataset.clipLink === currentSegment);
+          });
+          history.replaceState(null, '', window.location.pathname + '?' + number + ',' + cameraType);
+          updateCurrentFolderInfo();
+        }
+
+        function switchSegment(index) {
+          if (index < 0 || index >= playableSegments.length) return;
+          currentSegmentIndex = index;
+          currentSegment = playableSegments[currentSegmentIndex];
+          clipDuration = 60;
+          seekBar.max = '59';
+          showSegment();
+          openStream(0, true);
+        }
+
+        function changeSegment(delta) {
+          switchSegment(currentSegmentIndex + delta);
+        }
+
+        // Clicking one of the one-minute segment labels also switches
+        // immediately without reloading the full Fleet Manager page.
+        document.querySelectorAll('a[data-clip-link]').forEach(link => {
+          link.addEventListener('click', event => {
+            const index = playableSegments.indexOf(link.dataset.clipLink);
+            if (index === -1) return;
+            event.preventDefault();
+            switchSegment(index);
+          });
         });
+
+        prevButton.addEventListener('click', () => changeSegment(-1));
+        nextButton.addEventListener('click', () => changeSegment(1));
+        document.getElementById('skipBack').addEventListener('click',
+          () => seekTo(streamStart + (Number.isFinite(video.currentTime) ? video.currentTime : 0) - 10));
+        document.getElementById('skipForward').addEventListener('click',
+          () => seekTo(streamStart + (Number.isFinite(video.currentTime) ? video.currentTime : 0) + 10));
+        seekBar.addEventListener('input', () => {
+          dragging = true;
+          seekClock.textContent = clock(Number(seekBar.value));
+        });
+        seekBar.addEventListener('change', () => {
+          const destination = Number(seekBar.value);
+          dragging = false;
+          seekTo(destination);
+        });
+        rateSelect.addEventListener('change', () => {
+          video.playbackRate = Number(rateSelect.value);
+        });
+        video.addEventListener('loadedmetadata', () => {
+          video.playbackRate = Number(rateSelect.value);
+          const duration = video.duration;
+          // The original 1-minute TS/HEVC files can be shorter if recording
+          // stopped mid-segment. Never enlarge the seek range from MP4 metadata.
+          if (Number.isFinite(duration) && duration > 0 && duration < 75) {
+            clipDuration = Math.min(60, streamStart + duration);
+            seekBar.max = String(Math.max(0, Math.floor(clipDuration - 0.5)));
+          }
+        });
+        video.addEventListener('timeupdate', () => {
+          const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+          refreshPosition(streamStart + current);
+        });
+        video.addEventListener('ended', () => {
+          if (currentSegmentIndex < playableSegments.length - 1) changeSegment(1);
+        });
+
+        // Horizontal gestures on the video, not on the range input, avoid
+        // interfering with normal scrubbing and vertical page scrolling.
+        let touchStartX = 0;
+        let touchStartY = 0;
+        video.addEventListener('touchstart', event => {
+          if (event.touches.length === 1) {
+            touchStartX = event.touches[0].clientX;
+            touchStartY = event.touches[0].clientY;
+          }
+        }, {passive: true});
+        video.addEventListener('touchend', event => {
+          if (event.changedTouches.length !== 1) return;
+          const dx = event.changedTouches[0].clientX - touchStartX;
+          const dy = event.changedTouches[0].clientY - touchStartY;
+          if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            changeSegment(dx < 0 ? 1 : -1);
+          }
+        }, {passive: true});
+
+        showSegment();
+        openStream(0, true);
 
         function toggleAllSegments() {
             const checkboxes = document.querySelectorAll('.segment-checkbox');
