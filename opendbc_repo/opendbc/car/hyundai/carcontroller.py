@@ -232,7 +232,8 @@ class CarController(CarControllerBase):
         or not all(fresh(name) for name in ("WHEEL_SPEEDS", "TCS", gear_msg, "BLINKER_STALKS"))):
       print("EV6 blinker trial: rejected (CAN invalid or stale wheel/brake/gear/lever)")
       return []
-    parked = (CS.out.gearShifter == structs.CarState.GearShifter.park and
+    parked = (not CC.enabled and not CC.latActive and not CC.longActive and
+              CS.out.gearShifter == structs.CarState.GearShifter.park and
               CS.out.standstill and CS.out.vEgo < 0.05 and
               CS.out.brakePressed and
               not CS.out.steeringPressed and
