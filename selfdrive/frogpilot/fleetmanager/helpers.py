@@ -177,7 +177,7 @@ def ffmpeg_mp4_concat_wrap_process_builder(file_list, cameratype, chunk_size=102
   )
 
 
-def ffmpeg_mp4_wrap_process_builder(filename, start_seconds=0.0):
+def ffmpeg_mp4_wrap_process_builder(filename):
   """Returns a process that will wrap the given filename
      inside a mp4 container, for easier playback by browsers
      and other devices. Primary use case is streaming segment videos
@@ -195,11 +195,6 @@ def ffmpeg_mp4_wrap_process_builder(filename, start_seconds=0.0):
     command_line += ["-f", "hevc"]
   command_line += ["-r", "20"]
   command_line += ["-i", filename]
-  if start_seconds > 0:
-    # The original HEVC and TS recordings are not range-addressable MP4s.
-    # Start a fresh remuxed stream near the requested position; avoid disk
-    # caching long recordings, and copy the encoded video without transcoding.
-    command_line += ["-ss", f"{start_seconds:.3f}"]
   command_line += ["-c", "copy"]
 
   command_line += ["-bsf:a", "aac_adtstoasc"]
