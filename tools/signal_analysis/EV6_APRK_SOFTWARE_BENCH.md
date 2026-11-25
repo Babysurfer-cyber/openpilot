@@ -21,11 +21,18 @@ It never sends CAN or UDS frames and is not imported by onroad services.
 1. Require P, standstill, foot brake, no gas/driver lever/lamp, healthy CAN
    and ten recent consecutive factory SPAS1/SPAS2 messages.
 2. Wait for the exact simulated positive session response (0x50 0x03).
-3. Wait for simulated positive communication-disable response (0x68 0x03).
-4. Wait for *both* OEM SPAS message streams to be quiet for at least 100 ms.
-5. Grant *bench-only* eligibility for one second, revoked immediately on
+3. Require **both** CRC-valid factory SPAS1 and SPAS2 streams to be received
+   **after session ACK**, each still fresh within 50 ms when the simulated
+   communication-disable response arrives. An already silent factory ECU
+   must not be mistaken for a completed handoff.
+4. Wait for simulated positive communication-disable response (0x68 0x03).
+   Reject invalid OEM frames during transition; if stock SPAS continues at
+   or after the **100 ms disable-grace boundary**, immediately revoke the
+   mock handoff rather than waiting indefinitely for eventual silence.
+5. Wait for *both* OEM SPAS streams to be quiet for at least 100 ms.
+6. Grant *bench-only* eligibility for one second, revoked immediately on
    stock SPAS resumption, bus fault, driver action, gear/brake change.
-6. Simulate separate enable (0x68 0x00) and default-session (0x50 0x01)
+7. Simulate separate enable (0x68 0x00) and default-session (0x50 0x01)
    replies and the stock stream returning; otherwise restoration is
    unconfirmed and never marked safe.
 
@@ -50,3 +57,21 @@ negative diagnostics, OEM source silence, no duplicated-ID contention, and
 full restoration before considering a separate parked vehicle experiment.
 Donor implementations recorded SPAS CAN errors and bus-offs; a piggyback
 scheduler by itself is not proof of safe bus arbitration.
+
+## 2026-11-25 verification alignment with PR #45
+
+The earlier simulated state machine could grant a lease after late OEM
+SPAS traffic finally stopped, even though PR #45 rejects a stock message
+seen at least 100 ms after the disable acknowledgement. Its original
+positive fixture also proceeded with *no* OEM SPAS traffic after session
+ACK, so an ECU already silent during session entry could be mistaken for
+a successful communication disable.
+
+The simulation now fails closed on these contradictions and on invalid
+stock frames during the session-to-disable and quiet periods. The positive
+fixture and CLI example were updated to include genuine-looking **synthetic**
+post-session stream liveness. The PR contains **22 test methods** after
+adding focused negative cases. The latest GitHub revision has **not been
+executed as a complete test suite** in the available environment, and
+has no passing GitHub Actions run. The code is an unverified **offline mock**,
+not a vehicle ECU implementation or permission to merge for road use.
