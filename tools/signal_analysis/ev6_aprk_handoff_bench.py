@@ -18,6 +18,7 @@ RESPONSE = 0x7B9
 SESSION_TIMEOUT_MS = 400
 QUIET_MS = 100
 STOCK_FRESH_MS = 100
+POST_SESSION_STOCK_WINDOW_MS = 50
 LEASE_MAX_MS = 1000
 
 
@@ -60,6 +61,7 @@ class AprkHandoffBench:
     self.last_stock = {addr: -1 for addr in SPAS}
     self.session_ack_ms = -1
     self.stock_after_session_ack = {addr: -1 for addr in SPAS}
+    self.disable_request_stock_verified = False
     self.last_counter = {addr: None for addr in SPAS}
     self.consecutive = {addr: 0 for addr in SPAS}
     self.reason = None
@@ -84,7 +86,7 @@ class AprkHandoffBench:
       self.consecutive[addr] = 0
       # Never silently treat malformed OEM telemetry during a handoff as
       # proof of silence. An invalid observed stock frame is not "no frame".
-      if self.phase in ('wait_disable', 'wait_quiet', 'lease_eligible'):
+      if self.phase in ('wait_post_session_stock', 'wait_disable', 'wait_quiet', 'lease_eligible'):
         self._abort(now_ms, 'stock_contract_failed')
       return
     old_ms, old_counter = self.last_stock[addr], self.last_counter[addr]
@@ -93,8 +95,21 @@ class AprkHandoffBench:
     self.consecutive[addr] = min(20, self.consecutive[addr] + 1) if consecutive else 1
     self.last_stock[addr] = now_ms
     self.last_counter[addr] = counter
-    if self.phase == 'wait_disable' and now_ms > self.session_ack_ms:
+    if self.phase == 'wait_post_session_stock':
+      # Do not even *propose* the diagnostic disable request until BOTH
+      # original streams are still live and advancing after session ACK.
+      if (not continuous or now_ms <= self.session_ack_ms or
+          now_ms - self.session_ack_ms > POST_SESSION_STOCK_WINDOW_MS):
+        self._abort(now_ms, 'stock_contract_failed_after_session_ack')
+        return
       self.stock_after_session_ack[addr] = now_ms
+      both_live = all(self.stock_after_session_ack[a] > self.session_ack_ms and
+                      0 <= now_ms - self.stock_after_session_ack[a] <= POST_SESSION_STOCK_WINDOW_MS
+                      for a in SPAS)
+      if both_live:
+        self.disable_request_stock_verified = True
+        self.phase, self.phase_ms = 'wait_disable', now_ms
+        self._event(now_ms, 'WOULD_REQUEST_COMMUNICATION_DISABLE')
     if self.phase == 'lease_eligible':
       self._abort(now_ms, 'stock_resumed_during_lease')
     if self.phase == 'wait_quiet':
@@ -129,7 +144,7 @@ class AprkHandoffBench:
   def response(self, now_ms: int, addr: int, bus: int, payload: bytes):
     self._time_ok(now_ms)
     if (addr != RESPONSE or bus != 0 or len(payload) != 8 or
-        self.phase not in ('wait_extended', 'wait_disable', 'wait_restore_enable', 'wait_restore_default')):
+        self.phase not in ('wait_extended', 'wait_post_session_stock', 'wait_disable', 'wait_restore_enable', 'wait_restore_default')):
       return
     if not 0 <= now_ms - self.phase_ms < SESSION_TIMEOUT_MS:
       return
@@ -142,17 +157,14 @@ class AprkHandoffBench:
     elif self.phase == 'wait_extended' and response.startswith(b'\x50\x03'):
       self.session_ack_ms = now_ms
       self.stock_after_session_ack = {addr: -1 for addr in SPAS}
-      self.phase, self.phase_ms = 'wait_disable', now_ms
-      self._event(now_ms, 'WOULD_REQUEST_COMMUNICATION_DISABLE')
+      self.disable_request_stock_verified = False
+      self.phase, self.phase_ms = 'wait_post_session_stock', now_ms
+      self._event(now_ms, 'AWAIT_OEM_SPAS_AFTER_SESSION_ACK')
     elif self.phase == 'wait_disable' and response.startswith(b'\x68\x03'):
-      # Without original SPAS1/2 still live after extended-session ACK,
-      # a subsequent silent bus cannot prove communication was disabled.
-      # This model has no real request timestamp; require both streams
-      # recently seen after session ACK before accepting this fake ACK.
-      recent = all(self.stock_after_session_ack[addr] > self.session_ack_ms and
-                   0 <= now_ms - self.stock_after_session_ack[addr] <= 50 for addr in SPAS)
-      if not recent:
-        self._abort(now_ms, 'oem_spas_not_live_after_session_ack')
+      # Verified at the *mock disable-request* transition, not at its
+      # potentially delayed ACK. Check preserved independent evidence.
+      if not self.disable_request_stock_verified:
+        self._abort(now_ms, 'oem_spas_not_live_before_disable_request')
       else:
         self.phase, self.phase_ms = 'wait_quiet', now_ms
         self._event(now_ms, 'AWAIT_OEM_SPAS1_AND_SPAS2_QUIET')
@@ -197,6 +209,8 @@ class AprkHandoffBench:
       self._abort(now_ms, denial)
     elif self.phase == 'wait_extended' and now_ms - self.phase_ms >= SESSION_TIMEOUT_MS:
       self._abort(now_ms, 'no_extended_session_ack')
+    elif self.phase == 'wait_post_session_stock' and now_ms - self.session_ack_ms > POST_SESSION_STOCK_WINDOW_MS:
+      self._abort(now_ms, 'oem_spas_not_live_after_session_ack')
     elif self.phase == 'wait_disable' and now_ms - self.phase_ms >= SESSION_TIMEOUT_MS:
       self._abort(now_ms, 'no_communication_disable_ack')
     elif self.phase == 'wait_quiet':
