@@ -121,3 +121,19 @@ was added to compile the full C library and run both this source-contract
 test and the 19 integration tests. At the time of writing GitHub
 has **zero workflow runs for this PR branch**; an absent run must not
 be reported as a passing build.
+
+## Negative mutation checks
+
+The standalone C gate contract was further checked against **four
+deliberately damaged versions** of the header function. All four were
+correctly rejected by the local test runner:
+
+1. Extend the 120ms bound to 130ms (stale data accepted)
+2. Bypass the RX checksum status (corrupt input accepted)
+3. Change the counter threshold from strict `< MAX_WRONG_COUNTERS`
+   to inclusive `<=`
+4. Remove the required brake signal ID 0x175
+
+This only establishes that the standalone checks are sensitive to these
+specific regressions. The current branch still has **no confirmed remote
+GitHub Actions job execution** and no full panda safety compilation.
