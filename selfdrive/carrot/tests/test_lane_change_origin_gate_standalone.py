@@ -11,6 +11,7 @@ import sys
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from random import Random
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -107,6 +108,20 @@ class OneTouchOriginGate(unittest.TestCase):
     assist = ASSIST.LaneChangeSpeedAssist()
     for i in range(10):
       self.assertIsNone(assist.update(i*.05, 27., model("preLaneChange", origin=True), (Point(),)))
+
+  def test_randomized_atc_only_18k_frames_never_selects_side_lead(self):
+    rng = Random(20261126)
+    for _ in range(75):
+      assist = ASSIST.LaneChangeSpeedAssist()
+      for frame in range(240):
+        state = rng.choice(("off", "preLaneChange", "laneChangeStarting", "laneChangeFinishing"))
+        direction = rng.choice(("left", "right"))
+        point = Point(y_rel=3.6 if direction == "left" else -3.6,
+                      d_rel=rng.uniform(15., 75.),
+                      v_lead=rng.uniform(4., 28.),
+                      v_rel=rng.uniform(-12., -0.2))
+        result = assist.update(frame*.05, 27., model(state, direction, origin=False), (point,))
+        self.assertIsNone(result)
 
   def test_source_contract_has_unique_bool_schema_field(self):
     schema = (ROOT / "cereal/log.capnp").read_text(encoding="utf-8")
