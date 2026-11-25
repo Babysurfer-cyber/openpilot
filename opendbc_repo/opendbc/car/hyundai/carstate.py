@@ -604,7 +604,8 @@ class CarState(CarStateBase):
     timestamp = self._vehicle_navi_message_timestamp(cp, "BLINKER_STALKS")
     age_ns = cp._last_update_nanos - timestamp
     # A valid main CAN bus does not imply that the optional stalk message is
-    # fresh. Normal ~10 Hz frames tolerate jitter or one missed frame (250ms).
+    # fresh. Observed EV6 0x3C1 is about 5 Hz (~200ms); 250ms tolerates
+    # normal jitter but intentionally drops assistance if a frame is missed.
     frame_fresh = bool(
       self.blinker_stalks is not None and timestamp > 0
       and 0 <= age_ns <= 250_000_000
