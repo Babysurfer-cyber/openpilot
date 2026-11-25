@@ -313,7 +313,7 @@ class VCruiseCarrot:
       self.autoCruiseControl_cancel_timer = max(0, self.autoCruiseControl_cancel_timer - 1)
 
     CC = sm['carControl']
-    if sm.alive['carrotMan'] and sm.valid.get('carrotMan', False):
+    if sm.alive['carrotMan'] and sm.valid.get('carrotMan', True):
       carrot_man = sm['carrotMan']
       self.nRoadLimitSpeed = carrot_man.nRoadLimitSpeed
       self.desiredSpeed = carrot_man.desiredSpeed
@@ -337,7 +337,9 @@ class VCruiseCarrot:
       self.d_rel = lead.dRel if lead.status else 0
       self.v_rel = lead.vRel if lead.status else 0
       self.v_lead_kph = lead.vLeadK * CV.MS_TO_KPH if lead.status else 0
-      self._carrot_lead_fresh = bool(lead.status)
+      self._carrot_lead_fresh = bool(
+        lead.status and 0 <= time.monotonic() - sm.recv_time['radarState'] <= 0.25
+      )
     else:
       # Other cruise paths must not use last frame's stale lead either.
       self.d_rel = self.v_rel = self.v_lead_kph = 0
@@ -1056,8 +1058,14 @@ class VCruiseCarrot:
     # become a permanent low cruise setting when the warning clears.
     deferred = getattr(self, "_carrot_restore_deferred_target", None)
     if deferred is not None and not self.carrot_cruise_active and automatic_carrot_restore_target is None:
+      # Do not release a higher target on an unknown 4BE source either.
+      use_mixed = (getattr(CS, "navLinkClass", 0) in (2, 3)
+                   or (getattr(CS, "navLinkClass", 0) != 1 and not self.auto_source_high))
+      selected_limit = (self._auto_road_limit(getattr(CS, "speedLimit", 0))
+                        if use_mixed and getattr(CS, "speedLimitDataValid", False)
+                        else self._auto_road_limit(getattr(CS, "navSpeedLimit", 0)) if not use_mixed else 0)
       fresh = bool(CS.canValid and getattr(CS, "navDataValid", False)
-                   and self._auto_road_limit(getattr(CS, "navSpeedLimit", 0)) > 0)
+                   and selected_limit > 0)
       section_active = bool(getattr(CS, "navSectionValid", False)
                             and getattr(CS, "navSectionActive", False))
       toll_active = getattr(CS, "navTollExist", 0) == 1 and getattr(CS, "navLinkClass", 0) == 1
