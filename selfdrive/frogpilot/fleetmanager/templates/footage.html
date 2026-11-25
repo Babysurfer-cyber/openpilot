@@ -18,6 +18,8 @@
             {% if row.segment %}
               <img class="preview-img" data-segment="{{ row.segment }}" alt="Dashcam preview" loading="lazy">
               <span class="preview-status">미리보기 준비 중...</span>
+            {% elif row.play_segment %}
+              <span class="preview-status">fcamera 녹화영상 (미리보기 없음)</span>
             {% else %}
               <span class="preview-status">녹화영상 없음 (로그만 존재)</span>
             {% endif %}
@@ -25,8 +27,8 @@
           <div class="card-body">
             <div class="small text-muted">{{ row.name }}</div>
             <div class="small">{{ row.date }}</div>
-            {% if row.segment %}
-              <a class="btn btn-primary btn-sm mt-3" href="/footage/{{ row.name }}?{{ row.segment.rsplit('--', 1)[-1] }},qcamera">View</a>
+            {% if row.play_segment %}
+              <a class="btn btn-primary btn-sm mt-3" href="/footage/{{ row.name }}?{{ row.play_segment.rsplit('--', 1)[-1] }},{{ row.play_type }}">View</a>
             {% else %}
               <button class="btn btn-secondary btn-sm mt-3" disabled>영상 없음</button>
             {% endif %}
