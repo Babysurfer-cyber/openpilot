@@ -31,6 +31,20 @@ one event per line, in nondecreasing monotonic millisecond order:
 - Independent CAN-FD analyzer health (all fields mandatory):
   {"ms":20,"direction":"health","bus":0,"bus_off":false,"error_warning":false,"error_passive":false,"errors":0,"tx_lost":0,"rx_lost":0,"capture_dropped":0}
 
+The **bus field is mandatory and must be a nonnegative integer on every
+record**, including health telemetry and ECU replies. In older versions a
+missing bus value was silently treated as bus 0, which could falsely accept
+a purported ECU reply. Version with this fix fails closed instead. A wrong
+payload, missing address, invalid hex or unexpected SPAS stock counter jump
+also fails the bench verdict.
+
+The validator itself sends **zero** CAN packets. The
+`captured_aprk_requests` output counts diagnostic transmissions observed
+**in the supplied bench trace** (which may be greater than zero); it is not
+the validator's own transmit count. The `evidence_is_authenticated=false`
+field highlights that JSONL alone cannot establish ECU or instrument
+provenance. Synthetic successes are never real ECU evidence.
+
 Capture direction **rx** means actual bus receive, not host sendcan, return
 echo bus 128, or rejected bus 192. Real bench equipment and an isolated OEM
 ECU/power source are prerequisites. DO NOT run ECU-session or communication
