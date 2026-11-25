@@ -377,31 +377,31 @@ def fcamera(cameratype, segment):
 
 @app.route("/footage/<route>")
 def route(route):
-    if len(route) != 20:
-        return render_template("error.html", error="route not found")
+    if not ROUTE_PATTERN.fullmatch(route):
+        abort(404)
+    query_params = request.query_string.decode("utf-8").split(",")
+    query_segment = query_params[0] if query_params and query_params[0].isdigit() else "0"
+    query_type = query_params[1] if len(query_params) >= 2 and query_params[1] in ("qcamera", "fcamera", "dcamera", "ecamera") else "qcamera"
 
-    query_params = request.query_string.decode('utf-8').split(',')
-    if len(query_params) >= 2:
-        query_segment = query_params[0]
-        query_type = query_params[1]
-    else:
-        query_segment = "0"
-        query_type = "qcamera"
+    segments = fleet.segments_in_route(route)
+    if not segments:
+        return render_template("error.html", error="No recording segments are stored for this route")
 
-    links = []
-    segments = []
-    for segment in fleet.segments_in_route(route):
-        seg_num = segment.split("--")[2]
-        links.append(f'<a href="{route}?{seg_num},{query_type}">{segment}</a>')
-        segments.append(f"'{segment}'")
-    
-    return render_template("route.html", 
-                         route=route,
-                         query_type=query_type,
-                         links="<br>".join(links),
-                         segments=",".join(segments),
-                         query_segment=query_segment)
+    file_name = query_type + (".ts" if query_type == "qcamera" else ".hevc")
+    selected = f"{route}--{query_segment}"
+    if selected not in segments or not os.path.isfile(os.path.join(Paths.log_root(), selected, file_name)):
+        playable = [segment for segment in segments
+                    if os.path.isfile(os.path.join(Paths.log_root(), segment, file_name))]
+        if not playable:
+            return render_template("error.html", error="No playable video for this camera; only logs may remain")
+        query_segment = playable[0].rsplit("--", 1)[-1]
 
+    links = [f'<a href="{route}?{segment.rsplit("--", 1)[-1]},{query_type}">{segment}</a>'
+             for segment in segments]
+    return render_template("route.html", route=route, query_type=query_type,
+                           links="<br>".join(links),
+                           segments=",".join(f"'{segment}'" for segment in segments),
+                           query_segment=query_segment)
 
 @app.route("/footage/")
 @app.route("/footage")
