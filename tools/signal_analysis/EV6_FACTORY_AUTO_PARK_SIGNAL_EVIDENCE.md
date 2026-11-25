@@ -87,6 +87,20 @@ openpilot/LogReader 환경의 통합 실행은 아직 검증되지 않았다.
 같은 결과가 발생했다는 뜻은 아니지만 **차량에서 위험을 감수하고
 수신 확인 없이 송신을 시작해서는 안 되는 근거**입니다.
 
+### 버스 기록 재검증 명령
+
+PR #43에 추가된 `ev6_spas_bus_route_audit.py`는 추출된 CAN CSV의
+`t_sec,can_id,bus,payload_hex` 필드를 읽어 위 표의 source별
+메시지 수, 시간 범위와 정확히 일치하는 프레임 수를 계산한다.
+
+```bash
+python tools/signal_analysis/ev6_spas_bus_route_audit.py extract_6.csv extract_7.csv --output ev6_spas_route_report.json
+```
+
+이 스크립트도 **read-only**이며 Panda, SocketCAN, UDS 송신 인터페이스를
+사용하지 않는다. `src=130`의 물리적 송신 출처를 증명한다고
+주장해서는 안 된다.
+
 ## 검증 자동화
 
 `ev6_spas_oem_transition_test.py`가 이제 `factory_lamp_without_stalk`를
