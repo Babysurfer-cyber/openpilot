@@ -22,6 +22,9 @@ def after_disable():
   bench = initial()
   assert bench.start(190, Context())
   bench.response(210, RESPONSE, 0, POS_SESSION)
+  # Genuine stream liveness after session ACK (PR #45 pre-disable gate).
+  bench.stock(212, 0x165, 10)
+  bench.stock(214, 0x16A, 10)
   bench.response(230, RESPONSE, 0, POS_DISABLE)
   assert bench.phase == 'wait_quiet'
   return bench
@@ -109,6 +112,32 @@ class TestEV6AprkHandoffBench(unittest.TestCase):
     self.assertEqual(b.phase, 'wait_restore_enable')
     self.assertEqual(b.reason, 'stock_contract_failed')
     self.assertFalse(any('ELIGIBLE' in e['event'] for e in b.audit))
+
+  def test_disable_ack_without_post_session_stock_is_not_proof(self):
+    b = initial()
+    b.start(190, Context())
+    b.response(210, RESPONSE, 0, POS_SESSION)
+    b.response(230, RESPONSE, 0, POS_DISABLE)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'oem_spas_not_live_after_session_ack')
+    self.assertFalse(any('ELIGIBLE' in e['event'] for e in b.audit))
+
+  def test_disable_ack_with_only_one_stock_stream_is_not_proof(self):
+    b = initial()
+    b.start(190, Context())
+    b.response(210, RESPONSE, 0, POS_SESSION)
+    b.stock(212, 0x165, 10)
+    b.response(230, RESPONSE, 0, POS_DISABLE)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'oem_spas_not_live_after_session_ack')
+
+  def test_bad_stock_during_session_handoff_revokes(self):
+    b = initial()
+    b.start(190, Context())
+    b.response(210, RESPONSE, 0, POS_SESSION)
+    b.stock(212, 0x165, 10, crc_ok=False)
+    self.assertEqual(b.phase, 'wait_restore_enable')
+    self.assertEqual(b.reason, 'stock_contract_failed')
 
   def test_stock_resumes_revokes(self):
     b = after_disable()
