@@ -14,19 +14,18 @@
     <section class="mx-auto mt-2 mb-3 px-2" style="max-width:700px" aria-label="영상 탐색">
       <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 mb-2">
         <button type="button" id="prevSegment" class="btn btn-outline-primary btn-sm" aria-label="이전 1분 영상">◀ 이전 영상</button>
-        <button type="button" id="skipBack" class="btn btn-outline-primary btn-sm" aria-label="10초 뒤로">↶ 10초</button>
-        <button type="button" id="skipForward" class="btn btn-outline-primary btn-sm" aria-label="10초 앞으로">10초 ↷</button>
         <button type="button" id="nextSegment" class="btn btn-outline-primary btn-sm" aria-label="다음 1분 영상">다음 영상 ▶</button>
-        <label for="playbackRate" class="small mb-0">재생속도</label>
-        <select id="playbackRate" class="form-select form-select-sm" style="width:86px" aria-label="재생속도">
-          <option value="1">1×</option><option value="1.5">1.5×</option>
-          <option value="2">2×</option><option value="4">4×</option>
-        </select>
       </div>
-      <div class="text-center small mb-1" aria-label="현재 영상 재생 시점">
-        현재 재생 시점 <span id="seekClock" class="fw-semibold" role="timer">00:00 / 01:00</span>
+      <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 mb-2" role="group" aria-label="영상 재생속도 선택">
+        <span class="small me-1">재생속도</span>
+        <button type="button" class="btn btn-primary rate-button" data-playback-rate="1" aria-pressed="true">1×</button>
+        <button type="button" class="btn btn-outline-primary rate-button" data-playback-rate="2" aria-pressed="false">2×</button>
+        <button type="button" class="btn btn-outline-primary rate-button" data-playback-rate="4" aria-pressed="false">4×</button>
       </div>
-      <div id="playbackHint" class="small text-center text-muted">±10초 버튼으로 이동 · 영상 좌우 밀기로 이전/다음</div>
+      <div id="playbackHint" class="small text-center text-muted">재생 시간은 영상 자체 컨트롤에 표시 · 좌우 밀기로 이전/다음</div>
+      <style>
+        .rate-button { min-width: 70px; min-height: 44px; font-weight: 600; }
+      </style>
     </section>
     <br>
     <div class="camera-switcher d-flex justify-content-center gap-2 mb-3">
@@ -129,45 +128,36 @@
         let currentSegment = playableSegments[currentSegmentIndex];
 
         const video = document.getElementById('video');
-        const seekClock = document.getElementById('seekClock');
-        const rateSelect = document.getElementById('playbackRate');
         const prevButton = document.getElementById('prevSegment');
         const nextButton = document.getElementById('nextSegment');
-        let streamStart = 0;
-        // This is the same absolute playhead previously displayed by the
-        // seek slider. Store it independently so +/-10s remains functional.
-        let currentPosition = 0;
-        let clipDuration = 60;
+        const rateButtons = Array.from(document.querySelectorAll('[data-playback-rate]'));
+        let selectedRate = 1;
         const segmentNumber = segment => segment.split('--').slice(-1)[0];
-        const clampPosition = seconds => Math.min(Math.max(Number(seconds) || 0, 0), Math.max(0, clipDuration - 0.5));
-        const clock = seconds => {
-          const value = Math.max(0, Math.floor(seconds));
-          return String(Math.floor(value / 60)).padStart(2, '0') + ':' +
-                 String(value % 60).padStart(2, '0');
-        };
 
-        function refreshPosition(seconds) {
-          const position = Math.min(clipDuration, Math.max(0, Number(seconds) || 0));
-          currentPosition = position;
-          seekClock.textContent = clock(position) + ' / ' + clock(clipDuration);
+        // Change only the browser's playback rate. Do not restart the stream.
+        function selectPlaybackRate(rate) {
+          selectedRate = rate;
+          video.playbackRate = rate;
+          rateButtons.forEach(button => {
+            const active = Number(button.dataset.playbackRate) === rate;
+            button.classList.toggle('btn-primary', active);
+            button.classList.toggle('btn-outline-primary', !active);
+            button.setAttribute('aria-pressed', String(active));
+          });
         }
+        rateButtons.forEach(button => button.addEventListener('click', () => {
+          selectPlaybackRate(Number(button.dataset.playbackRate));
+        }));
 
-        function openStream(fromSeconds, shouldPlay) {
-          streamStart = clampPosition(fromSeconds);
-          refreshPosition(streamStart);
+        function openStream(shouldPlay) {
           video.pause();
           video.src = '/footage/' + encodeURIComponent(cameraType) + '/' +
-                      encodeURIComponent(currentSegment) + '?start=' + streamStart.toFixed(1);
+                      encodeURIComponent(currentSegment);
           video.load();
-          video.playbackRate = Number(rateSelect.value);
+          video.playbackRate = selectedRate;
           if (shouldPlay) video.play().catch(() => {
             document.getElementById('playbackHint').textContent = '자동재생이 차단되었습니다. ▶ 재생을 눌러주세요.';
           });
-        }
-
-        function seekTo(seconds) {
-          const wasPlaying = !video.paused && !video.ended;
-          openStream(seconds, wasPlaying);
         }
 
         function showSegment() {
@@ -193,9 +183,8 @@
           if (index < 0 || index >= playableSegments.length) return;
           currentSegmentIndex = index;
           currentSegment = playableSegments[currentSegmentIndex];
-          clipDuration = 60;
           showSegment();
-          openStream(0, true);
+          openStream(true);
         }
 
         function changeSegment(delta) {
@@ -215,36 +204,9 @@
 
         prevButton.addEventListener('click', () => changeSegment(-1));
         nextButton.addEventListener('click', () => changeSegment(1));
-        // The slider was removed, but the +/-10s buttons still use the
-        // absolute playhead recorded by refreshPosition(). Avoid recomputing
-        // from currentTime during a stream switch (it may be stale).
-        function skipBySeconds(delta) {
-          const lastSecond = Math.max(0, Math.floor(clipDuration - 0.5));
-          const target = Math.max(0, Math.min(lastSecond, currentPosition + delta));
-          if (Math.abs(target - currentPosition) < 0.5) return;
-          seekTo(target);
-        }
-
-        document.getElementById('skipBack').addEventListener('click',
-          () => skipBySeconds(-10));
-        document.getElementById('skipForward').addEventListener('click',
-          () => skipBySeconds(10));
-        rateSelect.addEventListener('change', () => {
-          video.playbackRate = Number(rateSelect.value);
-        });
+        // The browser can reset playbackRate when the next clip loads.
         video.addEventListener('loadedmetadata', () => {
-          video.playbackRate = Number(rateSelect.value);
-          const duration = video.duration;
-          // The original 1-minute TS/HEVC files can be shorter if recording
-          // stopped mid-segment. Never enlarge the seek range from MP4 metadata.
-          if (Number.isFinite(duration) && duration > 0 && duration < 75) {
-            clipDuration = Math.min(60, streamStart + duration);
-            refreshPosition(currentPosition);
-          }
-        });
-        video.addEventListener('timeupdate', () => {
-          const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-          refreshPosition(streamStart + current);
+          video.playbackRate = selectedRate;
         });
         video.addEventListener('ended', () => {
           if (currentSegmentIndex < playableSegments.length - 1) changeSegment(1);
@@ -270,7 +232,7 @@
         }, {passive: true});
 
         showSegment();
-        openStream(0, true);
+        openStream(true);
 
         function toggleAllSegments() {
             const checkboxes = document.querySelectorAll('.segment-checkbox');

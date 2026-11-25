@@ -68,28 +68,63 @@ ROUTE_PATTERN = re.compile(r"^(?:\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}|[0-9a-fA-F
 SEGMENT_PATTERN = re.compile(ROUTE_PATTERN.pattern[:-1] + r"--\d+$")
 
 
+def _valid_preview_image(path):
+  """Reject empty/partial GIFs left from previous failed conversions."""
+  try:
+    if os.path.getsize(path) < 20:
+      return False
+    with open(path, "rb") as image_file:
+      return image_file.read(6) in (b"GIF87a", b"GIF89a")
+  except OSError:
+    return False
+
+
 def _create_preview(segment):
   segment_dir = os.path.join(Paths.log_root(), segment)
-  source = os.path.join(segment_dir, "qcamera.ts")
+  # Prefer cheap qcamera decoding, but recordings may contain only fcamera.
+  # Falling back also handles a corrupt / empty qcamera in a mixed segment.
+  sources = [os.path.join(segment_dir, name) for name in ("qcamera.ts", "fcamera.hevc")]
   preview = os.path.join(segment_dir, "preview.gif")
   temporary = os.path.join(segment_dir, "preview.part.gif")
   success = False
 
   try:
-    if not os.path.isfile(source):
-      raise FileNotFoundError(source)
-    # Seek before decoding; bound CPU usage and process duration.
-    subprocess.run(
-      ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1",
-       "-i", source, "-ss", "5", "-frames:v", "1", "-y", temporary],
-      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=True,
-    )
-    if not os.path.isfile(temporary) or os.path.getsize(temporary) == 0:
-      raise RuntimeError("ffmpeg did not produce a preview")
-    os.replace(temporary, preview)
-    success = True
-  except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
-    cloudlog.warning(f"Fleet preview failed for {segment}: {exc}")
+    for source in sources:
+      if not os.path.isfile(source) or os.path.getsize(source) == 0:
+        continue
+      # Decode the first available frame, avoiding failures when the source
+      # lasts less than two seconds. A 2s fallback can bypass a damaged
+      # leading qcamera frame.
+      seek_times = (0,) if source.endswith(".hevc") else (0, 2)
+      for seek_at in seek_times:
+        try:
+          command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1"]
+          if source.endswith(".hevc"):
+            command += ["-f", "hevc", "-r", "20"]
+          command += ["-i", source]
+          if seek_at:
+            command += ["-ss", str(seek_at)]
+          command += ["-an", "-vf", "scale=480:-2", "-frames:v", "1", "-y", temporary]
+          subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         timeout=12, check=True)
+          if _valid_preview_image(temporary):
+            os.replace(temporary, preview)
+            success = True
+            break
+        except (OSError, subprocess.SubprocessError) as exc:
+          cloudlog.warning(f"Fleet preview source {os.path.basename(source)} failed for {segment}: {exc}")
+        finally:
+          if os.path.isfile(temporary):
+            try:
+              os.remove(temporary)
+            except OSError:
+              pass
+      if success:
+        break
+    if not success:
+      cloudlog.warning(f"Fleet preview unavailable for {segment}: no decodable camera recording")
+  except OSError as exc:
+    cloudlog.warning(f"Fleet preview file error for {segment}: {exc}")
   finally:
     if os.path.exists(temporary):
       try:
@@ -113,10 +148,20 @@ def preview_thumbnail(segment):
   preview_name = "preview.gif"
   preview_path = os.path.join(preview_dir, preview_name)
 
-  if os.path.isfile(preview_path) and os.path.getsize(preview_path) > 0:
+  if _valid_preview_image(preview_path):
     return send_from_directory(preview_dir, preview_name, mimetype="image/gif", max_age=300)
 
-  if not os.path.isfile(os.path.join(preview_dir, "qcamera.ts")):
+  # A corrupt cached preview would otherwise be sent as a successful image
+  # forever, leaving a blank card even when the recording is valid.
+  if os.path.isfile(preview_path):
+    try:
+      os.remove(preview_path)
+    except OSError:
+      pass
+
+  has_camera = any(fleet.playable_camera_segments([segment], camera, Paths.log_root())
+                   for camera in ("qcamera", "fcamera"))
+  if not has_camera:
     return jsonify({"status": "missing_recording"}), 404
 
   with PREVIEW_LOCK:
@@ -453,7 +498,8 @@ def footage():
     camera, playable = fleet.preferred_camera_segments(route_segments, Paths.log_root())
     play_segment = playable[0] if playable else None
     previews = fleet.playable_camera_segments(route_segments, "qcamera", Paths.log_root())
-    segment = previews[0] if previews else None
+    # fcamera-only routes still have a thumbnail source even without qcamera.
+    segment = previews[0] if previews else play_segment
     try:
       date_folder = os.path.join(Paths.log_root(), f"{name}--{numbers[0]}")
       date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.stat(date_folder).st_ctime))
