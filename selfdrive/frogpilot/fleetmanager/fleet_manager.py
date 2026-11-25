@@ -60,8 +60,11 @@ PREVIEW_RETRY_AFTER = {}
 PREVIEW_QUEUE_LIMIT = 8
 PREVIEW_FAILURE_COOLDOWN = 180.0
 FOOTAGE_PAGE_SIZE = 20
-ROUTE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}$")
-SEGMENT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}--\d+$")
+# Older/newer loggers may use either calendar timestamps or hex route IDs.
+# Screenshot example: 00000d3f--5a12c700c9 (8 hex digits + "--" + 10 hex digits).
+# Keep strict, path-safe IDs; never allow slashes or parent-directory traversal.
+ROUTE_PATTERN = re.compile(r"^(?:\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}|[0-9a-fA-F]{8}--[0-9a-fA-F]{10})$")
+SEGMENT_PATTERN = re.compile(ROUTE_PATTERN.pattern[:-1] + r"--\d+$")
 
 
 def _create_preview(segment):
