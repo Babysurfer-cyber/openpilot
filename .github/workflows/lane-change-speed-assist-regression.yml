@@ -11,6 +11,8 @@ on:
     paths:
       - .github/workflows/lane-change-speed-assist-regression.yml
       - cereal/log.capnp
+      - opendbc_repo/opendbc/car/car.capnp
+      - opendbc_repo/opendbc/car/hyundai/carstate.py
       - selfdrive/modeld/modeld.py
       - selfdrive/controls/lib/desire_helper.py
       - selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py
@@ -38,6 +40,11 @@ jobs:
           python-version: "3.11"
       - name: Install minimal test dependencies
         run: python -m pip install --disable-pip-version-check numpy pytest
+      - name: Verify canonical CarState schema symlink
+        run: |
+          test -L cereal/car.capnp
+          test "$(readlink cereal/car.capnp)" = "../opendbc_repo/opendbc/car/car.capnp"
+          grep -q 'blinkerStalkValid @96 :Bool;' opendbc_repo/opendbc/car/car.capnp
       - name: Syntax check
         run: |
           python -m py_compile \
@@ -49,7 +56,8 @@ jobs:
             selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py \
             selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py \
             selfdrive/modeld/modeld.py \
-            selfdrive/controls/lib/desire_helper.py
+            selfdrive/controls/lib/desire_helper.py \
+            opendbc_repo/opendbc/car/hyundai/carstate.py
       - name: Run direct and production-AST regression tests
         run: |
           export PYTHONPATH="$(dirname "$PWD")"
