@@ -11,6 +11,19 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from ev6_spas_onset_sequence import check_spas2
+
+
+def checked_spas2_control(payload_hex):
+  """Decode direction only from a complete, CRC-valid, 32-byte OEM frame."""
+  try:
+    data = bytes.fromhex(payload_hex)
+  except (TypeError, ValueError):
+    return None
+  if not check_spas2(data):
+    return None
+  return (data[16] >> 5) & 7
+
 WATCH = {0x165, 0x16A}
 SOURCES = (0, 2, 130)
 
@@ -26,6 +39,7 @@ def summarize(path: Path):
     "cereal src=130 is a returned/forwarded frame, NOT a second physical parking ECU",
     "Matching timestamps/payloads across buses do not prove the physical ECU source",
     "No external CAN/UDS commands; read-only historic CAN evidence only",
+    "Raw source counts include all observed rows; direction inference requires intact CRC/length",
   ]}
   for addr in sorted(WATCH):
     g = packets[addr]
@@ -43,14 +57,25 @@ def summarize(path: Path):
       "bus0_after_5s": sum(t > 5 for t, _ in g[0]),
     }
     if addr == 0x16A:
-      def command(payload):
-        return (int(payload[32:34], 16) >> 5) & 7 if len(payload) >= 34 else None
-      counts = Counter(command(payload) for _, payload in g[0])
-      active = [t for t, payload in g[0] if command(payload) in (3, 4)]
+      directions = {src: [(t, checked_spas2_control(payload)) for t, payload in g[src]]
+                    for src in SOURCES}
+      invalid = {src: sum(direction is None for _, direction in directions[src]) for src in SOURCES}
+      summary["invalid_spas2_crc_or_length_by_source"] = {
+        str(src): invalid[src] for src in SOURCES
+      }
+      # If *any* original bus-0 SPAS2 frame is invalid, the apparent first
+      # direction may hide a missing/corrupt earlier command. Do not conclude.
+      trustworthy_bus0 = bool(g[0]) and invalid[0] == 0
+      summary["spas2_direction_inference_valid_bus0"] = trustworthy_bus0
+      counts = Counter(direction for _, direction in directions[0]) if trustworthy_bus0 else Counter()
+      active = [t for t, direction in directions[0] if direction in (3, 4)] if trustworthy_bus0 else []
       summary["spas2_control_histogram_bus0"] = {str(k): v for k, v in sorted(counts.items())}
-      summary["first_direction_command_s"] = round(active[0], 3) if active else None
-      summary["direct_bus2_rx_during_direction_command_count"] = sum(
-        command(payload) in (3, 4) for _, payload in g[2])
+      summary["first_direction_command_s"] = round(min(active), 3) if active else None
+      # Corrupt direct bus-2 frames cannot be counted as evidence of zero commands.
+      summary["direct_bus2_rx_during_direction_command_count"] = (
+        sum(direction in (3, 4) for _, direction in directions[2])
+        if invalid[2] == 0 else None
+      )
     result["addresses"][f"0x{addr:03x}"] = summary
   return result
 
