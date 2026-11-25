@@ -19,6 +19,7 @@ PR46_STOCK_GUARD = (0x35, 0x175, 0xA0)
 
 def inspect_saved_capture(path):
   counts = Counter()
+  by_bus = {0: Counter(), 1: Counter(), 2: Counter()}  # metadata, NOT trusted ECU origin
   bad_spas_crc = 0
   bad_stalk_crc = 0
   bad_lamp_length = 0
@@ -26,6 +27,8 @@ def inspect_saved_capture(path):
   active_stalk = 0
   ignored_other_bus = 0
   for _stamp, addr, bus, payload in _decode_capture(path):
+    if bus in by_bus and addr in TARGETS:
+      by_bus[bus][addr] += 1
     if bus != 0:
       ignored_other_bus += 1
       continue
@@ -51,6 +54,8 @@ def inspect_saved_capture(path):
   ]
   if missing:
     blockers.append('MISSING_PANDA_PARK_BRAKE_WHEEL_BUS0_INPUTS:' + ','.join(missing))
+  if all(by_bus[1][a] for a in PR46_STOCK_GUARD) and missing:
+    blockers.append('HDA2_BUS1_RX_EVIDENCE_CANNOT_SATISFY_UNVERIFIED_BUS0_PANDA_GUARD')
   if not counts[0x7B1] or not counts[0x7B9]:
     blockers.append('NO_MATCHED_APRK_DIAGNOSTIC_REQUEST_RESPONSE_EVIDENCE')
   if not counts[0x165] or not counts[0x16A]:
@@ -65,6 +70,18 @@ def inspect_saved_capture(path):
     'transmitted_by_tool': 0,
     'evidence_is_authenticated': False,
     'reported_bus0_counts': {f'0x{a:X}': counts[a] for a in TARGETS},
+    'reported_can_id_counts_by_bus': {
+      str(bus): {f'0x{a:X}': by_bus[bus][a] for a in TARGETS}
+      for bus in (0, 1, 2)
+    },
+    'park_guard_input_counts_by_bus': {
+      str(bus): {f'0x{a:X}': by_bus[bus][a] for a in PR46_STOCK_GUARD}
+      for bus in (0, 1, 2)
+    },
+    'buses_with_all_three_park_guard_ids_observed': [
+      bus for bus in (0, 1, 2) if all(by_bus[bus][a] for a in PR46_STOCK_GUARD)
+    ],
+    'bus_routing_proven_by_this_report': False,
     'ignored_nonzero_bus_records': ignored_other_bus,
     'neutral_0x3c1_samples': neutral_stalk,
     'nonneutral_0x3c1_samples': active_stalk,
