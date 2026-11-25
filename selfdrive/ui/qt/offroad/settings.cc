@@ -701,8 +701,6 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   //cruiseToggles->addItem(new CValueControl("MyHighModeFactor", "DRIVEMODE: HIGH ratio(100%)", "AccelRatio control ratio", 100, 300, 10));
 
   latLongToggles = new ListWidget(this);
-  latLongToggles->addItem(new CValueControl("UseLaneLineSpeed", tr("Laneline mode speed(0)"), tr("Laneline mode, lat_mpc control used"), 0, 200, 5));
-  latLongToggles->addItem(new CValueControl("UseLaneLineCurveSpeed", tr("Laneline mode curve speed(0)"), tr("Laneline mode, high speed only"), 0, 200, 5));
   latLongToggles->addItem(new CValueControl("AdjustLaneOffset", tr("AdjustLaneOffset(0)cm"), "", 0, 500, 5));
   latLongToggles->addItem(new CValueControl("LaneChangeNeedTorque", tr("LaneChange need torque"), tr("-1:Disable lanechange, 0: no need torque, 1:need torque"), -1, 1, 1));
   latLongToggles->addItem(new CValueControl("LaneChangeDelay", tr("LaneChange delay"), tr("x0.1sec"), 0, 100, 5));
@@ -769,8 +767,6 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   pathToggles->addItem(new CValueControl("ShowPathColorCruiseOff", tr("Path Color: Cruise OFF"), tr("(+10:Stroke)0:Red,1:Orange,2:Yellow,3:Green,4:Blue,5:Indigo,6:Violet,7:Brown,8:White,9:Black"), 0, 19, 1));
   pathToggles->addItem(new CValueControl("ShowPathMode", tr("Path Mode: Laneless"), tr("0:Normal,1,2:Rec,3,4:^^,5,6:Rec,7,8:^^,9,10,11,12:Smooth^^"), 0, 15, 1));
   pathToggles->addItem(new CValueControl("ShowPathColor", tr("Path Color: Laneless"), tr("(+10:Stroke)0:Red,1:Orange,2:Yellow,3:Green,4:Blue,5:Indigo,6:Violet,7:Brown,8:White,9:Black"), 0, 19, 1));
-  pathToggles->addItem(new CValueControl("ShowPathModeLane", tr("Path Mode: LaneMode"), tr("0:Normal,1,2:Rec,3,4:^^,5,6:Rec,7,8:^^,9,10,11,12:Smooth^^"), 0, 15, 1));
-  pathToggles->addItem(new CValueControl("ShowPathColorLane", tr("Path Color: LaneMode"), tr("(+10:Stroke)0:Red,1:Orange,2:Yellow,3:Green,4:Blue,5:Indigo,6:Violet,7:Brown,8:White,9:Black"), 0, 19, 1));
   pathToggles->addItem(new CValueControl("ShowPathWidth", tr("Path Width ratio(100%)"), "", 10, 200, 10));
 
   startToggles = new ListWidget(this);
