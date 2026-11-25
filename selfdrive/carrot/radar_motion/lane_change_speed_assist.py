@@ -32,11 +32,22 @@ def _side_of_point(model: Any, point: Any) -> str | None:
   source = str(getattr(point, "source", ""))
   if source != "frontRadar" and not source.startswith("corner"):
     return None
-  if not getattr(point, "measured", False) or not 0.0 < point.d_rel < 80.0:
+  if not getattr(point, "measured", False):
+    return None
+  try:
+    radar_values = (point.d_rel, point.y_rel, point.v_rel, point.v_lead, point.yv_rel)
+    if not all(math.isfinite(float(v)) for v in radar_values) or not 0.0 < point.d_rel < 80.0:
+      return None
+  except (ValueError, TypeError):
     return None
   lines = getattr(model, "laneLines", ())
   probs = getattr(model, "laneLineProbs", ())
   if len(lines) < 4 or len(probs) < 4:
+    return None
+  try:
+    if not all(math.isfinite(float(p)) for p in probs[:4]):
+      return None
+  except (TypeError, ValueError):
     return None
   position_x = float(point.d_rel) + 1.52  # camera and front-radar origin offset
   try:
@@ -71,6 +82,7 @@ class LaneChangeSpeedAssist:
   def reset(self) -> None:
     self._history: dict[tuple[str, int], tuple[str, _SideHistory]] = {}
     self._state = "off"
+    self._pending_direction: str | None = None
     self._identity: tuple[str, int] | None = None
     self._last_point: Any | None = None
     self._last_s: float | None = None
@@ -101,8 +113,18 @@ class LaneChangeSpeedAssist:
       return None
 
     if state in ("off", "preLaneChange"):
-      if self._state not in ("off", "preLaneChange"):
+      if self._state not in ("off", "preLaneChange") or (state == "off" and self._state != "off"):
         self.reset()
+      if state == "preLaneChange":
+        if direction not in ("left", "right"):
+          self.reset()
+          return None
+        # A pending direction change must not borrow a previous side's history.
+        if self._state == "preLaneChange" and self._pending_direction != direction:
+          self._history.clear()
+        self._pending_direction = direction
+      else:
+        self._pending_direction = None
       self._observe(time_s, model, points)
       self._state = state
       self._identity = None
@@ -112,6 +134,11 @@ class LaneChangeSpeedAssist:
 
     if state != "laneChangeStarting" or direction not in ("left", "right"):
       self.reset()
+      return None
+    # Direction is latched in preLaneChange and cannot change during the maneuver.
+    if self._pending_direction != direction:
+      self.reset()
+      self._state = state
       return None
 
     if self._state != "laneChangeStarting":
