@@ -39,6 +39,8 @@ def make_helper():
   helper.carrot_cruise_active = False
   helper._carrot_cruise_saved_op_speed = None
   helper.auto_speed_offset = 0.0
+  helper._carrot_restore_deferred_target = None
+  helper._carrot_lead_fresh = False
   helper._add_log = lambda _: None
   helper._auto_mode_prompt = lambda _: None
   return helper
@@ -51,7 +53,7 @@ def make_inputs(**overrides):
     navDataValid=True, mapSource=0, navSectionValid=False,
     navSectionActive=False, navSpeedLimit=80, navTollExist=0,
     navLinkClass=1, speedLimit=80, speedLimitDataValid=True,
-    gasPressed=False,
+    gasPressed=False, vEgo=0.0,
   )
   state.update(overrides)
   return SimpleNamespace(**state), SimpleNamespace(enabled=True)
@@ -128,6 +130,7 @@ def coast_frame(helper, CS, CC, speed=60):
 def test_auto_mode_speed_limit_reduction_is_remembered_during_coast():
   helper, (CS, CC) = make_helper(), make_inputs()
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
 
   # At first the normal auto target remains 100, while coast is limited to 60.
@@ -150,6 +153,7 @@ def test_auto_mode_speed_limit_increase_is_remembered_during_coast():
   helper, (CS, CC) = make_helper(), make_inputs()
   helper._v_cruise_kph_at_brake = 100
   helper.auto_speed_offset = 10
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
   assert coast_frame(helper, CS, CC) == pytest.approx(60)
 
@@ -165,6 +169,7 @@ def test_auto_mode_speed_limit_increase_is_remembered_during_coast():
 def test_camera_pending_during_coast_still_holds_lower_restore_speed():
   helper, (CS, CC) = make_helper(), make_inputs(mapSource=2)
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
   assert coast_frame(helper, CS, CC) == pytest.approx(60)
   assert helper.camera_pending
@@ -177,6 +182,7 @@ def test_camera_pending_during_coast_still_holds_lower_restore_speed():
 def test_tollgate_transition_is_tracked_in_shadow_not_by_coasting_speed():
   helper, (CS, CC) = make_helper(), make_inputs(navTollExist=1)
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper.carrot_cruise_active = True
   assert coast_frame(helper, CS, CC, 60) == pytest.approx(60)
   assert helper._carrot_auto_shadow_target == pytest.approx(80)
@@ -286,6 +292,7 @@ def test_stationary_lead_exit_recovers_prior_openpilot_setpoint_after_zero_coast
   # The stationary-lead timer reaches its existing five-second threshold.
   helper.carrot_cruise_min_timer = 0
   helper.stationary_lead_timer = 499
+  helper._carrot_lead_fresh = True
   result = helper._update_cruise_buttons(CS, CC, 0)
   assert not helper.carrot_cruise_active
   assert result == pytest.approx(95)
