@@ -29,7 +29,7 @@ class _SideHistory:
   point: Any
 
 
-def _side_of_point(model: Any, point: Any) -> str | None:
+def _side_of_point(model: Any, point: Any, expected_side: str | None = None) -> str | None:
   # SCC's yRel is unreliable and must never establish adjacent-lane occupancy.
   source = str(getattr(point, "source", ""))
   if source != "frontRadar" and not source.startswith("corner"):
@@ -72,13 +72,19 @@ def _side_of_point(model: Any, point: Any) -> str | None:
     return None
   # Camera lane lines use right-positive coordinates, radar uses left-positive.
   y = -float(point.y_rel)
-  if (min(confidence[0], confidence[1]) >= 0.5
-      and LANE_WIDTH_MIN_M <= boundaries[1] - boundaries[0] <= LANE_WIDTH_MAX_M
-      and boundaries[0] + LANE_MARGIN_M < y < boundaries[1] - LANE_MARGIN_M):
+  left_valid = (min(confidence[0], confidence[1]) >= 0.5
+                and LANE_WIDTH_MIN_M <= boundaries[1] - boundaries[0] <= LANE_WIDTH_MAX_M)
+  right_valid = (min(confidence[2], confidence[3]) >= 0.5
+                 and LANE_WIDTH_MIN_M <= boundaries[3] - boundaries[2] <= LANE_WIDTH_MAX_M)
+  if expected_side == "left":
+    # During a lane change the same car can move from adjacent to current lane.
+    # Keep its identity, but reject broken lane geometry or an opposite-lane car.
+    return "left" if left_valid and y < boundaries[2] - LANE_MARGIN_M else None
+  if expected_side == "right":
+    return "right" if right_valid and y > boundaries[1] + LANE_MARGIN_M else None
+  if left_valid and boundaries[0] + LANE_MARGIN_M < y < boundaries[1] - LANE_MARGIN_M:
     return "left"
-  if (min(confidence[2], confidence[3]) >= 0.5
-      and LANE_WIDTH_MIN_M <= boundaries[3] - boundaries[2] <= LANE_WIDTH_MAX_M
-      and boundaries[2] + LANE_MARGIN_M < y < boundaries[3] - LANE_MARGIN_M):
+  if right_valid and boundaries[2] + LANE_MARGIN_M < y < boundaries[3] - LANE_MARGIN_M:
     return "right"
   return None
 
@@ -185,6 +191,11 @@ class LaneChangeSpeedAssist:
     if (point is None or self._last_point is None or self._last_s is None
         or not _continuous(self._last_point, point, time_s - self._last_s)):
       self._identity = None  # Never reacquire a different car mid-maneuver.
+      return None
+    # Revalidate the active direction's lane geometry every frame. A target
+    # latched before the maneuver must not survive loss of lane perception.
+    if _side_of_point(model, point, expected_side=direction) != direction:
+      self._identity = None
       return None
     self._last_point, self._last_s = point, time_s
     # Do not request acceleration to catch an adjacent car; preserve normal MPC.
