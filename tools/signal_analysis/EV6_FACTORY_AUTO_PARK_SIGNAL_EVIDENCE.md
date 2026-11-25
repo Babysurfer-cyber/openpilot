@@ -255,3 +255,36 @@ FNV32 해시는 수동 이전 과정의 내용 일치 확인용이지 ECU 정품
 송신 승인, panda C 통합 안전성 또는 실차 점등 성공을 의미하지
 않는다. GitHub Actions 실행 및 물리 ECU 벤치 검증은 여전히 별도로
 필요하다. **주행 브랜치 병합과 실차 시험은 NO-GO**다.
+
+
+## 2026-11-25: CAN src 비교 분석기 입력 무결성 보강
+
+`ev6_spas_bus_route_audit.py`의 기존 방향 판정은 SPAS2 페이로드의
+16번째 바이트만 읽고 CRC/길이를 확인하지 않아, 손상된 버스 기록을
+방향 명령으로 해석하거나 잘린 메시지와 정상 메시지를 섞어 처리할
+가능성이 있었다. 이 경로는 실제 방향지시등을 제어하는 코드가 아니지만,
+독립 버스 출처를 판단하는 자료의 신뢰성을 떨어뜨릴 수 있었다.
+
+수정한 읽기 전용 분석기는 `ev6_spas_onset_sequence.check_spas2`와 동일한
+32바이트/CRC16 검증을 통과한 프레임만 방향값으로 해석한다.
+`invalid_spas2_crc_or_length_by_source`로 src 0/2/130의 손상 프레임 수를
+기록하고, 버스 0에 손상 SPAS2가 하나라도 있거나 버스 0 기록이 없으면
+`spas2_direction_inference_valid_bus0=false`, 최초 방향 명령 시각 `null`로
+표시한다. 원본 수신 개수는 유지해 데이터 손실을 숨기지 않는다.
+버스 2 손상은 `direct_bus2_rx_during_direction_command_count=null`로 표시한다.
+
+새 `test_ev6_spas_bus_route_audit.py`의 순수 Python 모의 로그 5개 사례는
+정상 CRC, 손상 CRC, 길이/16진수 오류, 버스 2의 불확실성, src 130 단독
+기록을 검증한다. 현재 GitHub 소스와 테스트를 로컬에 복사해 FNV32로
+일치 확인 후 **5/5 테스트 통과**:
+- 분석기: 4178자 / `0x5256af66`
+- 테스트: 3560자 / `0xe75bb9a4`
+
+테스트 시 오프라인 CRC 헬퍼는 원본의 `crc16`과 `check_spas2`를
+동일하게 재현한 최소 모듈로 구동했다. 따라서 **전체 저장소 의존성/CI 또는
+실제 원본 CSV 재실행 결과를 주장하지 않는다**. 새 단위 테스트는
+GitHub Actions의 기존 `test_ev6_spas*.py` 탐색 패턴에 포함되지만
+이 커밋의 Actions 실행 기록은 아직 확인되지 않았다.
+
+이 보강은 차량 CAN TX·UDS·panda 허용 목록·주행 로직을 바꾸지 않는다.
+**Draft / NO-GO** 상태는 유지한다.
