@@ -7,10 +7,15 @@ on:
     paths:
       - 'opendbc_repo/opendbc/safety/**'
       - 'opendbc_repo/opendbc/car/hyundai/values.py'
+      - 'opendbc_repo/opendbc/car/hyundai/interface.py'
+      - 'opendbc_repo/opendbc/car/hyundai/carcontroller.py'
       - '.github/workflows/ev6-panda-safety.yml'
   pull_request:
     paths:
       - 'opendbc_repo/opendbc/safety/**'
+      - 'opendbc_repo/opendbc/car/hyundai/interface.py'
+      - 'opendbc_repo/opendbc/car/hyundai/carcontroller.py'
+      - 'opendbc_repo/opendbc/car/hyundai/values.py'
       - '.github/workflows/ev6-panda-safety.yml'
   workflow_dispatch:
 
