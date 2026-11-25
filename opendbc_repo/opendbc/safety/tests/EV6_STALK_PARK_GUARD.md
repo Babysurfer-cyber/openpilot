@@ -37,7 +37,7 @@ headers are included before the safety.h global variable definitions.
 
 File: test_ev6_stalk_park_guard.py
 
-19 tests written for the actual libsafety C hooks:
+21 tests written for the actual libsafety C hooks:
 
 1. Park + brake + authentic lever tap shape (positive path)
 2. D / N / R denied even with standstill and brake
@@ -108,7 +108,7 @@ minimal test structs, and exercises 30 checks:
 
 **Local standalone result: 30/30 C checks passed.** This tests the
 extracted helper logic only. It is **not** a full panda firmware build
-or a successful run of the 19 compiled-libsafety integration tests.
+or a successful run of the 21 compiled-libsafety integration tests.
 
 Run on a developer PC with gcc:
 
@@ -118,7 +118,7 @@ python opendbc_repo/opendbc/safety/tests/test_ev6_park_gate_c_contract.py
 
 A dedicated CI workflow (`.github/workflows/ev6-panda-safety.yml`)
 was added to compile the full C library and run both this source-contract
-test and the 19 integration tests. At the time of writing GitHub
+test and the 21 integration tests. At the time of writing GitHub
 has **zero workflow runs for this PR branch**; an absent run must not
 be reported as a passing build.
 
