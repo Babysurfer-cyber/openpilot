@@ -16,6 +16,7 @@ on:
       - selfdrive/modeld/modeld.py
       - selfdrive/controls/lib/desire_helper.py
       - selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py
+      - selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py
       - selfdrive/carrot/radar_motion/controller.py
       - selfdrive/carrot/radar_motion/lead_selection.py
       - selfdrive/carrot/radar_motion/lane_change_speed_assist.py
@@ -79,6 +80,7 @@ jobs:
             selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py \
             selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py \
+            selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py \
             selfdrive/modeld/modeld.py \
             selfdrive/controls/lib/desire_helper.py \
             opendbc_repo/opendbc/car/hyundai/carstate.py
@@ -89,3 +91,4 @@ jobs:
           python selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py -v
           python selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py -v
           python selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py -v
+          python selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py
