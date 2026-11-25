@@ -148,6 +148,8 @@ class OneTouchOriginGate(unittest.TestCase):
   def test_source_contract_has_unique_bool_schema_field(self):
     schema = (ROOT / "cereal/log.capnp").read_text(encoding="utf-8")
     self.assertEqual(schema.count("laneChangeDriverRequest @21 :Bool;"), 1)
+    car_schema = (ROOT / "cereal/car.capnp").read_text(encoding="utf-8")
+    self.assertEqual(car_schema.count("blinkerStalkValid @96 :Bool;"), 1)
     self.assertLess(schema.index("struct ModelDataV2 {"),
                     schema.index("laneChangeDriverRequest @21 :Bool;"))
     self.assertLess(schema.index("laneChangeDriverRequest @21 :Bool;"),
@@ -155,14 +157,17 @@ class OneTouchOriginGate(unittest.TestCase):
 
   def test_modeld_publishes_desirehelper_provenance_only_after_update(self):
     text = (ROOT / "selfdrive/modeld/modeld.py").read_text(encoding="utf-8")
-    origin = "modelv2_send.modelV2.meta.laneChangeDriverRequest = bool(DH.lane_change_driver_request)"
+    origin = "modelv2_send.modelV2.meta.laneChangeDriverRequest = bool("
     self.assertEqual(text.count(origin), 1)
+    self.assertIn("DH.lane_change_driver_request and sm['carState'].canValid", text)
+    self.assertIn("getattr(sm['carState'], 'blinkerStalkValid', False)", text)
     self.assertLess(text.index("DH.update(sm['carState']"), text.index(origin))
 
   def test_desirehelper_uses_driver_stalk_not_atc_for_provenance(self):
     text = (ROOT / "selfdrive/controls/lib/desire_helper.py").read_text(encoding="utf-8")
     self.assertIn("self.lane_change_driver_request = physical_one_touch", text)
     self.assertIn("and carstate.canValid", text)
+    self.assertIn('getattr(carstate, "blinkerStalkValid", False)', text)
     self.assertIn("and self.stalk_max_level == 1", text)
     self.assertIn("carstate.blinkerLever in (0, 1)", text)
     self.assertIn("self.stalk_direction == BLINKER_LEFT", text)
@@ -184,12 +189,13 @@ class OneTouchOriginGate(unittest.TestCase):
     expr_code = compile(ast.Expression(body=candidates[0].value), str(path), "eval")
 
     def check(*, lever=0, max_level=1, triggered=True, driver=True, can_valid=True,
-              side=1, direction=1, completed=False, bsd=False):
+              stalk_valid=True, side=1, direction=1, completed=False, bsd=False):
       obj = SimpleNamespace(one_touch_triggered=triggered, stalk_max_level=max_level,
                             stalk_direction=side, lane_change_direction=direction,
                             one_touch_completed=completed, bsd_stalk_cancelled=bsd)
       context = {"self": obj, "driver_enabled": driver,
-                 "carstate": SimpleNamespace(blinkerLever=lever, canValid=can_valid),
+                 "carstate": SimpleNamespace(blinkerLever=lever, canValid=can_valid,
+                                              blinkerStalkValid=stalk_valid),
                  "BLINKER_LEFT": 1, "BLINKER_RIGHT": 2,
                  "LaneChangeDirection": SimpleNamespace(left=1, right=2)}
       return eval(expr_code, context)
@@ -203,7 +209,8 @@ class OneTouchOriginGate(unittest.TestCase):
       {"lever": 2},
       {"triggered": False},
       {"driver": False},
-      {"can_valid": False},   # CAN receive not valid
+      {"can_valid": False},   # main CAN receive not valid
+      {"stalk_valid": False}, # optional physical lever frame is stale
       {"side": 2, "direction": 1},  # Opposite source direction
       {"side": 0},                  # Ambiguous stalk counts
       {"completed": True},
@@ -212,6 +219,56 @@ class OneTouchOriginGate(unittest.TestCase):
       with self.subTest(**scenario):
         self.assertFalse(check(**scenario))
 
+
+  def test_carstate_optional_stalk_message_expires_independently_of_can_valid(self):
+    # Run the real CarState parsing method on a synthetic CANParser clock.
+    # A healthy main bus must not make an expired optional 0x3C1 usable.
+    path = ROOT / "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
+    namespace = {}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), namespace)
+    update = namespace["_update_blinker_stalks"]
+    stalk = {"LEFT_BLINKER": 1, "RIGHT_BLINKER": 0,
+             "LEFT_BLINKER_TAP": 1, "RIGHT_BLINKER_TAP": 0}
+    for age_ns, present, expected in (
+      (0, True, True), (249_000_000, True, True),
+      (250_000_001, True, False), (300_000_000, True, False),
+      (-1, True, False), (100_000_000, False, False),
+    ):
+      with self.subTest(age_ns=age_ns, present=present):
+        car = SimpleNamespace(
+          blinker_stalks=stalk if present else None,
+          left_stalk_prev=False, right_stalk_prev=False,
+          left_blinker_stalk_count=0, right_blinker_stalk_count=0,
+          _vehicle_navi_message_timestamp=lambda cp, name: max(cp.ts_nanos.get(name, {}).values(), default=0),
+        )
+        now = 1_000_000_000
+        cp = SimpleNamespace(_last_update_nanos=now,
+                             ts_nanos={"BLINKER_STALKS": {"LEFT_BLINKER": now - age_ns}} if present else {})
+        result = SimpleNamespace(blinkerLever=0, blinkerStalkValid=False)
+        update(car, result, cp)
+        self.assertEqual(result.blinkerStalkValid, expected)
+        self.assertEqual(result.blinkerLever, 1 if expected else 0)
+        self.assertEqual(car.left_blinker_stalk_count, 1 if expected else 0)
+
+  def test_modeld_retracts_stalk_provenance_after_message_timeout(self):
+    path = ROOT / "selfdrive/modeld/modeld.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    writes = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+              and len(n.targets) == 1 and isinstance(n.targets[0], ast.Attribute)
+              and n.targets[0].attr == "laneChangeDriverRequest"]
+    self.assertEqual(len(writes), 1)
+    expression = compile(ast.Expression(body=writes[0].value), str(path), "eval")
+    def decide(*, lane=True, can_valid=True, stalk_valid=True):
+      inputs = {"carState": SimpleNamespace(canValid=can_valid, blinkerStalkValid=stalk_valid)}
+      return eval(expression, {"DH": SimpleNamespace(lane_change_driver_request=lane),
+                               "sm": inputs})
+    self.assertTrue(decide())
+    self.assertFalse(decide(lane=False))
+    self.assertFalse(decide(can_valid=False))
+    self.assertFalse(decide(stalk_valid=False))
 
   def test_helper_fails_closed_for_absent_field(self):
     text = SOURCE.read_text(encoding="utf-8")
