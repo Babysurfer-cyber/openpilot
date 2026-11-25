@@ -1,11 +1,12 @@
 """No-CAN tests for saved-rlog signal filtering and privacy-by-exclusion."""
 import csv
+import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
 
-from ev6_spas_rlog_extract import export_saved_rlog, extract_receive_rows
+from ev6_spas_rlog_extract import export_saved_rlog, extract_receive_rows, write_bus_summary
 
 
 def ev(kind, ns, msgs=()):
@@ -68,6 +69,44 @@ class TestReceiveOnlyExtractor(unittest.TestCase):
     with self.assertRaisesRegex(ValueError,'No selected receive-side'):
       export_saved_rlog([ev('sendcan',1,[msg()])],self.path)
     self.assertFalse(self.path.exists())
+
+
+  def test_failed_midstream_export_leaves_no_partial_csv(self):
+    frames=[ev('can', 2, [msg()]), ev('can', 1, [msg()])]
+    with self.assertRaisesRegex(ValueError, 'Nonmonotonic'):
+      export_saved_rlog(frames, self.path)
+    self.assertFalse(self.path.exists())
+    self.assertEqual(list(self.path.parent.glob('.ev6_can_*.tmp')), [])
+
+  def test_failed_export_does_not_replace_existing_csv(self):
+    self.path.write_text('user original data', encoding='utf-8')
+    with self.assertRaisesRegex(ValueError, 'Empty CAN payload'):
+      export_saved_rlog([ev('can', 1, [msg(dat=b'')])], self.path)
+    self.assertEqual(self.path.read_text(encoding='utf-8'), 'user original data')
+    self.assertEqual(list(self.path.parent.glob('.ev6_can_*.tmp')), [])
+
+  def test_counts_only_summary_has_no_can_payload_or_timestamp(self):
+    rows=[ev('can', 100, [msg(0x35, 1, b'secretA'),
+                           msg(0x175, 1, b'secretB'),
+                           msg(0xA0, 1, b'secretC'),
+                           msg(0x16A, 0, b'private')])]
+    export_saved_rlog(rows, self.path)
+    output=self.path.with_suffix('.summary.json')
+    summary=write_bus_summary(self.path, output)
+    content=output.read_text(encoding='utf-8')
+    self.assertEqual(summary['buses_with_all_three_guard_ids_observed'], [1])
+    self.assertFalse(summary['permits_vehicle_actuation'])
+    self.assertFalse(summary['panda_guard_safety_validated'])
+    for secret in ('secretA', 'secretB', 'secretC', 'private', '0.000000000', 'payload_hex'):
+      self.assertNotIn(secret, content)
+    self.assertEqual(json.loads(content)['counts_by_bus_and_can_id']['1']['0x35'], 1)
+
+  def test_counts_summary_from_only_one_guard_bus_is_not_permission(self):
+    export_saved_rlog([ev('can',1,[msg(0x35, 1, b'1234')])], self.path)
+    output=self.path.with_suffix('.summary.json')
+    summary=write_bus_summary(self.path, output)
+    self.assertEqual(summary['buses_with_all_three_guard_ids_observed'], [])
+    self.assertFalse(summary['independent_ecu_handoff_tested'])
 
 
 if __name__ == '__main__':
