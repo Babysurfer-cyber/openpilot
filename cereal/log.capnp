@@ -1187,6 +1187,7 @@ struct ModelDataV2 {
     laneChangeAvailableLeft @18 :Bool;
     laneChangeAvailableRight @19 :Bool;
     laneChangeBlocked @20 :UInt8;  # 0: none, 1: BSD, 2: lane line
+    laneChangeDriverRequest @21 :Bool;  # physically confirmed one-touch request; ATC/held stalk false
 
     # deprecated
     brakeDisengageProbDEPRECATED @2 :Float32;
