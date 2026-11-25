@@ -30,13 +30,13 @@
     </section>
     <br>
     <div class="camera-switcher d-flex justify-content-center gap-2 mb-3">
-        <a href="{{ route }}?{{ query_segment }},qcamera" 
+        <a data-camera-switch="qcamera" href="{{ route }}?{{ query_segment }},qcamera" 
            class="btn btn-sm {% if query_type == 'qcamera' %}btn-primary{% else %}btn-outline-primary{% endif %}">qcamera</a>
-        <a href="{{ route }}?{{ query_segment }},fcamera" 
+        <a data-camera-switch="fcamera" href="{{ route }}?{{ query_segment }},fcamera" 
            class="btn btn-sm {% if query_type == 'fcamera' %}btn-primary{% else %}btn-outline-primary{% endif %}">fcamera</a>
-        <a href="{{ route }}?{{ query_segment }},dcamera" 
+        <a data-camera-switch="dcamera" href="{{ route }}?{{ query_segment }},dcamera" 
            class="btn btn-sm {% if query_type == 'dcamera' %}btn-primary{% else %}btn-outline-primary{% endif %}">dcamera</a>
-        <a href="{{ route }}?{{ query_segment }},ecamera" 
+        <a data-camera-switch="ecamera" href="{{ route }}?{{ query_segment }},ecamera" 
            class="btn btn-sm {% if query_type == 'ecamera' %}btn-primary{% else %}btn-outline-primary{% endif %}">ecamera</a>
     </div>
     <div class="video-info">
@@ -168,6 +168,12 @@
           document.getElementById('currentview').textContent = cameraType;
           prevButton.disabled = currentSegmentIndex === 0;
           nextButton.disabled = currentSegmentIndex === playableSegments.length - 1;
+          // Camera switches must keep the currently displayed clip, not the
+          // original server-rendered segment number from the page load.
+          document.querySelectorAll('[data-camera-switch]').forEach(link => {
+            const view = link.dataset.cameraSwitch;
+            link.href = window.location.pathname + '?' + encodeURIComponent(number) + ',' + encodeURIComponent(view);
+          });
           document.querySelectorAll('[data-segment-download]').forEach(link => {
             const type = link.dataset.segmentDownload;
             link.href = '/footage/full/' + type + '/' + encodeURIComponent(routeId) + '/' + number;
@@ -277,8 +283,12 @@
         }
 
         async function updateCurrentFolderInfo() {
-			const folderPath = `/data/media/0/realdata/${currentSegment}`;
+			const requestedSegment = currentSegment;
+			const folderPath = `/data/media/0/realdata/${requestedSegment}`;
 			const info = await getFolderInfo(folderPath);
+			// A delayed response from a previous clip must not overwrite the
+			// currently selected clip's date and size.
+			if (requestedSegment !== currentSegment) return;
 			const dateElement = document.getElementById('folderDate');
 			
 			if (info && info.created_date) {
