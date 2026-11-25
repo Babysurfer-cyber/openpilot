@@ -130,12 +130,24 @@ def load_rlog(path):
 
 
 def transition_data(frames, lamps, side):
+  """Correlate an OEM 0->3/4 command to a genuine physical lamp OFF->ON edge.
+
+  An already-on lamp, or one that turns on many seconds later, is NOT
+  evidence that this specific SPAS2 transition triggered the lamp.
+  """
   nonzero = 3 if side == 'left' else 4
+  ordered_lamps = sorted(lamps, key=lambda item: item.ns)
   for i in range(1, len(frames)):
     prev, curr = frames[i-1], frames[i]
     if control(prev.data) == 0 and control(curr.data) == nonzero:
       changes = [j for j, (a, b) in enumerate(zip(prev.data, curr.data)) if a != b]
-      next_lamp = next((lamp for lamp in lamps if lamp.ns >= curr.ns and lamp_active(lamp.data, side)), None)
+      matched = None
+      for before, after in zip(ordered_lamps, ordered_lamps[1:]):
+        if (not lamp_active(before.data, side) and lamp_active(after.data, side) and
+            0 <= after.ns - curr.ns <= 250_000_000 and
+            0 <= after.ns - before.ns <= 500_000_000):
+          matched = after
+          break
       return {
         'command_from': 0,
         'command_to': nonzero,
@@ -143,7 +155,8 @@ def transition_data(frames, lamps, side):
         'period_before_ms': round((curr.ns - prev.ns) / 1e6, 2),
         'changed_byte_offsets_including_crc_counter': changes,
         'changed_offsets_without_crc_counter': [j for j in changes if j not in (0, 1, 2)],
-        'first_physical_lamp_after_ms': round((next_lamp.ns - curr.ns) / 1e6, 2) if next_lamp else None,
+        'first_physical_lamp_after_ms': round((matched.ns - curr.ns) / 1e6, 2) if matched else None,
+        'lamp_feedback_off_to_on_verified_within_250ms': matched is not None,
         'before_stock_crc_ok': checksum_ok(SPAS2, prev.data),
         'after_stock_crc_ok': checksum_ok(SPAS2, curr.data),
         'warning': 'Observed OEM parking state only; do NOT transmit/replay these frames',
@@ -189,6 +202,8 @@ def build_report(groups):
     if name in ('left', 'right'):
       if case['factory_turn_on_transition'] is None:
         raise ValueError(f'{name}: no factory 0-to-{3 if name=="left" else 4} transition')
+      if not case['factory_turn_on_transition']['lamp_feedback_off_to_on_verified_within_250ms']:
+        raise ValueError(f'{name}: no genuine lamp OFF-to-ON edge within 250ms of SPAS2 direction change')
       # The same proof can legitimately be False in a different capture.
       # A malformed stalk recording, however, must never support it.
       proof = case['factory_lamp_without_stalk']
