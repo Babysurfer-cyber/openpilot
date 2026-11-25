@@ -159,7 +159,8 @@ class OneTouchOriginGate(unittest.TestCase):
     text = (ROOT / "selfdrive/modeld/modeld.py").read_text(encoding="utf-8")
     origin = "modelv2_send.modelV2.meta.laneChangeDriverRequest = bool("
     self.assertEqual(text.count(origin), 1)
-    self.assertIn("DH.lane_change_driver_request and sm['carState'].canValid", text)
+    self.assertIn("DH.lane_change_driver_request and sm.alive['carState'] and sm.valid['carState']", text)
+    self.assertIn("and sm['carState'].canValid", text)
     self.assertIn("getattr(sm['carState'], 'blinkerStalkValid', False)", text)
     self.assertLess(text.index("DH.update(sm['carState']"), text.index(origin))
 
@@ -297,14 +298,18 @@ class OneTouchOriginGate(unittest.TestCase):
               and n.targets[0].attr == "laneChangeDriverRequest"]
     self.assertEqual(len(writes), 1)
     expression = compile(ast.Expression(body=writes[0].value), str(path), "eval")
-    def decide(*, lane=True, can_valid=True, stalk_valid=True):
+    def decide(*, lane=True, can_valid=True, stalk_valid=True, alive=True, valid=True):
       inputs = {"carState": SimpleNamespace(canValid=can_valid, blinkerStalkValid=stalk_valid)}
+      sm = SimpleNamespace(alive={"carState": alive}, valid={"carState": valid})
+      sm.__class__ = type("SubMasterStub", (SimpleNamespace,), {"__getitem__": lambda self, key: inputs[key]})
       return eval(expression, {"DH": SimpleNamespace(lane_change_driver_request=lane),
-                               "sm": inputs})
+                               "sm": sm})
     self.assertTrue(decide())
     self.assertFalse(decide(lane=False))
     self.assertFalse(decide(can_valid=False))
     self.assertFalse(decide(stalk_valid=False))
+    self.assertFalse(decide(alive=False))
+    self.assertFalse(decide(valid=False))
 
   def test_helper_fails_closed_for_absent_field(self):
     text = SOURCE.read_text(encoding="utf-8")
