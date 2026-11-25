@@ -13,6 +13,8 @@ on:
       - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_state_timeline.py'
       - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_lamp_cadence.py'
       - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_lamp_cadence.py'
+      - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_evidence_gate.py'
+      - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_evidence_gate.py'
       - '.github/workflows/ev6-spas-control-plan.yml'
   pull_request:
     paths:
@@ -24,6 +26,8 @@ on:
       - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_state_timeline.py'
       - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_lamp_cadence.py'
       - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_lamp_cadence.py'
+      - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_evidence_gate.py'
+      - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_evidence_gate.py'
       - '.github/workflows/ev6-spas-control-plan.yml'
   workflow_dispatch:
 
@@ -48,12 +52,14 @@ jobs:
             opendbc_repo/opendbc/car/hyundai/ev6_spas_state_timeline.py \
             opendbc_repo/opendbc/car/hyundai/test_ev6_spas_state_timeline.py \
             opendbc_repo/opendbc/car/hyundai/ev6_spas_lamp_cadence.py \
-            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_lamp_cadence.py
+            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_lamp_cadence.py \
+            opendbc_repo/opendbc/car/hyundai/ev6_spas_evidence_gate.py \
+            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_evidence_gate.py
       - name: Run synthetic isolated-handoff planning tests (no vehicle)
         run: |
           python -m unittest discover -s opendbc_repo/opendbc/car/hyundai \
             -p 'test_ev6_spas*.py' -v
-      - name: Enforce no CAN transport in planning core and both CSV analyzers
+      - name: Enforce no CAN transport in five passive Python tools
         run: |
           python - <<'PY'
           import ast
@@ -63,6 +69,7 @@ jobs:
               Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_factory_replay.py'),
               Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_state_timeline.py'),
               Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_lamp_cadence.py'),
+              Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_evidence_gate.py'),
           )
           denied_imports = ('panda', 'can', 'isotp', 'socket', 'cereal', 'opendbc')
           denied_symbols = {'CanData', 'CANPacket', 'can_sends', 'make_can_msg', 'can_send', 'sendcan'}
@@ -77,5 +84,5 @@ jobs:
                 assert node.id not in denied_symbols, (path, node.id)
               if isinstance(node, ast.Attribute):
                 assert node.attr not in denied_symbols, (path, node.attr)
-          print('Both planning core and factory replay have no CAN transport interfaces.')
+          print('All five EV6 passive/planning tools have no CAN transport interfaces.')
           PY
