@@ -129,6 +129,51 @@ OFF이고 새 샘플이 ON인 **상태 전환**을 요구한다. 이 전환이
 이러한 시간적 상관은 순정 자동주차의 방향지시등 경로에 대한
 증거이지 ECU가 외부 장치의 SPAS2 프레임을 수락한다는 증거는 아니다.
 
+## 2026-11-25: 순정 점등 시작 직전 SPAS2 상태의 순서 비교
+
+사용자가 제공한 rlog(6)/(7)에서 추출한 **버스 0 수신 CSV 원본**
+(`extract_6.csv`, `extract_7.csv`)으로 0x16A의 실제 상태 변화를
+재계산했다. checksum/counter bytes 0~2는 원본 바이트 비교에서 제외했다.
+
+| 관찰 | 좌측 rlog(6) | 우측 rlog(7) |
+| --- | --- | --- |
+| 방향 명령이 처음 0에서 3/4로 바뀐 시점 | 16.8990s | 20.3122s |
+| 방향 명령 이전 SPAS2 raw byte7 | 0x82 | 0x82 |
+| 해당 시점 SPAS2 raw byte7 | 0x01 | 0x01 |
+| 방향 명령 이전 SPAS2 raw byte18 | 0x00 | 0x00 |
+| 해당 시점 SPAS2 raw byte18 | 0x40 | 0x40 |
+| byte7/18 전환은 방향 명령보다 | **0ms (동일 프레임)** | **21.6ms 선행** |
+| 방향 명령 프레임에서 직접 바뀐 raw byte 오프셋 | **7,16,18** | **16** |
+| 명령 이후 실제 램프 OFF→ON | **29.4ms** | **10.2ms** |
+| 방향 명령이 다시 0으로 바뀐 시점 | 40.8382s | 41.1713s |
+
+이렇게 상태 변화가 한 프레임 앞서기도, 방향 명령과 동시에
+일어나기도 하므로 **21.6ms의 선행 조건이 필수라고 결론 낼 수 없다**.
+byte7/18의 신호 명칭이나 의미는 아직 확정되지 않았고 이
+데이터는 OEM 순정 동작을 기록한 것일 뿐이다.
+
+특히, 이 바이트 값을 외부 CAN 송신용 템플릿으로 사용하거나
+순정 주차 ECU와 동일한 0x16A ID를 중복 송신하는 근거로
+사용해서는 안 된다. 해당 동작은 ECU 제어권 및 CAN 충돌을
+입증하는 독립 하드웨어 시험 전까지 **NO-GO**이다.
+
+### 재현 도구 / 검증 범위
+
+`tools/signal_analysis/ev6_spas_onset_sequence.py`는 버스 0의
+정상 CRC 0x16A, 램프 OFF→ON 상태 전환 및 raw byte7/18의 마지막
+변경 시각을 비교하는 **읽기 전용 CSV 분석기**다.
+
+```bash
+python tools/signal_analysis/ev6_spas_onset_sequence.py --left extract_6.csv --right extract_7.csv --output factory_onset_sequence_report.json
+python -m unittest discover -s tools/signal_analysis -p 'test_ev6_spas*.py' -v
+```
+
+새 테스트 파일 `test_ev6_spas_onset_sequence.py`에는 **7개 회귀
+검사**가 있다. 기존 17개와 합쳐 로컬에서 **24/24 테스트가
+통과**했다. 별도로 추출해 보관한 사용자의 실제 좌우 CSV를
+읽어 위 표를 재계산했다. 테스트는 CAN/UDS를 **송신하지 않는다**.
+실제 openpilot 장치에서 CI/통합 테스트가 통과했다는 뜻은 아니다.
+
 ## 지금의 두 경로 평가
 
 | 제어 경로 | 증거 | 해결되지 않은 점 |
