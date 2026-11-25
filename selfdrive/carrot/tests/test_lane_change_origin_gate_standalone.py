@@ -300,10 +300,13 @@ class OneTouchOriginGate(unittest.TestCase):
     expression = compile(ast.Expression(body=writes[0].value), str(path), "eval")
     def decide(*, lane=True, can_valid=True, stalk_valid=True, alive=True, valid=True):
       inputs = {"carState": SimpleNamespace(canValid=can_valid, blinkerStalkValid=stalk_valid)}
-      sm = SimpleNamespace(alive={"carState": alive}, valid={"carState": valid})
-      sm.__class__ = type("SubMasterStub", (SimpleNamespace,), {"__getitem__": lambda self, key: inputs[key]})
+      class SubMasterStub(dict):
+        def __init__(self):
+          super().__init__(inputs)
+          self.alive = {"carState": alive}
+          self.valid = {"carState": valid}
       return eval(expression, {"DH": SimpleNamespace(lane_change_driver_request=lane),
-                               "sm": sm})
+                               "sm": SubMasterStub()})
     self.assertTrue(decide())
     self.assertFalse(decide(lane=False))
     self.assertFalse(decide(can_valid=False))
