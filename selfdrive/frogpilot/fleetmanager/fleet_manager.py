@@ -23,7 +23,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 import os
+import re
 import secrets
+import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, render_template, Response, request, send_from_directory, redirect, url_for, abort
 from openpilot.common.realtime import set_core_affinity
@@ -47,6 +51,82 @@ tempseg = -1
 temproute = "None"
 
 app = Flask(__name__)
+
+# Preview generation is bounded and never blocks the Dashcam page response.
+PREVIEW_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fleet-preview")
+PREVIEW_LOCK = threading.Lock()
+PREVIEW_PENDING = set()
+PREVIEW_RETRY_AFTER = {}
+PREVIEW_QUEUE_LIMIT = 8
+PREVIEW_FAILURE_COOLDOWN = 180.0
+FOOTAGE_PAGE_SIZE = 20
+ROUTE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}$")
+
+
+def _create_preview(route):
+  segment_dir = os.path.join(Paths.log_root(), f"{route}--0")
+  source = os.path.join(segment_dir, "qcamera.ts")
+  preview = os.path.join(segment_dir, "preview.gif")
+  temporary = os.path.join(segment_dir, "preview.part.gif")
+  success = False
+
+  try:
+    if not os.path.isfile(source):
+      raise FileNotFoundError(source)
+    # Seek before decoding; bound CPU usage and process duration.
+    subprocess.run(
+      ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1",
+       "-ss", "5", "-i", source, "-frames:v", "1", "-y", temporary],
+      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=True,
+    )
+    if not os.path.isfile(temporary) or os.path.getsize(temporary) == 0:
+      raise RuntimeError("ffmpeg did not produce a preview")
+    os.replace(temporary, preview)
+    success = True
+  except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+    cloudlog.warning(f"Fleet preview failed for {route}: {exc}")
+  finally:
+    if os.path.exists(temporary):
+      try:
+        os.remove(temporary)
+      except OSError:
+        pass
+    with PREVIEW_LOCK:
+      PREVIEW_PENDING.discard(route)
+      if success:
+        PREVIEW_RETRY_AFTER.pop(route, None)
+      else:
+        PREVIEW_RETRY_AFTER[route] = time.monotonic() + PREVIEW_FAILURE_COOLDOWN
+
+
+@app.route("/preview-thumbnail/<route>")
+def preview_thumbnail(route):
+  if not ROUTE_PATTERN.fullmatch(route):
+    abort(404)
+
+  preview_dir = os.path.join(Paths.log_root(), f"{route}--0")
+  preview_name = "preview.gif"
+  preview_path = os.path.join(preview_dir, preview_name)
+
+  if os.path.isfile(preview_path) and os.path.getsize(preview_path) > 0:
+    return send_from_directory(preview_dir, preview_name, mimetype="image/gif", max_age=300)
+
+  if not os.path.isfile(os.path.join(preview_dir, "qcamera.ts")):
+    return jsonify({"status": "missing_recording"}), 404
+
+  with PREVIEW_LOCK:
+    now = time.monotonic()
+    if now < PREVIEW_RETRY_AFTER.get(route, 0):
+      return jsonify({"status": "failed_retry_later"}), 503
+    if route not in PREVIEW_PENDING and len(PREVIEW_PENDING) < PREVIEW_QUEUE_LIMIT:
+      PREVIEW_PENDING.add(route)
+      try:
+        PREVIEW_EXECUTOR.submit(_create_preview, route)
+      except RuntimeError:
+        PREVIEW_PENDING.discard(route)
+        return jsonify({"status": "unavailable"}), 503
+
+  return jsonify({"status": "pending"}), 202
 
 @app.route("/")
 def home_page():
@@ -301,16 +381,16 @@ def route(route):
 @app.route("/footage/")
 @app.route("/footage")
 def footage():
-  route_paths = fleet.all_routes()
-  gifs = []
-  for route_path in route_paths:
-    input_path = Paths.log_root() + route_path + "--0/qcamera.ts"
-    output_path = Paths.log_root() + route_path + "--0/preview.gif"
-    fleet.video_to_img(input_path, output_path)
-    gif_path = route_path + "--0/preview.gif"
-    gifs.append(gif_path)
-  zipped = zip(route_paths, gifs, strict=False)
-  return render_template("footage.html", zipped=zipped)
+  # List routes only; thumbnail generation happens after the page is sent.
+  all_routes = fleet.all_routes()
+  total_routes = len(all_routes)
+  total_pages = max(1, (total_routes + FOOTAGE_PAGE_SIZE - 1) // FOOTAGE_PAGE_SIZE)
+  page = request.args.get("page", default=1, type=int) or 1
+  page = min(max(1, page), total_pages)
+  start = (page - 1) * FOOTAGE_PAGE_SIZE
+  routes = all_routes[start:start + FOOTAGE_PAGE_SIZE]
+  return render_template("footage.html", routes=routes, page=page,
+                         total_pages=total_pages, total_routes=total_routes)
 
 @app.route("/preserved/")
 @app.route("/preserved")
