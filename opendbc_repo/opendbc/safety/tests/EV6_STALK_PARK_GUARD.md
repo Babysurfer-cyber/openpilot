@@ -169,3 +169,38 @@ RX 검사에 `HYUNDAI_CANFD_COMMON_RX_CHECKS(1)`가 적용된다.
 
 이 PR은 SPAS2 실제 점등용 코드가 아니며, 기존의 실패한
 `0x3C1` 일회성 실험을 보호하는 목적이다. **현재 차량 병합 NO-GO.**
+
+
+## 2026-11-25: 기본 차량 설정의 과도한 시험 플래그 수정
+
+차량용 `interface.py`를 검토하던 중 **기존 ms-xy-radar3는
+`Ev6BlinkerTest` 요청과 무관하게 모든 Kia EV6/CAN-FD의
+`safetyParam`에 `EV6_BLINKER_STALK_TEST`를 설정**한다는
+사실이 확인됐다. 이는 기존 문서의 "opt-in"이라는 표현과
+불일치했다. 사용자 요청이 없어도 panda에서 시험용 CAN ID
+0x3C1 TX 검사가 켜진 채 시작할 수 있었다.
+
+이번 PR에서 `interface.py`를 한정적으로 변경했다.
+
+- `candidate == CAR.KIA_EV6`, CAN-FD, `not docs`와 함께
+  **`params.get_int("Ev6BlinkerTest") in (1, 2)`**인
+  초기화 시점에만 panda 시험용 safetyParam을 설정한다.
+- 기존 `carcontroller.py`는 선택값을 수신하면 P단 검사
+  **전에 즉시 0으로 소비**하고, 조건이 충족되지 않으면
+  나중에 재생하지 않는다.
+- 시험용 설정값이 0이거나 정의되지 않은 기본 상태에서는
+  **해당 panda TX 허용 플래그가 아예 설정되지 않는다**.
+- `test_ev6_interface_optin.py`의 2개 읽기 전용 AST 검사가
+  플래그의 명시적 조건과 일회성 요청 소비 순서를 확인한다.
+  이 검사는 실제 C/panda 통합 검사와 구별된다.
+
+**제한:** panda safetyParam은 기기 초기화 시 결정된다.
+운행 중 `Ev6BlinkerTest`를 바꾸어도 safetyParam을 재설정하지
+않으므로 송신 시험은 차단될 수 있다. 반대로 초기화 시 시험
+플래그가 설정됐다면 요청 소비 후에도 그 부팅 세션에서는
+panda의 다른 엄격한 안전 제한에 의해 관리되는 시험 권한이
+남는다. **실차 시험 허용 또는 검증 완료라고 해석하면 안 된다.**
+
+PR은 Draft이며, `ms-xy-radar3`에 병합되지 않았다.
+전체 panda 빌드·21개 compiled-libsafety 테스트의 실제
+통과 기록도 아직 없다. 그 전에는 차량에 설치하지 않는다.
