@@ -345,10 +345,34 @@ def get_file_size():
 
 @app.route("/footage/<cameratype>/<segment>")
 def fcamera(cameratype, segment):
-  if not fleet.is_valid_segment(segment):
-    return render_template("error.html", error="invalid segment")
-  file_name = Paths.log_root() + "/" + segment + "/" + cameratype + (".ts" if cameratype == "qcamera" else ".hevc")
-  return Response(fleet.ffmpeg_mp4_wrap_process_builder(file_name).stdout.read(), status=200, mimetype='video/mp4')
+  if cameratype not in ("qcamera", "fcamera", "dcamera", "ecamera"):
+    abort(404)
+  if not SEGMENT_PATTERN.fullmatch(segment) or not fleet.is_valid_segment(segment):
+    abort(404)
+  file_name = os.path.join(Paths.log_root(), segment, cameratype + (".ts" if cameratype == "qcamera" else ".hevc"))
+  if not os.path.isfile(file_name) or os.path.getsize(file_name) == 0:
+    abort(404)
+  process = fleet.ffmpeg_mp4_wrap_process_builder(file_name)
+
+  def stream_video():
+    try:
+      while True:
+        chunk = process.stdout.read(65536)
+        if not chunk:
+          break
+        yield chunk
+    finally:
+      if process.stdout:
+        process.stdout.close()
+      if process.poll() is None:
+        process.terminate()
+        try:
+          process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+          process.kill()
+          process.wait()
+
+  return Response(stream_video(), status=200, mimetype="video/mp4")
 
 
 @app.route("/footage/<route>")
