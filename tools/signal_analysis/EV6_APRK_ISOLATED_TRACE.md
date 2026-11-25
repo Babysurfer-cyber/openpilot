@@ -217,3 +217,34 @@ results are not hardware proof.
 
 Real vehicle testing remains NO-GO; do not merge this as a signal
 that physical APRK ECU handoff or turn-indicator control works.
+
+
+## 2026-11-25: current-source 45/45 offline test execution
+
+A direct execution attempt was made using the **current PR #45 GitHub
+validator and its associated Python test file**, copied into a local
+Python 3.13.5 environment without any CAN hardware or transport.
+
+This uncovered a real **syntax error** that blocked the entire suite:
+`test_bad_health_types_fault` had a missing closing parenthesis on
+an `assertIn(..., analyze(rows)["faults"])` expression.
+The typo was fixed on the PR branch; the corrected source and test
+files were copied locally and executed.
+
+**Result: 45/45 Python unittest methods PASSED** (0.102 s local run,
+synthetic observations only). Contents of the local runtime copies were
+verified against current GitHub file contents using exact lengths and
+simple FNV32 checksums:
+
+- `ev6_bench_trace_validator.py`: 16,162 characters,
+  FNV32 `0x838708d9`
+- `test_ev6_bench_trace_validator.py`: 15,451 characters,
+  FNV32 `0x408e2e54`
+
+These checks only establish faithful source transfer for this run;
+they do not authenticate physical CAN/ECU capture provenance.
+Intermediate history entries that say current tests were never run
+reflect previous revisions; **this local test execution supersedes
+them**. There is still **no GitHub Actions CI success and no physical
+isolated APRK ECU bench verification**. The validator never sends CAN,
+and this test success does NOT permit vehicle use or PR merging.
