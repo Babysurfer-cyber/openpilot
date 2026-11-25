@@ -44,9 +44,9 @@ def verify_lever_context(lever_samples, onset_at):
   if onset_at is None:
     return None
   nearest_before = next((t for t, idle in reversed(lever_samples)
-                         if t <= onset_at and onset_at-t <= LEVER_CONTEXT_WINDOW_S), None)
+                         if t < onset_at and onset_at-t <= LEVER_CONTEXT_WINDOW_S), None)
   nearest_after = next((t for t, idle in lever_samples
-                        if t >= onset_at and t-onset_at <= LEVER_CONTEXT_WINDOW_S), None)
+                        if t > onset_at and t-onset_at <= LEVER_CONTEXT_WINDOW_S), None)
   window = [(t, idle) for t, idle in lever_samples if abs(t-onset_at) <= LEVER_CONTEXT_WINDOW_S]
   return {
     'before_onset_ms': round((nearest_before-onset_at)*1000, 2) if nearest_before is not None else None,
