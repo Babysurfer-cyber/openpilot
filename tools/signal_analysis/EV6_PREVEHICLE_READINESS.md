@@ -29,7 +29,25 @@
 PR #45는 JSONL 기록을 읽기만 한다. 0x7B1 또는 SPAS 메시지를 송신하는 기능이 없다.
 PR #46은 기존 0x3C1 송신 허용 조건을 **더 엄격하게** 할 뿐이며 새로운 송신 ID를 추가하지 않는다.
 
-## 3. 반드시 충족해야 할 실측 관문
+## 3. 지금 주행 브랜치의 실제 자동 깜빡이 경로 분석 (추가 확인)
+
+GitHub 현재 `ms-xy-radar3` 코드를 직접 확인한 결과, **SPAS2 송신 함수가 존재한다는 사실과 실제로 EV6에서 송신할 수 있다는 주장은 다르다.** 실행 경로에는 아래 차단 조건이 연속으로 존재한다.
+
+| 차단 지점 | 확인한 코드 | 현재 의미 |
+| --- | --- | --- |
+| EV6 플랫폼 설정 | `opendbc_repo/opendbc/car/hyundai/values.py` 의 `HyundaiFlags.ENABLE_BLINKERS` 선언, `interface.py` 의 `_get_params()` | 플래그 상수만 선언돼 있고 EV6 설정 시 이를 켜는 코드가 보이지 않음 |
+| 실행 조건 | `carcontroller.py` 의 `if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS` | 기본 EV6에서는 `create_spas_messages()` 호출 조건 미충족 |
+| panda 실제 송신 허용 | `safety_hyundai_canfd.h` 의 HDA1/HDA2 TX 목록 | 해당 목록에 SPAS1 `0x165`, SPAS2 `0x16A` 없음. 호스트에서 무단 송신 시도는 판다에 의해 차단될 것으로 예상 |
+| ECU 비활성화 부작용 | `interface.py` 의 `disable_ecu(... addr=0x7B1 ...)` | 플래그를 켜면 주차보조 ECU 통신 중단 시도 경로도 활성화됨. 주차 기능 상실 위험 |
+| 함수 완성도 | `hyundaicanfd.py` 의 `create_spas_messages()` | SPAS1 빈 값과 SPAS2 `BLINKER_CONTROL=3/4`만 사용. 실측 EV6 자동주차의 다른 상태 필드와 제어권 확보 조건을 재현하지 못함 |
+
+**결론: 이 경로는 '완성된 자동 깜빡이 기능을 비활성화한 것'이 아니다.** 구현은 일부 남아 있지만 기본 플래그, panda 정책, OEM ECU 제어권, 완전한 메시지 구성 등 여러 단계가 미해결이다. **임의로 `ENABLE_BLINKERS`를 켜거나 panda TX 허용 목록에 ID를 넣어서는 안 된다.**
+
+반면 PR #46은 **기존 단발 `0x3C1` 시험을 제한하는 별개의 코드**이며 SPAS2 제어 경로의 미해결 조건을 해결하지 않는다. 소프트웨어 시뮬레이션을 추가해도 OEM ECU의 외부 제어 수락 여부는 검증되지 않는다.
+
+---
+ 
+## 4. 반드시 충족해야 할 실측 관문
 
 1. **시험 대상 확인 (미완료):** 사용자 EV6 사양과 일치하는 주차보조 ECU의 정확한 부품번호, 펌웨어, 진단 주소 및 게이트웨이 경로를 정식 자료로 확인. 다른 차종의 0x7B1/0x7B9 정보를 EV6 확정 정보로 사용하지 않는다.
 2. **독립된 실험 장비 (미완료):** 차량과 분리된 ECU/CAN-FD 벤치, 사양 확인된 전원·퓨즈, 종단·접지·배선 검증, 별도 CAN-FD 분석기와 오류/수신 누락 계측, 전원 차단 장치, 실제 ECU 전문가.
