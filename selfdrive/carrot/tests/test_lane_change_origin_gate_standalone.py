@@ -240,7 +240,7 @@ class OneTouchOriginGate(unittest.TestCase):
       with self.subTest(age_ns=age_ns, present=present):
         car = SimpleNamespace(
           blinker_stalks=stalk if present else None,
-          left_stalk_prev=False, right_stalk_prev=False,
+          left_stalk_prev=False, right_stalk_prev=False, blinker_stalk_armed=True,
           left_blinker_stalk_count=0, right_blinker_stalk_count=0,
           _vehicle_navi_message_timestamp=lambda cp, name: max(cp.ts_nanos.get(name, {}).values(), default=0),
         )
@@ -252,6 +252,42 @@ class OneTouchOriginGate(unittest.TestCase):
         self.assertEqual(result.blinkerStalkValid, expected)
         self.assertEqual(result.blinkerLever, 1 if expected else 0)
         self.assertEqual(car.left_blinker_stalk_count, 1 if expected else 0)
+
+  def test_stalk_rearm_rejects_pressed_first_frame_after_signal_loss(self):
+    path = ROOT / "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
+    scope = {}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), scope)
+    parser = scope["_update_blinker_stalks"]
+    now = 1_000_000_000
+    stalk = {"LEFT_BLINKER": 1, "RIGHT_BLINKER": 0, "LEFT_BLINKER_TAP": 1, "RIGHT_BLINKER_TAP": 0}
+    owner = SimpleNamespace(
+      blinker_stalks=stalk, blinker_stalk_armed=False,
+      left_stalk_prev=False, right_stalk_prev=False,
+      left_blinker_stalk_count=0, right_blinker_stalk_count=0,
+      _vehicle_navi_message_timestamp=lambda cp, name: max(cp.ts_nanos.get(name, {}).values(), default=0),
+    )
+    def replay(age_ns, *, neutral=False):
+      owner.blinker_stalks = ({name: 0 for name in stalk} if neutral else stalk)
+      cp = SimpleNamespace(_last_update_nanos=now,
+                           ts_nanos={"BLINKER_STALKS": {"LEFT_BLINKER": now - age_ns}})
+      ret = SimpleNamespace(blinkerLever=0, blinkerStalkValid=False)
+      parser(owner, ret, cp)
+      return ret
+    # Signal loss invalidates authorization immediately.
+    self.assertFalse(replay(300_000_000).blinkerStalkValid)
+    # First resumed press is not proof of a new tap.
+    self.assertFalse(replay(10_000_000).blinkerStalkValid)
+    self.assertEqual(owner.left_blinker_stalk_count, 0)
+    # Once a new fresh neutral position was observed, allow the next tap.
+    neutral = replay(10_000_000, neutral=True)
+    self.assertTrue(neutral.blinkerStalkValid)
+    self.assertEqual(neutral.blinkerLever, 0)
+    pressed = replay(10_000_000)
+    self.assertTrue(pressed.blinkerStalkValid)
+    self.assertEqual((pressed.blinkerLever, owner.left_blinker_stalk_count), (1, 1))
 
   def test_modeld_retracts_stalk_provenance_after_message_timeout(self):
     path = ROOT / "selfdrive/modeld/modeld.py"
