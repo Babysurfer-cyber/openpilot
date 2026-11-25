@@ -50,7 +50,7 @@ class TestEvidence(unittest.TestCase):
         r = analyze(traffic())
         self.assertEqual(r["diagnostic"], "ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED")
         self.assertFalse(r["permits_vehicle_actuation"])
-        self.assertEqual(r["vehicle_can_tx"], 0)
+        self.assertIsNone(r["vehicle_can_tx"])
 
     def test_no_session_request_is_not_tested(self):
         rows = [r for r in traffic() if r["address"] not in ("0x7b1", "0x7b9")]
@@ -234,6 +234,49 @@ class TestEvidence(unittest.TestCase):
     def test_good_trace_proves_pre_disable_stock_live(self):
         r = analyze(traffic())
         self.assertTrue(r["proof"]["stock_active_after_session_ack_before_disable"])
+
+    def test_malformed_session_request_never_returns_not_tested(self):
+        rows = traffic()
+        req = next(r for r in rows if r["address"] == "0x7b1")
+        req.pop("bus")
+        result = analyze(rows)
+        self.assertEqual(result["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
+        self.assertIn("MISSING_OR_INVALID_CAN_BUS", result["faults"])
+
+    def test_malformed_session_request_hex_never_returns_not_tested(self):
+        rows = traffic()
+        req = next(r for r in rows if r["address"] == "0x7b1")
+        req["data"] = "XYZ"
+        result = analyze(rows)
+        self.assertEqual(result["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
+        self.assertIn("INVALID_CAN_ADDRESS_OR_DATA", result["faults"])
+
+    def test_bad_bus_in_capture_must_fail(self):
+        rows = traffic()
+        rows.append({"ms": 620, "direction": "health", "bus": "UNKNOWN"})
+        rows.sort(key=lambda row: row["ms"])
+        self.assertIn("MISSING_OR_INVALID_CAN_BUS", analyze(rows)["faults"])
+
+    def test_duplicated_ecu_session_ack_not_accepted(self):
+        rows = traffic()
+        rows.append(e(216, "rx", 0x7b9, "0250030000000000"))
+        rows.sort(key=lambda row: row["ms"])
+        result = analyze(rows)
+        self.assertIn("DUPLICATE_POSITIVE_ECU_RESPONSE:session", result["faults"])
+        self.assertEqual(result["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
+
+    def test_preexisting_bus_error_not_clean_bench(self):
+        rows = traffic()
+        for row in rows:
+            if row["direction"] == "health":
+                row["errors"] = 2
+        self.assertIn("NONZERO_INITIAL_CAN_ERROR_OR_LOSS_COUNTER", analyze(rows)["faults"])
+
+    def test_offline_tool_does_not_claim_vehicle_tx_audit(self):
+        verdict = analyze(traffic())
+        self.assertIsNone(verdict["vehicle_can_tx"])
+        self.assertEqual(verdict["offline_verifier_can_tx"], 0)
+        self.assertEqual(verdict["captured_aprk_requests"], 4)
 
 
 if __name__ == "__main__":
