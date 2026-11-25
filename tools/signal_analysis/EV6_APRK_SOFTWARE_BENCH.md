@@ -21,11 +21,15 @@ It never sends CAN or UDS frames and is not imported by onroad services.
 1. Require P, standstill, foot brake, no gas/driver lever/lamp, healthy CAN
    and ten recent consecutive factory SPAS1/SPAS2 messages.
 2. Wait for the exact simulated positive session response (0x50 0x03).
-3. Require **both** CRC-valid factory SPAS1 and SPAS2 streams to be received
-   **after session ACK**, each still fresh within 50 ms when the simulated
-   communication-disable response arrives. An already silent factory ECU
-   must not be mistaken for a completed handoff.
+3. In a distinct `wait_post_session_stock` phase, require **both**
+   CRC-valid, advancing factory SPAS1 and SPAS2 streams **after session ACK**
+   within a bounded 50 ms observation window. Until both have been seen,
+   the mock must **NOT emit** `WOULD_REQUEST_COMMUNICATION_DISABLE`.
+   Only then does it record the hypothetical disable request timestamp.
+   An already silent factory ECU must not be mistaken for a handoff.
 4. Wait for simulated positive communication-disable response (0x68 0x03).
+   This ACK may arrive later than the 50 ms **pre-request** freshness
+   window: the evidence was required at request time, not ACK time.
    Reject invalid OEM frames during transition; if stock SPAS continues at
    or after the **100 ms disable-grace boundary**, immediately revoke the
    mock handoff rather than waiting indefinitely for eventual silence.
@@ -70,8 +74,31 @@ a successful communication disable.
 The simulation now fails closed on these contradictions and on invalid
 stock frames during the session-to-disable and quiet periods. The positive
 fixture and CLI example were updated to include genuine-looking **synthetic**
-post-session stream liveness. The PR contains **22 test methods** after
+post-session stream liveness. The PR contains **25 test methods** after
 adding focused negative cases. The latest GitHub revision has **not been
 executed as a complete test suite** in the available environment, and
 has no passing GitHub Actions run. The code is an unverified **offline mock**,
 not a vehicle ECU implementation or permission to merge for road use.
+
+## 2026-11-25: pre-request ordering correction
+
+A subsequent code review found the older mock emitted
+`WOULD_REQUEST_COMMUNICATION_DISABLE` **immediately** on accepting the
+extended-session ACK. It then demanded factory stream activity at the
+later *disable ACK*, which is **not** the equivalent of PR #45's
+"both OEM streams alive before the disable request" invariant.
+
+The mock now waits for genuine-shaped, sequential factory stream
+observations from BOTH `0x165` and `0x16A` following session ACK,
+with a fail-closed 50 ms observation window; **only after** both have
+been confirmed does it record a hypothetical disable request.
+An early fabricated disable ACK cannot advance the state machine.
+A delayed positive disable ACK may still be accepted based on valid
+**pre-request** evidence.
+
+The current branch has **25 written pure-Python mock test methods**.
+Latest GitHub HEAD syntax/behavior has not been executed end-to-end in
+the local runtime, because a complete live repo checkout is unavailable
+there; no GitHub Actions run has been confirmed. Source inspection
+and consistency checks are **not** a passing test run. Everything
+here remains an OFFLINE simulation that sends **zero** real CAN frames.
