@@ -598,9 +598,17 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
 
   
-  def _update_blinker_stalks(self, ret):
-    """Turn-signal lever (BLINKER_STALKS): presses (rising edges) into carState.*BlinkerStalkCount, position into blinkerLever."""
-    if self.blinker_stalks is not None:
+  def _update_blinker_stalks(self, ret, cp):
+    """Parse physical stalk only when this optional CAN frame is fresh."""
+    timestamp = self._vehicle_navi_message_timestamp(cp, "BLINKER_STALKS")
+    age_ns = cp._last_update_nanos - timestamp
+    # A valid main CAN bus does not imply that the optional stalk message is
+    # fresh. Normal ~10 Hz frames tolerate jitter or one missed frame (250ms).
+    ret.blinkerStalkValid = bool(
+      self.blinker_stalks is not None and timestamp > 0
+      and 0 <= age_ns <= 250_000_000
+    )
+    if ret.blinkerStalkValid:
       left_stalk, right_stalk = bool(self.blinker_stalks["LEFT_BLINKER"]), bool(self.blinker_stalks["RIGHT_BLINKER"])
       if left_stalk and not self.left_stalk_prev:
         self.left_blinker_stalk_count = (self.left_blinker_stalk_count + 1) % 256
@@ -610,6 +618,11 @@ class CarState(CarStateBase):
       # *_TAP is set only in the one-touch detent; a latch passes through it for ~0.1 s
       tap = self.blinker_stalks["LEFT_BLINKER_TAP"] or self.blinker_stalks["RIGHT_BLINKER_TAP"]
       ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+    else:
+      # Never expose a cached, potentially stuck physical lever to controls.
+      # Do not reset previous stalk edges: a stale->fresh transition should
+      # not count as a confirmed new press without independent evidence.
+      ret.blinkerLever = 0
     ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
     ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
 
@@ -772,7 +785,7 @@ class CarState(CarStateBase):
     #ret.steerFaultTemporary = False
 
     # ▼▼▼ 레버 상태 업데이트 함수 호출 추가 ▼▼▼
-    self._update_blinker_stalks(ret)
+    self._update_blinker_stalks(ret, cp)
 
     # ▼▼▼ 기존 램프 처리 로직을 BLINKERS_ALT도 지원하도록 보강 ▼▼▼
     blinkers_info = self.blinkers if self.blinkers is not None else self.blinkers_alt if self.blinkers_alt is not None else None
