@@ -324,6 +324,37 @@ class MpcInputEnvelopeDifferential(unittest.TestCase):
                   np.full(8, 160.), np.full(8, 1000.), "acc", True, .3)
     np.testing.assert_allclose(params[:, 1], np.full(8, .3))
 
+  def test_existing_high_mode_factor_is_1_point_2(self):
+    """Confirm high mode already raises the configured max independent of this PR."""
+    path = ROOT / "selfdrive/carrot/carrot_functions.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarrotPlanner")
+    fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "get_carrot_accel")
+    ns = {"np": np, "A_CRUISE_MAX_BP_CARROT": np.linspace(0., 40., 7),
+          "DrivingMode": SimpleNamespace(High=4)}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[copy.deepcopy(fn)], type_ignores=[])),
+                 str(path), "exec"), ns)
+    common = dict(zip((f"cruiseMaxVals{i}" for i in range(7)), (1.0,)*7))
+    common.update(myHighModeFactor=1.2, mySafeFactor=1.0)
+    normal = SimpleNamespace(**common, myDrivingMode=3)
+    high = SimpleNamespace(**common, myDrivingMode=4)
+    self.assertAlmostEqual(float(ns["get_carrot_accel"](normal, 25.)), 1.0)
+    self.assertAlmostEqual(float(ns["get_carrot_accel"](high, 25.)), 1.2)
+
+  def test_acc_planner_passes_carrot_acceleration_cap_to_mpc(self):
+    path = ROOT / "selfdrive/controls/lib/longitudinal_planner.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "LongitudinalPlanner")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "update")
+    assignments = [n for n in ast.walk(method) if isinstance(n, ast.Assign)
+                   and any(isinstance(t, ast.Name) and t.id == "accel_limits" for t in n.targets)]
+    self.assertTrue(any("carrot.get_carrot_accel(v_ego)" in ast.unparse(n.value) for n in assignments))
+    self.assertTrue(any(isinstance(n, ast.Call)
+                        and isinstance(n.func, ast.Attribute) and n.func.attr == "set_accel_limits"
+                        and "accel_limits_turns" in ast.unparse(n)
+                        for n in ast.walk(method)))
+
+
 
 
 
