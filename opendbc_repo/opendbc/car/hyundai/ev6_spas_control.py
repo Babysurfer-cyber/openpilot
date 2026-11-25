@@ -15,6 +15,7 @@ POST_SESSION_MAX_AGE_S = .050
 ACK_TIMEOUT_S = .400
 QUIET_S = .100
 RESTORE_TIMEOUT_S = 1.000
+RESTORE_STOCK_MIN_FRAMES = 10  # align with independent bench validator
 PLAN_MAX_DURATION_S = .350  # planning duration, NOT a validated safe TX time
 
 
@@ -118,7 +119,7 @@ class EV6SpasControlPlan:
     # Both streams MUST be observed again *after* the default-session ACK.
     # Cached pre-disable samples do not establish a restored OEM controller.
     return (self.restore_enable_ack and self.restore_default_ack and
-            all(s.restore_consecutive >= 2 and 0 <= now-s.last_time <= STOCK_MAX_AGE_S
+            all(s.restore_consecutive >= RESTORE_STOCK_MIN_FRAMES and 0 <= now-s.last_time <= STOCK_MAX_AGE_S
                 for s in self.stock.values()))
 
   def _post_session_stock_ready(self, now):
@@ -138,7 +139,9 @@ class EV6SpasControlPlan:
       st.consecutive, st.after_ack, st.restore_consecutive = 0, False, 0
       if addr == 0x16A:
         self.stock_direction = None
-      if self.phase not in ('idle', 'locked') and not self.phase.startswith('restore_'):
+      if self.phase.startswith('restore_'):
+        self._lock(now, 'invalid_stock_during_restore')
+      elif self.phase not in ('idle', 'locked'):
         self._restore(now, 'invalid_stock_frame')
       return
     counter = data[2]
@@ -151,8 +154,10 @@ class EV6SpasControlPlan:
                                                        'disable', 'quiet', 'eligible'):
         self._restore(now, 'factory_indicator_active')
     if self.phase == 'restore_stock' and now > self.changed_at:
-      st.restore_consecutive = (min(st.restore_consecutive + 1, 20)
-                                if advances and st.restore_consecutive else 1)
+      if st.restore_consecutive and not advances:
+        self._lock(now, 'restore_counter_discontinuity')
+      else:
+        st.restore_consecutive = min(st.restore_consecutive + 1, 20)
     if self.session_ack_at >= 0 and now > self.session_ack_at and advances:
       st.after_ack = True
     if self.phase == 'eligible':
@@ -263,7 +268,10 @@ class EV6SpasControlPlan:
       self._restore(now, 'monitor_continuity_lost')
     self.last_tick_at = now
     if not isinstance(inputs, SafetyInputs) or not inputs.safe():
-      self._restore(now, 'unsafe_inputs')
+      if self.phase.startswith('restore_'):
+        self._lock(now, 'unsafe_inputs_during_restore')
+      else:
+        self._restore(now, 'unsafe_inputs')
     if self.phase == 'session':
       if now - self.changed_at >= ACK_TIMEOUT_S:
         self._restore(now, 'extended_session_timeout')
