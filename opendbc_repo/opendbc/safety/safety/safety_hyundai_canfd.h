@@ -225,6 +225,10 @@ static bool hyundai_ev6_blinker_stalk_test = false;
 static uint8_t hyundai_ev6_stock_stalk[8] = {0};
 static uint32_t hyundai_ev6_stalk_rx_us = 0U;
 static uint32_t hyundai_ev6_stalk_tx_us = 0U;
+static uint32_t hyundai_ev6_wheel_rx_us = 0U;
+static uint32_t hyundai_ev6_brake_rx_us = 0U;
+static uint32_t hyundai_ev6_gear_rx_us = 0U;
+static bool hyundai_ev6_park_confirmed = false;
 static bool hyundai_ev6_stock_stalk_idle = false;
 
 // EV6 2022 stock BLINKER_STALKS (0x3C1): CRC8 poly 0x1D,
@@ -518,10 +522,16 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *to_push) {
     // brake press
     if (addr == 0x175) {
       brake_pressed = GET_BIT(to_push, 81U);
+      if (hyundai_ev6_blinker_stalk_test) {
+        hyundai_ev6_brake_rx_us = microsecond_timer_get();
+      }
     }
 
     // vehicle moving
     if (addr == 0xa0) {
+      if (hyundai_ev6_blinker_stalk_test) {
+        hyundai_ev6_wheel_rx_us = microsecond_timer_get();
+      }
       uint32_t fl = (GET_BYTES(to_push, 8, 2)) & 0x3FFFU;
       uint32_t fr = (GET_BYTES(to_push, 10, 2)) & 0x3FFFU;
       uint32_t rl = (GET_BYTES(to_push, 12, 2)) & 0x3FFFU;
@@ -532,6 +542,16 @@ static void hyundai_canfd_rx_hook(const CANPacket_t *to_push) {
       // average of all 4 wheel speeds. Conversion: raw * 0.03125 / 3.6 = m/s
       UPDATE_VEHICLE_SPEED((fr + rr + rl + fl) / 4.0 * 0.03125 / 3.6);
     }
+  }
+
+  // EV6's 0x35 ACCELERATOR carries factory P/D/N/R at byte 24 bits 0..2
+  // (P = 0 in hyundai_canfd.dbc). Do not infer P from zero wheel speed.
+  // If this OEM signal is absent or changes source, the bench-only test
+  // remains blocked rather than guessing the shift state.
+  if (hyundai_ev6_blinker_stalk_test && hyundai_ev_gas_signal && (bus == pt_bus)
+      && (addr == 0x35) && (GET_LEN(to_push) >= 25U)) {
+    hyundai_ev6_park_confirmed = (GET_BYTE(to_push, 24) & 0x7U) == 0U;
+    hyundai_ev6_gear_rx_us = microsecond_timer_get();
   }
 
   if (bus == scc_bus) {
@@ -611,7 +631,15 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
                       (GET_BYTE(to_send, 7) == hyundai_ev6_stock_stalk[7]);
     bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
                    (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
+                   !safety_rx_checks_invalid &&
                    !vehicle_moving && brake_pressed && !gas_pressed &&
+                   hyundai_ev6_park_confirmed &&
+                   hyundai_ev6_wheel_rx_us != 0U &&
+                   hyundai_ev6_brake_rx_us != 0U &&
+                   hyundai_ev6_gear_rx_us != 0U &&
+                   get_ts_elapsed(now, hyundai_ev6_wheel_rx_us) <= 150000U &&
+                   get_ts_elapsed(now, hyundai_ev6_brake_rx_us) <= 150000U &&
+                   get_ts_elapsed(now, hyundai_ev6_gear_rx_us) <= 150000U &&
                    hyundai_ev6_stock_stalk_idle &&
                    (hyundai_ev6_stalk_rx_us != 0U) &&
                    (get_ts_elapsed(now, hyundai_ev6_stalk_rx_us) <= 120000U) &&
@@ -782,6 +810,10 @@ static safety_config hyundai_canfd_init(uint16_t param) {
   hyundai_ev6_blinker_stalk_test = GET_FLAG(param, HYUNDAI_PARAM_EV6_BLINKER_STALK_TEST);
   hyundai_ev6_stalk_rx_us = 0U;
   hyundai_ev6_stalk_tx_us = 0U;
+  hyundai_ev6_wheel_rx_us = 0U;
+  hyundai_ev6_brake_rx_us = 0U;
+  hyundai_ev6_gear_rx_us = 0U;
+  hyundai_ev6_park_confirmed = false;
   hyundai_ev6_stock_stalk_idle = false;
   for (int i = 0; i < 8; i++) {
     hyundai_ev6_stock_stalk[i] = 0U;
