@@ -100,7 +100,7 @@ def _create_preview(segment):
         PREVIEW_RETRY_AFTER[segment] = time.monotonic() + PREVIEW_FAILURE_COOLDOWN
 
 
-@app.segment("/preview-thumbnail/<segment>")
+@app.route("/preview-thumbnail/<segment>")
 def preview_thumbnail(segment):
   if not SEGMENT_PATTERN.fullmatch(segment):
     abort(404)
