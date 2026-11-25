@@ -135,6 +135,7 @@ class CarState(CarStateBase):
     self.blinkers = None
     self.blinkers_alt = None  # 추가
     self.blinker_stalks = None  # 추가
+    self.blinker_stalk_armed = False  # require a freshly observed neutral lever before accepting presses
     self.left_stalk_prev = self.right_stalk_prev = False  # 추가
     self.left_blinker_stalk_count = self.right_blinker_stalk_count = 0  # 추가
     self.doors_seatbelts = None
@@ -604,10 +605,19 @@ class CarState(CarStateBase):
     age_ns = cp._last_update_nanos - timestamp
     # A valid main CAN bus does not imply that the optional stalk message is
     # fresh. Normal ~10 Hz frames tolerate jitter or one missed frame (250ms).
-    ret.blinkerStalkValid = bool(
+    frame_fresh = bool(
       self.blinker_stalks is not None and timestamp > 0
       and 0 <= age_ns <= 250_000_000
     )
+    if not frame_fresh:
+      self.blinker_stalk_armed = False
+    elif not any(self.blinker_stalks[k] for k in (
+      "LEFT_BLINKER", "RIGHT_BLINKER", "LEFT_BLINKER_TAP", "RIGHT_BLINKER_TAP",
+    )):
+      # A fresh neutral frame separates a new physical request from a press
+      # that might have begun during an unobserved CAN outage.
+      self.blinker_stalk_armed = True
+    ret.blinkerStalkValid = frame_fresh and self.blinker_stalk_armed
     if ret.blinkerStalkValid:
       left_stalk, right_stalk = bool(self.blinker_stalks["LEFT_BLINKER"]), bool(self.blinker_stalks["RIGHT_BLINKER"])
       if left_stalk and not self.left_stalk_prev:
@@ -620,8 +630,8 @@ class CarState(CarStateBase):
       ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
     else:
       # Never expose a cached, potentially stuck physical lever to controls.
-      # Do not reset previous stalk edges: a stale->fresh transition should
-      # not count as a confirmed new press without independent evidence.
+      # Preserve prior edge counters until a fresh neutral frame is observed.
+      # Fresh-but-pressed frames after an outage remain ignored until rearmed.
       ret.blinkerLever = 0
     ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
     ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
