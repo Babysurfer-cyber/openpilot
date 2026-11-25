@@ -37,6 +37,7 @@ def make_helper():
   helper.v_cruise_before_tollgate = 0
   helper.tollgate_nav_limit = 0
   helper.carrot_cruise_active = False
+  helper._carrot_cruise_saved_op_speed = None
   helper.auto_speed_offset = 0.0
   helper._add_log = lambda _: None
   helper._auto_mode_prompt = lambda _: None
@@ -217,6 +218,7 @@ def test_vturn_automatic_exit_uses_tracked_auto_speed_not_initial_backup():
   helper.prev_carrot_active = True
   helper.carrot_cruise_min_timer = 0
   helper._v_cruise_kph_at_brake = 100
+  helper._carrot_cruise_saved_op_speed = 100
   helper._carrot_auto_shadow_target = 80
   helper.auto_prev_limit = 60
   helper.v_ego_kph_set = 55
@@ -248,3 +250,108 @@ def test_gas_triggered_automatic_exit_does_not_learn_offset_or_force_old_target(
   assert result == pytest.approx(80)
   assert helper.auto_speed_offset == 0
   assert helper.auto_sync_speed is None
+
+
+def make_carrot_exit_helper():
+  helper = make_helper()
+  helper.current_driving_mode = 5
+  helper.frame = 1
+  helper.v_cruise_kph = 95
+  helper.v_ego_kph_set = 0
+  helper.desiredSource = "none"
+  helper.desiredSpeed = 250
+  helper.d_rel = 8
+  helper.v_lead_kph = 0
+  helper.carrot_cruise_active = True
+  helper.prev_carrot_active = False
+  helper.carrot_cruise_min_timer = 0
+  helper.stationary_lead_timer = 0
+  helper._cruise_speed_max = 161
+  helper._v_cruise_kph_at_brake = 0
+  helper._paddle_mode = 0
+  helper._paddle_decel_active = False
+  helper._prepare_buttons = lambda _cs, speed: (speed, 0, False)
+  helper._carrot_command = lambda speed, button, is_long: (speed, button, is_long)
+  helper._update_cruise_state = lambda _cs, _cc, speed: speed
+  return helper
+
+
+def test_stationary_lead_exit_recovers_prior_openpilot_setpoint_after_zero_coast():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs()
+  # The previous OpenPilot target is 95 even though the temporary coast
+  # speed is already zero at the stopped lead.
+  assert helper._update_cruise_buttons(CS, CC, 0) == pytest.approx(0)
+  assert helper._carrot_cruise_saved_op_speed == pytest.approx(95)
+  assert helper._carrot_auto_shadow_target == pytest.approx(95)
+  # The stationary-lead timer reaches its existing five-second threshold.
+  helper.carrot_cruise_min_timer = 0
+  helper.stationary_lead_timer = 499
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert not helper.carrot_cruise_active
+  assert result == pytest.approx(95)
+  assert helper._carrot_cruise_saved_op_speed is None
+  assert helper.prev_carrot_active is False  # The exit is recorded immediately.
+  # Re-entering on the next update must capture a fresh OpenPilot target.
+  helper.carrot_cruise_active = True
+  helper.v_cruise_kph = 80
+  helper.d_rel = 0
+  assert helper._update_cruise_buttons(CS, CC, 0) == pytest.approx(0)
+  assert helper._carrot_cruise_saved_op_speed == pytest.approx(80)
+
+
+def test_brake_exit_preserves_openpilot_setpoint_but_never_requests_reengagement():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(brakePressed=True)
+  CC.enabled = False
+  helper.carrot_cruise_active = False  # _prepare_brake_gas already canceled it.
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 95
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert result == pytest.approx(95)
+  assert helper._activate_cruise == 0
+  assert helper._carrot_cruise_saved_op_speed is None
+
+
+def test_manual_cancel_does_not_restore_or_engage_from_saved_speed():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs()
+  helper.carrot_cruise_active = False  # Explicit cancel, not a brake exit.
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 95
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert result == pytest.approx(0)
+  assert helper._activate_cruise == 0
+  assert helper._carrot_cruise_saved_op_speed is None
+
+
+def test_zero_coast_speed_is_not_retained_as_camera_restore_cap():
+  helper, (CS, CC) = make_helper(), make_inputs(mapSource=2)
+  helper._carrot_auto_shadow_target = 95
+  result = run_auto(helper, CS, CC, backed_up=95, coast=0)
+  # The camera remains active; restoring the setpoint is not a command to
+  # accelerate and camera speed planning remains independent.
+  assert result == pytest.approx(95)
+  assert helper.camera_pending is True
+  assert helper.auto_sync_speed is None
+
+
+def test_lfa_toggle_restores_saved_op_target_without_adding_speed_increment():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs()
+  helper._lfa_button_mode = 2
+  helper._carrot_cruise_saved_op_speed = 95
+  helper.prev_carrot_active = True
+  helper._carrot_auto_shadow_target = 95
+  helper._v_cruise_kph_at_brake = 100  # Old brake backup must not win.
+  helper._prepare_buttons = lambda _cs, speed: (speed, ButtonType.lfaButton, False)
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert result == pytest.approx(95)
+  assert not helper.carrot_cruise_active
+  assert helper._carrot_cruise_saved_op_speed is None
+
+
+def test_zero_op_target_on_entry_does_not_invent_vehicle_or_scc_speed():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs()
+  helper.v_cruise_kph = 0
+  helper._v_cruise_kph_at_brake = 100  # Stale brake backup isn't authoritative.
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert result == pytest.approx(0)
+  assert helper._carrot_cruise_saved_op_speed is None
+  assert helper._carrot_auto_shadow_target == pytest.approx(0)

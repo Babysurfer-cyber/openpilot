@@ -198,6 +198,9 @@ class VCruiseCarrot:
     self._paddle_decel_active = False
     self.carrot_cruise_active = False
     self.carrot_cruise_min_timer = 0  # <--- [추가] 5초 타이머 변수
+    # OpenPilot's requested set speed immediately before Carrot Cruise starts.
+    # Independent of the brake/resume backup and the temporary coast setpoint.
+    self._carrot_cruise_saved_op_speed = None
 
     #self.events = []
     self.xState = 0
@@ -614,6 +617,7 @@ class VCruiseCarrot:
                             and (self.carrot_cmd == "SPEED" or (self.carrot_cmd == "CRUISE" and self.carrot_arg == "GO")))
     auto_restore_speed = None
     automatic_carrot_restore_target = None
+    lfa_carrot_restored = False
 
     v_cruise_kph, button_type, long_pressed = self._carrot_command(v_cruise_kph, button_type, long_pressed)
     
@@ -622,15 +626,16 @@ class VCruiseCarrot:
     # ▼▼▼ [추가] 당근크루즈 상태에서 LFA 버튼을 누르면 '+' 버튼처럼 작동하게 치환 ▼▼▼
     if not long_pressed and button_type == ButtonType.lfaButton and getattr(self, '_lfa_button_mode', 0) == 2:
       if getattr(self, 'carrot_cruise_active', False):
-        auto_restore_speed = v_cruise_kph
-        
-        # 1. 금고에 저장된 기존 속도(100 등)를 꺼내서 복구합니다.
-        if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
-          v_cruise_kph = max(v_cruise_kph, self._v_cruise_kph_at_brake)
-          button_kph = v_cruise_kph  # 💡 하위 로직에서 감속된 속도로 다시 덮어쓰지 못하도록 버튼 속도도 동기화!
-          self._v_cruise_kph_at_brake = 0
-          
+        saved_speed = self._carrot_cruise_saved_op_speed
+        if saved_speed is not None:
+          auto_restore_speed = v_cruise_kph
+          automatic_carrot_restore_target = saved_speed
+          v_cruise_kph = max(v_cruise_kph, saved_speed)
+          button_kph = v_cruise_kph
+        self._carrot_cruise_saved_op_speed = None
+        self._v_cruise_kph_at_brake = 0
         self.carrot_cruise_active = False
+        lfa_carrot_restored = True
         button_type = ButtonType.accelCruise
         self._add_log("Carrot Cruise OFF & Restore Speed (LFA toggle)")
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
@@ -648,7 +653,21 @@ class VCruiseCarrot:
       if button_type == ButtonType.accelCruise:
         self._lat_enabled = True
         self._pause_auto_speed_up = False
-        if self._soft_hold_active > 0:
+        if lfa_carrot_restored:
+          # LFA has already restored the target; it is not an extra '+'.
+          self._soft_hold_active = 0
+        elif self.carrot_cruise_active:
+          self._soft_hold_active = 0
+          saved_speed = self._carrot_cruise_saved_op_speed
+          if saved_speed is not None:
+            auto_restore_speed = v_cruise_kph
+            automatic_carrot_restore_target = saved_speed
+            v_cruise_kph = max(v_cruise_kph, saved_speed)
+          # Never fall back to a possibly stale brake backup in Carrot Cruise.
+          self._carrot_cruise_saved_op_speed = None
+          self._v_cruise_kph_at_brake = 0
+          self.carrot_cruise_active = False
+        elif self._soft_hold_active > 0:
           self._soft_hold_active = 0
         elif self._v_cruise_kph_at_brake > 0 and v_cruise_kph < self._v_cruise_kph_at_brake:
           auto_restore_speed = v_cruise_kph
@@ -781,12 +800,23 @@ class VCruiseCarrot:
 
     if not hasattr(self, 'prev_carrot_active'):
       self.prev_carrot_active = False
-      
+
+    # Braking cancels Carrot Cruise, but must not replace the saved OpenPilot
+    # target with the zero vehicle/coast speed. This only restores the stored
+    # setpoint; it never requests cruise engagement or vehicle acceleration.
+    if not self.carrot_cruise_active and self.prev_carrot_active:
+      if CS.brakePressed and button_type == 0 and self._carrot_cruise_saved_op_speed is not None:
+        v_cruise_kph = self._carrot_cruise_saved_op_speed
+      self._carrot_cruise_saved_op_speed = None
+
     if getattr(self, 'carrot_cruise_active', False) and not self.prev_carrot_active:
-      self._v_cruise_kph_at_brake = v_cruise_kph  # 💡 0일 때만 저장하는 조건 삭제 (무조건 현재 속도를 백업!)
+      # Capture the previous OpenPilot v_cruise, not cluster SCC speed or vEgo.
+      # An unset/zero setpoint must never be replaced with a guessed speed.
+      previous_op_speed = float(self.v_cruise_kph)
+      self._carrot_cruise_saved_op_speed = (previous_op_speed if
+        math.isfinite(previous_op_speed) and 0 < previous_op_speed <= self._cruise_speed_max
+        and previous_op_speed != V_CRUISE_UNSET else None)
       self.carrot_cruise_min_timer = 500  # <--- [추가] 당근크루즈 켜지면 5초(500프레임) 장전
-        
-    self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
     # ▼ [통합 복귀 로직] 가속 페달, 정지차량 5초, 목표속도 5초 도달 시 
@@ -837,21 +867,25 @@ class VCruiseCarrot:
           self.stationary_lead_timer = 0
           self.target_speed_reach_timer = 0
         
-          # ▼▼▼ [버그 픽스] 금고 복귀 로직은 실제로 당근크루즈가 완전히 '해제'될 때만 꺼내오도록 안으로 이동! ▼▼▼
-          if getattr(self, '_v_cruise_kph_at_brake', 0) > 0:
+          # Restore the OpenPilot setpoint captured before entering Carrot
+          # Cruise. Never source it from the live (possibly zero) coast speed.
+          saved_speed = self._carrot_cruise_saved_op_speed
+          if saved_speed is not None:
             auto_restore_speed = v_cruise_kph
-            # Keep the pre-coast set speed separate from the reduced coast
-            # speed. Mode 5 must not reapply the lower sync speed on a safe
-            # automatic return; this is a restore, not a driver + press.
-            automatic_carrot_restore_target = self._v_cruise_kph_at_brake
-            v_cruise_kph = max(v_cruise_kph, automatic_carrot_restore_target)
-            self._v_cruise_kph_at_brake = 0
+            automatic_carrot_restore_target = saved_speed
+            v_cruise_kph = max(v_cruise_kph, saved_speed)
+          self._carrot_cruise_saved_op_speed = None
+          self._v_cruise_kph_at_brake = 0
             
           self._add_log(f"Carrot Cruise OFF & Restore ({restore_reason})")
     else:
       self.stationary_lead_timer = 0
       self.target_speed_reach_timer = 0
     # ==============================================================
+
+    # Record the FINAL cruise state (after automatic exit), otherwise a
+    # re-entry on the next update can miss its new backup capture.
+    self.prev_carrot_active = self.carrot_cruise_active
 
     # Apply mode 5 after the ordinary button/pedal handling so learning uses
     # the actual selected speed, and legacy auto-speed calculations cannot
@@ -941,8 +975,8 @@ class VCruiseCarrot:
     shadow_target = getattr(self, "_carrot_auto_shadow_target", None)
     if self.carrot_cruise_active:
       if shadow_target is None:
-        saved = getattr(self, "_v_cruise_kph_at_brake", 0)
-        shadow_target = saved if saved > 0 else v_cruise_kph
+        saved = self._carrot_cruise_saved_op_speed
+        shadow_target = saved if saved is not None else v_cruise_kph
       if manual_speed_change:
         # Explicit driver/remote speed choices take precedence over a shadow.
         shadow_target = v_cruise_kph
@@ -956,6 +990,11 @@ class VCruiseCarrot:
       return min(v_cruise_kph, updated_target)
 
     if automatic_carrot_restore_target is not None:
+      # A zero coast setpoint at standstill is not a valid camera/safety speed
+      # cap; do not retain zero as auto_sync_speed after Carrot Cruise ends.
+      # Independent obstacle and navigation speed limits remain in effect.
+      if restore_speed is not None and restore_speed <= 0:
+        restore_speed = None
       # The last mode-5 target is authoritative on an automatic return,
       # including verified road-limit changes during the coast.
       if shadow_target is not None:
@@ -1388,7 +1427,11 @@ class VCruiseCarrot:
     if CS.brakePressed:
       self._cruise_ready = False
       self._paddle_decel_active = False
-      self.carrot_cruise_active = False  # <--- 추가
+      if self.carrot_cruise_active and self._carrot_cruise_saved_op_speed is not None:
+        # The regular brake-resume backup must capture the prior OpenPilot
+        # setpoint, not a zero speed produced by the coasting clamp.
+        self._v_cruise_kph_at_brake = self._carrot_cruise_saved_op_speed
+      self.carrot_cruise_active = False
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
       if self._brake_pressed_count == 1 and self.enabled_last:
         # ▼▼▼ [수정] 금고가 비어있을 때만 백업! (당근크루즈가 넣어둔 80 보존) ▼▼▼
