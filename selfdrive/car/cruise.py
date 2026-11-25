@@ -990,6 +990,11 @@ class VCruiseCarrot:
     return float(value) if math.isfinite(value) and 30 <= value <= 160 else 0.0
 
   def _auto_mode_prompt(self, text):
+    # During Carrot Cruise this method may be called for shadow targets,
+    # which are not necessarily the actual requested cruise setpoint.
+    # The outer update path still chimes when the final setpoint really changes.
+    if self.carrot_cruise_active:
+      return
     # CarrotServ consumes the text and emits one audio10 chime.
     # Mark this cycle before the direct-chime fallback is considered.
     try:
@@ -1162,7 +1167,9 @@ class VCruiseCarrot:
         self.auto_sync_speed = None
         self.auto_mode_needs_sync = False
         self.auto_baseline_pending = True
-      self.camera_pending = True
+      # Preserve a camera hold only when it was already established by
+      # fresh navigation. Missing navigation alone is not camera evidence.
+      # A coast begun with no camera may return to the saved cruise speed.
       if not getattr(CS, 'navDataValid', False):
         self.nav_limit_timer = 0
         self.memorized_nav_limit = 0
