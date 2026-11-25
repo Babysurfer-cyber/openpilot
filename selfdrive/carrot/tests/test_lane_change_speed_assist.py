@@ -1,6 +1,7 @@
 """Lane-change side-lead assist must not react to a mere blinker or false tracks."""
 
 from dataclasses import dataclass
+from math import nan
 from types import SimpleNamespace
 
 from openpilot.selfdrive.carrot.radar_motion.lane_change_speed_assist import (
@@ -176,3 +177,29 @@ def test_after_finish_new_prechange_can_rearm():
   for i in range(6):
     assert tracker.update(.4 + i * .05, 27., model("preLaneChange", "left"), (Point(),)) is None
   assert tracker.update(.7, 27., model("laneChangeStarting", "left"), (Point(),)) is not None
+
+
+def test_direction_flip_after_start_disables_original_side():
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker, Point(y_rel=3.6), direction="left") is not None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "right"), (Point(y_rel=3.6),)) is None
+
+
+def test_direction_change_in_prechange_requires_new_observation():
+  tracker = LaneChangeSpeedAssist()
+  for i in range(6):
+    assert tracker.update(i * .05, 27., model("preLaneChange", "left"), (Point(y_rel=-3.6),)) is None
+  assert tracker.update(.30, 27., model("preLaneChange", "right"), (Point(y_rel=-3.6),)) is None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "right"), (Point(y_rel=-3.6),)) is None
+
+
+def test_nonfinite_lane_line_probability_rejected():
+  tracker = LaneChangeSpeedAssist()
+  for i in range(6):
+    frame = model("preLaneChange", "left", probabilities=(.9, nan, .9, .9))
+    assert tracker.update(i * .05, 27., frame, (Point(),)) is None
+  assert tracker.update(.30, 27., model("laneChangeStarting", "left"), (Point(),)) is None
+
+
+def test_nonfinite_target_velocity_rejected():
+  assert seed(LaneChangeSpeedAssist(), Point(v_lead=float("inf"))) is None
