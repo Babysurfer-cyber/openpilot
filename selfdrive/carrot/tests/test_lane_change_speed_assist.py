@@ -484,3 +484,50 @@ def test_active_right_lead_disengages_on_confident_left_lane_width_error():
   bad.laneLines = tuple(SimpleNamespace(x=(0., 100.), y=(v, v))
                         for v in (-12., -1.8, 1.8, 5.4))
   assert tracker.update(.35, 27., bad, (point,)) is None
+
+
+def test_active_left_target_exiting_outer_lane_is_discarded():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(y_rel=3.6)
+  assert seed(tracker, point, direction="left") is not None
+  dropped = False
+  for i in range(1, 10):
+    point = replace(point, y_rel=3.6 + .4 * i)
+    candidate = tracker.update(.30 + i * .05, 27., model("laneChangeStarting", "left"), (point,))
+    if point.y_rel >= 5.2:
+      assert candidate is None
+      dropped = True
+  assert dropped
+
+
+def test_active_right_target_exiting_outer_lane_is_discarded():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(y_rel=-3.6)
+  assert seed(tracker, point, direction="right") is not None
+  dropped = False
+  for i in range(1, 10):
+    point = replace(point, y_rel=-3.6 - .4 * i)
+    candidate = tracker.update(.30 + i * .05, 27., model("laneChangeStarting", "right"), (point,))
+    if point.y_rel <= -5.2:
+      assert candidate is None
+      dropped = True
+  assert dropped
+
+
+def test_side_target_moving_into_new_ego_lane_remains_selected():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(y_rel=3.6)
+  assert seed(tracker, point, direction="left") is not None
+  for i in range(1, 8):
+    point = replace(point, y_rel=3.6 - .4 * i)
+    assert tracker.update(.30 + i * .05, 27., model("laneChangeStarting", "left"), (point,)) is not None
+
+
+def test_outer_lane_escape_does_not_reacquire_same_id():
+  tracker = LaneChangeSpeedAssist()
+  point = Point(y_rel=3.6)
+  assert seed(tracker, point, direction="left") is not None
+  for i in range(1, 8):
+    point = replace(point, y_rel=3.6 + .4 * i)
+    tracker.update(.30 + i * .05, 27., model("laneChangeStarting", "left"), (point,))
+  assert tracker.update(.70, 27., model("laneChangeStarting", "left"), (Point(y_rel=3.6),)) is None
