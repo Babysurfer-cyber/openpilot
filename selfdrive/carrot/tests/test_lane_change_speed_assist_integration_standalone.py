@@ -95,6 +95,7 @@ def model(state="preLaneChange", direction="left"):
 
 class ControllerHarness:
   def __init__(self, projector=None):
+    self.enable_radar_tracks = 1
     self.lane_change_speed_assist = ASSIST.LaneChangeSpeedAssist()
     self.selection = production_selector(projector)
 
@@ -160,6 +161,20 @@ class LaneChangeControllerAstIntegration(unittest.TestCase):
     self.assertIsNone(h.process(.35, "laneChangeFinishing"))
     self.assertIsNone(h.process(.40, "off"))
     self.assertIsNone(h.process(.45, "laneChangeStarting"))
+
+  def test_scc_only_modes_never_select_side_lead(self):
+    for mode in (-1, 0):
+      with self.subTest(mode=mode):
+        h = ControllerHarness()
+        h.enable_radar_tracks = mode
+        self.assertIsNone(h.prepare())
+
+  def test_radar_tracking_modes_select_side_lead(self):
+    for mode in (1, 2, 3):
+      with self.subTest(mode=mode):
+        h = ControllerHarness()
+        h.enable_radar_tracks = mode
+        self.assertIsNotNone(h.prepare())
 
   def test_selector_has_no_acceleration_or_cruise_writes(self):
     self.assertTrue(callable(production_selector()))
