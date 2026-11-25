@@ -120,6 +120,55 @@ class LanelessAtcStandalone(unittest.TestCase):
           emitted.append((event, long_press))
       self.assertEqual(emitted, [(ButtonType.lfaButton, True)])
 
+  def test_lfa_long_press_boundary_and_held_ten_seconds(self):
+    impl = load_real_methods("selfdrive/car/cruise.py", "VCruiseCarrot", {"_prepare_buttons"})
+    for duration in (1, 5, 20, 50, 67, 68, 69, 70, 71, 150, 300, 1000):
+      with self.subTest(hold_cycles=duration):
+        obj = impl()
+        obj.button_cnt = 0
+        obj.button_prev = ButtonType.unknown
+        obj.long_pressed = False
+        obj._cruise_button_long_delay = 40
+        obj.button_long_time = 50
+        obj._cruise_speed_unit_basic = 1
+        obj._cruise_speed_unit = 10
+        obj._cruise_button_mode = 0
+        obj.is_metric = True
+
+        press = SimpleNamespace(type=ButtonType.lfaButton, pressed=True)
+        release = SimpleNamespace(type=ButtonType.lfaButton, pressed=False)
+        events = []
+        for button_events in ([press],) + ([],) * duration + ([release],):
+          speed, button, long_pressed = obj._prepare_buttons(
+            SimpleNamespace(buttonEvents=button_events), 80.)
+          self.assertEqual(speed, 80.)
+          if button:
+            events.append((button, long_pressed))
+        self.assertEqual(events, [(ButtonType.lfaButton, duration >= 70)])
+
+  def test_atc_switch_repeatedly_persists_across_restart(self):
+    impl = load_real_methods("selfdrive/car/cruise.py", "VCruiseCarrot", {"_toggle_atc_enabled"})
+    svc_impl = load_real_methods("selfdrive/carrot/carrot_serv.py", "CarrotServ", {"update_params"})
+    for mode in range(4):
+      for initially_enabled in (False, True):
+        with self.subTest(mode=mode, initially_enabled=initially_enabled):
+          params = FakeParams(mode, initially_enabled)
+          enabled = initially_enabled
+          for _ in range(10):
+            svc = svc_impl()
+            svc.params = params
+            svc.update_params()
+            self.assertEqual(svc.autoTurnControl, mode if enabled else 0)
+
+            controller = impl()
+            controller.params = params
+            controller._atc_toggle_enabled = params.get_bool("AutoTurnControlEnabled")
+            controller._add_log = lambda _: None
+            controller._toggle_atc_enabled()
+            enabled = not enabled
+            self.assertEqual(params.get_bool("AutoTurnControlEnabled"), enabled)
+            self.assertEqual(params.get_int("AutoTurnControl"), mode)
+
   def test_short_lfa_press_remains_short(self):
     impl = load_real_methods("selfdrive/car/cruise.py", "VCruiseCarrot", {"_prepare_buttons"})
     obj = impl()
