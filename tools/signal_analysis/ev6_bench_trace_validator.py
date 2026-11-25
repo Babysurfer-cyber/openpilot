@@ -19,6 +19,7 @@ be mistaken for actual ECU responses. Factory SPAS CRC/counter required.
 """
 import argparse
 import json
+import math
 from pathlib import Path
 
 SPAS = {0x165: (24, 0x819D), 0x16A: (32, 0x9F5B)}
@@ -67,6 +68,7 @@ def analyze(events):
     valid_count = {a: 0 for a in SPAS}
     first_health = None
     health_samples = 0
+    health_records = []
     last_ms = -1.0
     disable_ack_ms = None
     default_ack_ms = None
@@ -79,7 +81,14 @@ def analyze(events):
             faults.append(label)
 
     for event in events:
-        ms = float(event["ms"])
+        try:
+            ms = float(event["ms"])
+        except (ValueError, TypeError, KeyError):
+            fault("INVALID_CAPTURE_TIMESTAMP")
+            continue
+        if not math.isfinite(ms) or ms < 0:
+            fault("INVALID_CAPTURE_TIMESTAMP")
+            continue
         if ms < last_ms:
             fault("NONMONOTONIC_CAPTURE_TIMESTAMPS")
         last_ms = ms
@@ -88,15 +97,27 @@ def analyze(events):
         if kind == "health":
             if bus != 0:
                 continue
+            keys = ("bus_off", "error_warning", "error_passive", "errors", "tx_lost", "rx_lost", "capture_dropped")
+            if any(key not in event for key in keys):
+                fault("INCOMPLETE_CAN_HEALTH_SAMPLE")
+                continue
+            if any(type(event[key]) is not bool for key in keys[:3]) or any(
+                type(event[key]) is not int or event[key] < 0 for key in keys[3:]
+            ):
+                fault("INVALID_CAN_HEALTH_SAMPLE")
+                continue
             health_samples += 1
-            h = {x: int(event.get(x, 0)) for x in ("errors", "tx_lost", "rx_lost")}
+            h = {key: event[key] for key in keys[3:]}
+            health_records.append((ms, h))
             if first_health is None:
                 first_health = h
-            if event.get("bus_off") or event.get("error_warning") or event.get("error_passive"):
+            if event["bus_off"] or event["error_warning"] or event["error_passive"]:
                 fault("CAN_CONTROLLER_REPORTED_ERROR_STATE")
             for metric in h:
                 if h[metric] > first_health[metric]:
                     fault("CAN_ERROR_COUNTER_INCREASED:" + metric)
+                if h[metric] < first_health[metric]:
+                    fault("CAN_COUNTER_RESET_OR_UNTRUSTWORTHY:" + metric)
             continue
         if kind not in ("rx", "tx"):
             fault("INVALID_EVENT_DIRECTION")
@@ -202,6 +223,26 @@ def analyze(events):
     proof["health_samples"] = health_samples
     if health_samples < 2:
         fault("NO_INDEPENDENT_BEFORE_AFTER_CAN_HEALTH_MONITOR")
+    proof["health_sample_times_ms"] = [t for t, _ in health_records]
+    if "session" in sent:
+        # A silent trace proves nothing if the independent monitor stopped
+        # collecting. Require uninterrupted error/loss telemetry THROUGH the
+        # OEM quiet interval and AFTER the last factory restoration frame.
+        start_ms = sent["session"]
+        recovered = [x for x in last_good_stock_after_default.values() if x is not None]
+        end_ms = max([start_ms] + recovered + list(acked.values()))
+        if not health_records or not any(t <= start_ms for t, _ in health_records):
+            fault("NO_HEALTH_SAMPLE_BEFORE_SESSION")
+        if not health_records or not any(t >= end_ms for t, _ in health_records):
+            fault("NO_HEALTH_SAMPLE_AFTER_RESTORE")
+        if health_records:
+            relevant = [t for t, _ in health_records if t >= max((t for t, _ in health_records if t <= start_ms), default=-1)]
+            for a, b in zip(relevant, relevant[1:]):
+                if a < end_ms and b - a > 100:
+                    fault("HEALTH_MONITOR_COVERAGE_GAP")
+        if disable_ack_ms is not None and "enable" in sent:
+            if not any(disable_ack_ms <= t <= sent["enable"] for t, _ in health_records):
+                fault("NO_HEALTH_SAMPLE_DURING_OEM_SILENCE")
     if "session" in sent and "session" not in acked:
         fault("ECU_EXTENDED_SESSION_NOT_ACKNOWLEDGED")
     if "disable" in sent and "disable" not in acked:
