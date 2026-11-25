@@ -154,6 +154,18 @@ def analyze(events):
             else:
                 fault("UNTRUSTWORTHY_SPAS_TX_PSEUDO_BUS")
             continue
+        # A protocol proof only accepts controller requests on the
+        # independently monitored bus 0. An extra controller request on
+        # another bus (or a host/panda pseudo-bus) makes this trace an
+        # untrusted handoff experiment; never silently omit that TX.
+        if kind == "tx" and addr == REQUEST and bus != 0:
+            fault("APRK_DIAGNOSTIC_TX_ON_UNVERIFIED_BUS")
+            continue
+        # The ECU reply identifier is receive-only in this passive proof.
+        # An external TX on that ID could impersonate an APRK response.
+        if kind == "tx" and addr == RESPONSE:
+            fault("EXTERNAL_APRK_RESPONSE_ID_TRANSMISSION")
+            continue
         if bus != 0:
             # Host echo on bus128 is not evidence of an ECU response.
             continue
