@@ -17,6 +17,8 @@ MIN_HISTORY_S = 0.20
 MAX_FRAME_GAP_S = 0.15
 MAX_ASSIST_S = 4.0
 LANE_MARGIN_M = 0.20
+LANE_WIDTH_MIN_M = 2.4
+LANE_WIDTH_MAX_M = 5.2
 
 
 @dataclass
@@ -45,9 +47,10 @@ def _side_of_point(model: Any, point: Any) -> str | None:
   if len(lines) < 4 or len(probs) < 4:
     return None
   try:
-    if not all(math.isfinite(float(p)) for p in probs[:4]):
-      return None
+    confidence = tuple(float(p) for p in probs[:4])
   except (TypeError, ValueError):
+    return None
+  if not all(math.isfinite(p) and 0.0 <= p <= 1.0 for p in confidence):
     return None
   position_x = float(point.d_rel) + 1.52  # camera and front-radar origin offset
   try:
@@ -56,11 +59,20 @@ def _side_of_point(model: Any, point: Any) -> str | None:
     return None
   if not all(math.isfinite(y) for y in boundaries):
     return None
+  # Outlier lane-line geometry can misclassify a car several lanes away.
+  # Require a plausible ego lane and plausible selected adjacent lane.
+  ego_width = boundaries[2] - boundaries[1]
+  if not LANE_WIDTH_MIN_M <= ego_width <= LANE_WIDTH_MAX_M:
+    return None
   # Camera lane lines use right-positive coordinates, radar uses left-positive.
   y = -float(point.y_rel)
-  if min(probs[0], probs[1]) >= 0.5 and boundaries[0] + LANE_MARGIN_M < y < boundaries[1] - LANE_MARGIN_M:
+  if (min(confidence[0], confidence[1]) >= 0.5
+      and LANE_WIDTH_MIN_M <= boundaries[1] - boundaries[0] <= LANE_WIDTH_MAX_M
+      and boundaries[0] + LANE_MARGIN_M < y < boundaries[1] - LANE_MARGIN_M):
     return "left"
-  if min(probs[2], probs[3]) >= 0.5 and boundaries[2] + LANE_MARGIN_M < y < boundaries[3] - LANE_MARGIN_M:
+  if (min(confidence[2], confidence[3]) >= 0.5
+      and LANE_WIDTH_MIN_M <= boundaries[3] - boundaries[2] <= LANE_WIDTH_MAX_M
+      and boundaries[2] + LANE_MARGIN_M < y < boundaries[3] - LANE_MARGIN_M):
     return "right"
   return None
 
