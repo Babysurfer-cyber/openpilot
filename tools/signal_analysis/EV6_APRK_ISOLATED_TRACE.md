@@ -149,3 +149,33 @@ qualified independent safety reviewer has checked its firmware identity,
 CAN-FD topology, original stream provenance, 0x7B9 genuine responses,
 session restoration, error counters, and loss-free independent capture.
 The user-facing PREVEHICLE_READINESS document tracks these gates.
+
+## 2026-11-25 review: physical-bus SPAS TX false acceptance corrected
+
+Review identified a **real false-positive classification**: the source-0
+filter ran before the external SPAS-transmit check. Consequently a
+synthetic otherwise-complete trace including `direction="tx"`,
+`address="0x16a"`, `bus=2` was incorrectly returned as
+`ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED` with no faults.
+
+The validator now checks for external SPAS1/2 transmissions on **all
+physical CAN bus numbers 0 through 7**, before applying the bus-0-only
+rule for genuine ECU response and stock stream evidence.
+Panda pseudo-buses 128/192 are **not** treated as independent physical
+bus observations. This is a conservative change for passive-probe
+classification, **not** a vehicle control or bus-routing modification.
+
+Verification limits:
+
+- A prior archived offline validator was locally reproduced: the extra
+  bus-2 SPAS TX falsely passed before patch, and correctly failed after
+  applying the same logical fix. Existing 22 archived regression tests
+  remained green.
+- The latest PR branch now contains **43 synthetic test methods**
+  (previous 41 plus two source-bus scenarios). The entire current
+  branch test suite and GitHub Actions CI have **not** been confirmed
+  passing, and the archived local test run is not that proof.
+- The result still cannot authenticate a real external CAN-FD capture
+  or establish safe external ECU control.
+
+**No real car action, CAN TX or ECU-disable command is enabled.**
