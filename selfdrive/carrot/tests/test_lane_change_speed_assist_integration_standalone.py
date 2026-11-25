@@ -10,6 +10,8 @@ import copy
 import importlib.util
 import sys
 import unittest
+
+import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -175,6 +177,32 @@ class LaneChangeControllerAstIntegration(unittest.TestCase):
         h = ControllerHarness()
         h.enable_radar_tracks = mode
         self.assertIsNotNone(h.prepare())
+
+  def test_production_mpc_includes_lead_two_in_obstacle_minimum(self):
+    path = ROOT / "selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "LongitudinalMpc")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "update")
+    obstacles = [n for n in ast.walk(method) if isinstance(n, ast.Assign)
+                 and any(isinstance(target, ast.Name) and target.id == "x_obstacles" for target in n.targets)]
+    self.assertEqual(len(obstacles), 2)
+    for n in obstacles:
+      self.assertTrue(any(isinstance(x, ast.Name) and x.id == "lead_1_obstacle" for x in ast.walk(n.value)))
+    minimums = [n for n in ast.walk(method) if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute) and n.func.attr == "min"
+                and any(isinstance(x, ast.Name) and x.id == "x_obstacles" for x in ast.walk(n))]
+    self.assertTrue(minimums)
+
+  def test_second_lead_reduces_not_increases_synthetic_obstacle_envelope(self):
+    lead_zero = np.array([55., 60., 68., 80.])
+    cruise = np.array([78., 85., 91., 103.])
+    stopped = np.array([300., 300., 300., 300.])
+    baseline_second = np.array([170., 180., 195., 211.])
+    side_second = np.array([40., 48., 58., 70.])
+    baseline = np.min(np.column_stack([lead_zero, baseline_second, cruise, stopped]), axis=1)
+    with_side = np.min(np.column_stack([lead_zero, side_second, cruise, stopped]), axis=1)
+    self.assertTrue(np.all(with_side <= baseline))
+    self.assertTrue(np.any(with_side < baseline))
 
   def test_selector_has_no_acceleration_or_cruise_writes(self):
     self.assertTrue(callable(production_selector()))
