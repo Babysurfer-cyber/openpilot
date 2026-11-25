@@ -1,0 +1,37 @@
+name: EV6 APRK offline trace verifier
+on:
+  pull_request:
+    paths:
+      - "tools/signal_analysis/test_ev6_bench_trace_validator.py"
+      - "tools/signal_analysis/ev6_bench_trace_validator.py"
+      - ".github/workflows/ev6-aprk-trace-validator.yml"
+  push:
+    branches:
+      - "test/ev6-aprk-isolated-bench-trace-gates-20261125"
+    paths:
+      - "tools/signal_analysis/test_ev6_bench_trace_validator.py"
+      - "tools/signal_analysis/ev6_bench_trace_validator.py"
+      - ".github/workflows/ev6-aprk-trace-validator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile \
+            tools/signal_analysis/ev6_bench_trace_validator.py \
+            tools/signal_analysis/test_ev6_bench_trace_validator.py
+      - name: Run deterministic offline tests (no CAN)
+        run: |
+          python -m unittest discover -s tools/signal_analysis \
+            -p 'test_ev6_bench_trace_validator.py' -v
