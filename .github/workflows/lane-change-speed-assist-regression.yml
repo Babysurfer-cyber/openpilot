@@ -23,6 +23,8 @@ on:
       - selfdrive/carrot/tests/test_lane_change_speed_assist.py
       - selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py
       - selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py
+      - selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py
+      - selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
   workflow_dispatch:
 
 permissions:
@@ -79,6 +81,7 @@ jobs:
             selfdrive/carrot/tests/test_lane_change_speed_assist.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py \
+            selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py \
             selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py \
             selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py \
             selfdrive/modeld/modeld.py \
@@ -90,5 +93,6 @@ jobs:
           python -m pytest -q selfdrive/carrot/tests/test_lane_change_speed_assist.py
           python selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py -v
           python selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py -v
+          python selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py -v
           python selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py -v
           python selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py
