@@ -141,6 +141,7 @@ class OneTouchOriginGate(unittest.TestCase):
   def test_desirehelper_uses_driver_stalk_not_atc_for_provenance(self):
     text = (ROOT / "selfdrive/controls/lib/desire_helper.py").read_text(encoding="utf-8")
     self.assertIn("self.lane_change_driver_request = physical_one_touch", text)
+    self.assertIn("and carstate.canValid", text)
     self.assertIn("and self.stalk_max_level == 1", text)
     self.assertIn("carstate.blinkerLever in (0, 1)", text)
     self.assertIn("self.stalk_direction == BLINKER_LEFT", text)
@@ -161,13 +162,13 @@ class OneTouchOriginGate(unittest.TestCase):
     self.assertEqual(len(candidates), 1)
     expr_code = compile(ast.Expression(body=candidates[0].value), str(path), "eval")
 
-    def check(*, lever=0, max_level=1, triggered=True, driver=True,
+    def check(*, lever=0, max_level=1, triggered=True, driver=True, can_valid=True,
               side=1, direction=1, completed=False, bsd=False):
       obj = SimpleNamespace(one_touch_triggered=triggered, stalk_max_level=max_level,
                             stalk_direction=side, lane_change_direction=direction,
                             one_touch_completed=completed, bsd_stalk_cancelled=bsd)
       context = {"self": obj, "driver_enabled": driver,
-                 "carstate": SimpleNamespace(blinkerLever=lever),
+                 "carstate": SimpleNamespace(blinkerLever=lever, canValid=can_valid),
                  "BLINKER_LEFT": 1, "BLINKER_RIGHT": 2,
                  "LaneChangeDirection": SimpleNamespace(left=1, right=2)}
       return eval(expr_code, context)
@@ -181,6 +182,7 @@ class OneTouchOriginGate(unittest.TestCase):
       {"lever": 2},
       {"triggered": False},
       {"driver": False},
+      {"can_valid": False},   # CAN receive not valid
       {"side": 2, "direction": 1},  # Opposite source direction
       {"side": 0},                  # Ambiguous stalk counts
       {"completed": True},
