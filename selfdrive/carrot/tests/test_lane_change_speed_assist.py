@@ -21,6 +21,7 @@ class Point:
   v_lead: float = 24.0
   yv_rel: float = 0.0
   measured: bool = True
+  radar_track_state: int = 0
 
 
 def model(state="off", direction="none", probabilities=(0.9, 0.9, 0.9, 0.9)):
@@ -315,3 +316,45 @@ def test_normal_lane_geometry_remains_eligible():
 
 def test_out_of_range_confidence_does_not_trigger_braking():
   assert _lane_geometry_candidate((-5.4, -1.8, 1.8, 5.4), (2.0, .99, .99, .99)) is None
+
+
+def test_front_radar_tentative_track_never_selected():
+  assert seed(LaneChangeSpeedAssist(), Point(source="frontRadar", radar_track_state=1)) is None
+
+
+def test_front_radar_confirmed_track_can_be_selected():
+  assert seed(LaneChangeSpeedAssist(), Point(source="frontRadar", radar_track_state=2)) is not None
+
+
+def test_front_radar_unknown_state_preserves_legacy_compatibility():
+  assert seed(LaneChangeSpeedAssist(), Point(source="frontRadar", radar_track_state=0)) is not None
+
+
+def test_corner_radar_unknown_state_remains_usable():
+  assert seed(LaneChangeSpeedAssist(), Point(source="corner235", radar_track_state=0)) is not None
+
+
+def test_front_radar_tentative_downgrade_drops_active_track():
+  p = Point(source="frontRadar", radar_track_state=2)
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker, p) is not None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "left"),
+                        (replace(p, radar_track_state=1),)) is None
+  assert tracker.update(.40, 27., model("laneChangeStarting", "left"), (p,)) is None
+
+
+def test_front_radar_newly_confirmed_target_needs_history():
+  tracker = LaneChangeSpeedAssist()
+  tentative = Point(source="frontRadar", radar_track_state=1)
+  confirmed = replace(tentative, radar_track_state=2)
+  for i in range(5):
+    assert tracker.update(i*.05, 27., model("preLaneChange", "left"), (tentative,)) is None
+  assert tracker.update(.25, 27., model("preLaneChange", "left"), (confirmed,)) is None
+  assert tracker.update(.30, 27., model("laneChangeStarting", "left"), (confirmed,)) is None
+
+
+def test_direction_change_after_front_confirmation_fails_closed():
+  p = Point(source="frontRadar", radar_track_state=2)
+  tracker = LaneChangeSpeedAssist()
+  assert seed(tracker, p) is not None
+  assert tracker.update(.35, 27., model("laneChangeStarting", "right"), (p,)) is None
