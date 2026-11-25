@@ -281,3 +281,37 @@ def test_realistic_time_series_side_lead_only_during_active_change():
     assert not any(active_frames[:35]), (direction, side_y)
     assert not any(active_frames[85:]), (direction, side_y)
 
+
+def _lane_geometry_candidate(bounds, probabilities=(0.99, 0.99, 0.99, 0.99)):
+  """Build a stable target; only intentionally invalid lane geometry may reject it."""
+  from types import SimpleNamespace
+
+  tracker = LaneChangeSpeedAssist()
+  point = Point(y_rel=3.6)
+
+  def malformed(state):
+    frame = model(state, "left", probabilities=probabilities)
+    frame.laneLines = tuple(
+      SimpleNamespace(x=(0.0, 100.0), y=(float(y), float(y))) for y in bounds
+    )
+    return frame
+
+  for i in range(6):
+    tracker.update(i * .05, 27.0, malformed("preLaneChange"), (point,))
+  return tracker.update(.30, 27.0, malformed("laneChangeStarting"), (point,))
+
+
+def test_implausibly_wide_adjacent_lane_does_not_trigger_braking():
+  assert _lane_geometry_candidate((-12.0, -1.8, 1.8, 5.4)) is None
+
+
+def test_implausibly_wide_current_lane_does_not_trigger_braking():
+  assert _lane_geometry_candidate((-5.4, -1.8, 6.0, 9.6)) is None
+
+
+def test_normal_lane_geometry_remains_eligible():
+  assert _lane_geometry_candidate((-5.4, -1.8, 1.8, 5.4)) is not None
+
+
+def test_out_of_range_confidence_does_not_trigger_braking():
+  assert _lane_geometry_candidate((-5.4, -1.8, 1.8, 5.4), (2.0, .99, .99, .99)) is None
