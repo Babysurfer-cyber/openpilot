@@ -3,7 +3,7 @@
 import unittest
 from ev6_spas_oem_transition_test import (
   Frame, LEVER, LAMP, stalk_crc8_ok, lever_neutral,
-  factory_lamp_without_stalk,
+  factory_lamp_without_stalk, transition_data, SPAS2, xmodem_crc,
 )
 
 # Exact stock frames in the user's EV6 rlog(6)/(7) CSV extracts.
@@ -89,6 +89,44 @@ class TestFactoryLampWithoutStalk(unittest.TestCase):
     proof = factory_lamp_without_stalk(rows, 'left')
     self.assertFalse(proof['factory_lamp_with_all_observed_stalk_frames_neutral'])
     self.assertEqual(proof['stock_stalk_crc_invalid'], 1)
+
+
+class TestFactoryLampOffToOnEvidence(unittest.TestCase):
+  def command_frames(self):
+    def body(value):
+      dat = bytearray(32)
+      dat[16] = value << 5
+      dat[:2] = (xmodem_crc(dat[2:] + SPAS2.to_bytes(2, 'little')) ^ 0x9f5b).to_bytes(2, 'little')
+      return bytes(dat)
+    return [Frame(0, body(0)), Frame(20_000_000, body(3))]
+
+  def lamps(self, off_at=5_000_000, on_at=40_000_000, prior_off=True):
+    on = bytearray(8)
+    on[2] = 0x10
+    rows = [Frame(on_at, bytes(on))]
+    if prior_off:
+      rows.insert(0, Frame(off_at, bytes(8)))
+    return rows
+
+  def test_fresh_off_to_on_edge(self):
+    proof = transition_data(self.command_frames(), self.lamps(), 'left')
+    self.assertTrue(proof['lamp_feedback_off_to_on_verified_within_250ms'])
+    self.assertEqual(proof['first_physical_lamp_after_ms'], 20.)
+
+  def test_already_on_is_not_a_fresh_edge(self):
+    rows = self.lamps()
+    rows[0] = rows[1]
+    proof = transition_data(self.command_frames(), rows, 'left')
+    self.assertFalse(proof['lamp_feedback_off_to_on_verified_within_250ms'])
+
+  def test_very_late_edge_is_not_correlated(self):
+    proof = transition_data(self.command_frames(), self.lamps(on_at=320_000_000), 'left')
+    self.assertFalse(proof['lamp_feedback_off_to_on_verified_within_250ms'])
+
+  def test_no_preceding_off_sample_is_not_an_edge(self):
+    proof = transition_data(self.command_frames(), self.lamps(prior_off=False), 'left')
+    self.assertFalse(proof['lamp_feedback_off_to_on_verified_within_250ms'])
+
 
 
 if __name__ == '__main__':
