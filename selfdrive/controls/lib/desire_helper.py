@@ -832,7 +832,18 @@ class DesireHelper:
         direction = "left" if self.lane_change_direction == LaneChangeDirection.left else "right"
         self.held_crossing.begin(modeldata, direction)
         self.held_crossed = self.held_model_seen = self.held_repeat_pending = False
-        self.lane_change_driver_request = driver_enabled and self.one_touch_triggered
+        # Do not certify a one-touch from a stalk counter edge alone. That
+        # edge can provisionally set one_touch_triggered without ever observing
+        # physical lever depth 1; a full-lock lever depth 2 is not one-touch.
+        physical_one_touch = (
+          driver_enabled and self.one_touch_triggered
+          and self.stalk_max_level == 1
+          and carstate.blinkerLever in (0, 1)
+          and not self.one_touch_completed and not self.bsd_stalk_cancelled
+          and ((self.stalk_direction == BLINKER_LEFT and self.lane_change_direction == LaneChangeDirection.left)
+               or (self.stalk_direction == BLINKER_RIGHT and self.lane_change_direction == LaneChangeDirection.right))
+        )
+        self.lane_change_driver_request = physical_one_touch
         self.lane_change_stalk_counts = (self.prev_left_stalk_count, self.prev_right_stalk_count)
     else:
       self.bsd_abort_allowed = False
