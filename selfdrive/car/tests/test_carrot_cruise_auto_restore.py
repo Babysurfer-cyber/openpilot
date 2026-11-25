@@ -324,3 +324,27 @@ def test_zero_coast_speed_is_not_retained_as_camera_restore_cap():
   assert result == pytest.approx(95)
   assert helper.camera_pending is True
   assert helper.auto_sync_speed is None
+
+
+def test_lfa_toggle_restores_saved_op_target_without_adding_speed_increment():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs()
+  helper._lfa_button_mode = 2
+  helper._carrot_cruise_saved_op_speed = 95
+  helper.prev_carrot_active = True
+  helper._carrot_auto_shadow_target = 95
+  helper._v_cruise_kph_at_brake = 100  # Old brake backup must not win.
+  helper._prepare_buttons = lambda _cs, speed: (speed, ButtonType.lfaButton, False)
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert result == pytest.approx(95)
+  assert not helper.carrot_cruise_active
+  assert helper._carrot_cruise_saved_op_speed is None
+
+
+def test_zero_op_target_on_entry_does_not_invent_vehicle_or_scc_speed():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs()
+  helper.v_cruise_kph = 0
+  helper._v_cruise_kph_at_brake = 100  # Stale brake backup isn't authoritative.
+  result = helper._update_cruise_buttons(CS, CC, 0)
+  assert result == pytest.approx(0)
+  assert helper._carrot_cruise_saved_op_speed is None
+  assert helper._carrot_auto_shadow_target == pytest.approx(0)
