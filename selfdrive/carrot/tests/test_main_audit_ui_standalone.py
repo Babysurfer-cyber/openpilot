@@ -45,6 +45,13 @@ class MainAuditUiRegression(unittest.TestCase):
         handle.write(valid[:13] + b"x"*100)
       self.assertFalse(fn(path))
 
+  def test_f5_onroad_view_is_selected_before_vipc_thread_wait(self):
+    cc = (ROOT / "selfdrive/ui/qt/home.cc").read_text()
+    section = cc.split("void HomeWindow::hideDriverCameraPreview()", 1)[1].split("void HomeWindow::showDriverView", 1)[0]
+    self.assertLess(section.index("slayout->setCurrentWidget(onroad)"),
+                    section.index("driver_camera_preview->stopVipcThread()"))
+    self.assertIn("QTimer::singleShot(50", section)
+
   def test_f6_head_route_exits_before_ffmpeg_process_created(self):
     tree = ast.parse((ROOT / "selfdrive/frogpilot/fleetmanager/fleet_manager.py").read_text())
     func = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "fcamera")
