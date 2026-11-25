@@ -264,5 +264,41 @@ class TestPlan(unittest.TestCase):
     self.assertEqual(self.c.phase, 'locked')
 
 
+  def test_one_new_frame_per_stream_after_ack_is_not_enough(self):
+    self.start()
+    self.session_ack()
+    for addr in SPAS_LENGTHS:
+      self.c.observe_stock(addr, 0, sample(addr, 12), 1.26)
+    events = self.c.tick(1.27, SAFE)
+    self.assertEqual(events, [])
+    self.assertEqual(self.c.phase, 'post_session_stock')
+
+  def test_only_one_stream_restarting_after_ack_is_not_enough(self):
+    self.start()
+    self.session_ack()
+    for i, t in ((12, 1.26), (13, 1.28)):
+      self.c.observe_stock(0x165, 0, sample(0x165, i), t)
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12), 1.28)
+    self.assertEqual(self.c.tick(1.29, SAFE), [])
+    self.assertEqual(self.c.phase, 'post_session_stock')
+
+  def test_counter_jump_after_session_ack_causes_restore(self):
+    self.start()
+    self.session_ack()
+    self.c.observe_stock(0x165, 0, sample(0x165, 14), 1.26)
+    self.assertEqual(self.c.phase, 'restore_enable')
+    self.assertIn('WOULD_REQUEST_COMMUNICATION_ENABLE', self.c.tick(1.27, SAFE))
+    self.assertEqual(self.c.reason, 'post_session_counter_discontinuity')
+
+  def test_pre_ack_stock_counter_cannot_satisfy_post_ack_count(self):
+    self.start()
+    self.session_ack()
+    for addr in SPAS_LENGTHS:
+      self.assertEqual(self.c.stock[addr].post_session_consecutive, 0)
+    self.assertEqual(self.c.tick(1.26, SAFE), [])
+    self.assertEqual(self.c.phase, 'post_session_stock')
+
+
+
 if __name__ == '__main__':
   unittest.main()
