@@ -208,5 +208,124 @@ class LaneChangeControllerAstIntegration(unittest.TestCase):
     self.assertTrue(callable(production_selector()))
 
 
+
+def production_mpc_input_envelope():
+  """Compile real long_mpc.py expressions without importing its native solver."""
+  path = ROOT / "selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py"
+  tree = ast.parse(path.read_text(encoding="utf-8"))
+  cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "LongitudinalMpc")
+  update = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "update")
+  assignments = [n for n in ast.walk(update) if isinstance(n, ast.Assign) and len(n.targets) == 1]
+
+  def find_target(target, *, value_fragment=None):
+    matches = [n for n in assignments if ast.unparse(n.targets[0]) == target
+               and (value_fragment is None or value_fragment in ast.unparse(n.value))]
+    assert len(matches) == 1, (target, value_fragment, len(matches))
+    return copy.deepcopy(matches[0])
+
+  lead0 = find_target("lead_0_obstacle")
+  lead1 = find_target("lead_1_obstacle")
+  maximum = find_target("self.params[:, 1]")
+  minimum = find_target("self.params[:, 2]")
+  acc_obstacles = find_target("x_obstacles", value_fragment="cruise_obstacle")
+  blended_obstacles = find_target("x_obstacles", value_fragment="lead_1_obstacle")
+  # The blended expression does not include cruise_obstacle; disambiguate it.
+  if "cruise_obstacle" in ast.unparse(blended_obstacles.value):
+    blended_matches = [n for n in assignments if ast.unparse(n.targets[0]) == "x_obstacles"
+                       and "cruise_obstacle" not in ast.unparse(n.value)]
+    assert len(blended_matches) == 1
+    blended_obstacles = copy.deepcopy(blended_matches[0])
+  else:
+    assert "cruise_obstacle" not in ast.unparse(blended_obstacles.value)
+  source = find_target("self.source", value_fragment="SOURCES[")
+  assert all("lead_1_obstacle" in ast.unparse(n.value) for n in (acc_obstacles, blended_obstacles))
+
+  extra_lead = ast.Assign(targets=[ast.Name(id="lead_0_follow_obstacle", ctx=ast.Store())],
+                          value=ast.Name(id="lead_0_obstacle", ctx=ast.Load()))
+  branch = ast.If(
+    test=ast.Compare(left=ast.Name(id="mode", ctx=ast.Load()), ops=[ast.Eq()],
+                     comparators=[ast.Constant(value="acc")]),
+    body=[acc_obstacles, source], orelse=[blended_obstacles])
+  names = ("self", "lead_xv_0", "lead_xv_1", "cruise_obstacle", "x2",
+           "mode", "reset_state", "a_ego")
+  expr = ast.FunctionDef(
+    name="mpc_input_envelope",
+    args=ast.arguments(posonlyargs=[], args=[ast.arg(arg=n) for n in names], vararg=None,
+                       kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+    body=[lead0, lead1, maximum, extra_lead, branch, minimum,
+          ast.Return(value=ast.Attribute(value=ast.Name(id="self", ctx=ast.Load()),
+                                         attr="params", ctx=ast.Load()))],
+    decorator_list=[], returns=None, type_comment=None)
+  # Use the actual source's stopped-vehicle equivalence function, not a copy.
+  factor = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                and n.name == "get_stopped_equivalence_factor")
+  ns = {"np": np, "SOURCES": ("lead0", "lead1", "cruise", "e2e"),
+        "COMFORT_BRAKE": 2.5}
+  exec(compile(ast.fix_missing_locations(ast.Module(body=[copy.deepcopy(factor), expr], type_ignores=[])),
+               str(path), "exec"), ns)
+  return ns["mpc_input_envelope"]
+
+
+def synthetic_lead(distance, velocity):
+  t = np.linspace(0., 3.5, 8)
+  return np.column_stack((distance + velocity*t, np.full(8, velocity)))
+
+
+def compare_mpc_lead_two(*, mode="acc", max_accel=1.1, side_distance=35., side_speed=20.):
+  calc = production_mpc_input_envelope()
+  class MPC:
+    def __init__(self):
+      self.params = np.zeros((8, 8))
+      self.source = "cruise"
+      self.max_a = max_accel
+
+  old, new = MPC(), MPC()
+  lead0 = synthetic_lead(60., 26.)
+  none = synthetic_lead(50., 37.)  # Production process_lead absent-target sentinel
+  side = synthetic_lead(side_distance, side_speed)
+  cruise, stop = np.full(8, 160.), np.full(8, 1000.)
+  old_params = calc(old, lead0, none, cruise, stop, mode, False, 0.)
+  new_params = calc(new, lead0, side, cruise, stop, mode, False, 0.)
+  return old_params, new_params, old.source, new.source
+
+
+class MpcInputEnvelopeDifferential(unittest.TestCase):
+  def test_acc_mode_side_lead_tightens_real_production_obstacle_expression(self):
+    before, after, old_source, new_source = compare_mpc_lead_two()
+    self.assertTrue(np.all(after[:, 2] <= before[:, 2]))
+    self.assertTrue(np.any(after[:, 2] < before[:, 2]))
+    self.assertEqual(new_source, "lead1")
+
+  def test_acc_mode_more_distant_fast_target_is_not_restrictive(self):
+    before, after, _, _ = compare_mpc_lead_two(side_distance=110., side_speed=33.)
+    np.testing.assert_allclose(before[:, 2], after[:, 2])
+
+  def test_blended_mode_considers_side_lead(self):
+    before, after, _, _ = compare_mpc_lead_two(mode="blended")
+    self.assertTrue(np.all(after[:, 2] <= before[:, 2]))
+    self.assertTrue(np.any(after[:, 2] < before[:, 2]))
+
+  def test_maximum_acceleration_input_never_rises_with_side_lead(self):
+    for cap in (0., .4, .8, 1.1, 1.8):
+      with self.subTest(max_accel=cap):
+        before, after, _, _ = compare_mpc_lead_two(max_accel=cap)
+        np.testing.assert_allclose(before[:, 1], after[:, 1])
+        np.testing.assert_allclose(after[:, 1], np.full(8, cap))
+
+  def test_side_lead_loss_releases_constraint_without_raising_acceleration_cap(self):
+    before, after, _, _ = compare_mpc_lead_two()
+    self.assertGreater(float(np.max(before[:, 2] - after[:, 2])), 1.)
+    np.testing.assert_allclose(before[:, 1], after[:, 1])
+
+  def test_reset_state_uses_ego_acceleration_as_limit(self):
+    calc = production_mpc_input_envelope()
+    mpc = SimpleNamespace(params=np.zeros((8, 8)), max_a=.8, source="cruise")
+    params = calc(mpc, synthetic_lead(60., 26.), synthetic_lead(35., 20.),
+                  np.full(8, 160.), np.full(8, 1000.), "acc", True, .3)
+    np.testing.assert_allclose(params[:, 1], np.full(8, .3))
+
+
+
+
 if __name__ == "__main__":
   unittest.main()
