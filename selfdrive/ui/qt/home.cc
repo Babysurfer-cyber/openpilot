@@ -145,11 +145,16 @@ void HomeWindow::showDriverCameraPreview() {
 void HomeWindow::hideDriverCameraPreview() {
   if (slayout->currentWidget() != driver_camera_preview) return;
   driver_camera_preview_timer->stop();
-  // Stop the camera client while its OpenGL widget still has a visible
-  // surface, then return to the exact onroad layout that was in use.
-  driver_camera_preview->stopVipcThread();
+  // A blocking VIPC recv can take up to 1s to stop. Show the onroad view
+  // immediately for USER_PROMPT/CRITICAL before waiting for the thread.
   slayout->setCurrentWidget(onroad);
   sidebar->setVisible(uiState()->scene._current_carrot_display == 1);
+  QTimer::singleShot(50, this, [this] {
+    // A new preview must not be torn down by an older hide request.
+    if (slayout->currentWidget() != driver_camera_preview) {
+      driver_camera_preview->stopVipcThread();
+    }
+  });
 }
 
 void HomeWindow::showDriverView(bool show) {
