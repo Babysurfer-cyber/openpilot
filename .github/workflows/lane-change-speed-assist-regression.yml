@@ -4,11 +4,16 @@ on:
   push:
     branches:
       - feature/side-lead-lane-change-20261125
+      - fix/side-lead-one-touch-origin-20261126
   pull_request:
     branches:
       - ms-xy-radar3
     paths:
       - .github/workflows/lane-change-speed-assist-regression.yml
+      - cereal/log.capnp
+      - selfdrive/modeld/modeld.py
+      - selfdrive/controls/lib/desire_helper.py
+      - selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py
       - selfdrive/carrot/radar_motion/controller.py
       - selfdrive/carrot/radar_motion/lead_selection.py
       - selfdrive/carrot/radar_motion/lane_change_speed_assist.py
@@ -41,10 +46,13 @@ jobs:
             selfdrive/carrot/radar_motion/lane_change_speed_assist.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py \
-            selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py
+            selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py \
+            selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py \
+            selfdrive/modeld/modeld.py
       - name: Run direct and production-AST regression tests
         run: |
           export PYTHONPATH="$(dirname "$PWD")"
           python -m pytest -q selfdrive/carrot/tests/test_lane_change_speed_assist.py
           python selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py -v
           python selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py -v
+          python selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py -v
