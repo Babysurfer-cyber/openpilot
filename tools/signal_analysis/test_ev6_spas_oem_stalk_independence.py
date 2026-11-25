@@ -58,5 +58,38 @@ class TestFactoryLampWithoutStalk(unittest.TestCase):
     self.assertEqual(result['stock_stalk_active_frames'], 1)
 
 
+  def test_missing_stalk_coverage_in_lamp_window(self):
+    rows = {LEVER: [Frame(0, STALK_NEUTRAL)], LAMP: [Frame(1_500_000_000, LAMP_LEFT_ON)]}
+    proof = factory_lamp_without_stalk(rows, 'left')
+    self.assertFalse(proof['factory_lamp_with_all_observed_stalk_frames_neutral'])
+    self.assertEqual(proof['lamp_on_frames_without_neutral_stalk_within_150ms'], 1)
+
+  def test_exact_150ms_boundary_allowed(self):
+    rows = {LEVER: [Frame(0, STALK_NEUTRAL)], LAMP: [Frame(150_000_000, LAMP_LEFT_ON)]}
+    proof = factory_lamp_without_stalk(rows, 'left')
+    self.assertTrue(proof['factory_lamp_with_all_observed_stalk_frames_neutral'])
+
+  def test_one_ns_beyond_boundary_blocked(self):
+    rows = {LEVER: [Frame(0, STALK_NEUTRAL)], LAMP: [Frame(150_000_001, LAMP_LEFT_ON)]}
+    proof = factory_lamp_without_stalk(rows, 'left')
+    self.assertFalse(proof['factory_lamp_with_all_observed_stalk_frames_neutral'])
+
+  def test_mixed_lamp_on_coverage_blocks_all(self):
+    rows = {LEVER: [Frame(0, STALK_NEUTRAL)],
+            LAMP: [Frame(50_000_000, LAMP_LEFT_ON), Frame(1_200_000_000, LAMP_LEFT_ON)]}
+    proof = factory_lamp_without_stalk(rows, 'left')
+    self.assertFalse(proof['factory_lamp_with_all_observed_stalk_frames_neutral'])
+    self.assertEqual(proof['lamp_on_frames_without_neutral_stalk_within_150ms'], 1)
+
+  def test_corrupt_stalk_frame_near_lamp_blocks(self):
+    bad = bytearray(STALK_NEUTRAL)
+    bad[0] ^= 0xFF
+    rows = {LEVER: [Frame(0, STALK_NEUTRAL), Frame(40_000_000, bytes(bad))],
+            LAMP: [Frame(50_000_000, LAMP_LEFT_ON)]}
+    proof = factory_lamp_without_stalk(rows, 'left')
+    self.assertFalse(proof['factory_lamp_with_all_observed_stalk_frames_neutral'])
+    self.assertEqual(proof['stock_stalk_crc_invalid'], 1)
+
+
 if __name__ == '__main__':
   unittest.main()
