@@ -45,6 +45,37 @@ class MainAuditUiRegression(unittest.TestCase):
         handle.write(valid[:13] + b"x"*100)
       self.assertFalse(fn(path))
 
+  def test_f8_corrupted_frame_geometry_and_lzw_code_size_rejected(self):
+    fn = load_function("selfdrive/frogpilot/fleetmanager/fleet_manager.py",
+                       "_valid_preview_image", {"os": os})
+    valid = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")
+    with tempfile.TemporaryDirectory() as directory:
+      path = os.path.join(directory, "preview.gif")
+      # All nine mutations previously passed the cache validator but failed
+      # actual ffmpeg decoding (out-of-bounds image frame / invalid LZW size).
+      for index, mask in ((20, 1), (20, 128), (21, 1), (21, 128),
+                          (22, 1), (22, 128), (23, 1), (23, 128), (29, 128)):
+        with self.subTest(index=index, mask=mask):
+          corrupted = bytearray(valid)
+          corrupted[index] ^= mask
+          with open(path, "wb") as handle:
+            handle.write(corrupted)
+          self.assertFalse(fn(path))
+
+  def test_f8_valid_offset_frame_is_allowed(self):
+    fn = load_function("selfdrive/frogpilot/fleetmanager/fleet_manager.py",
+                       "_valid_preview_image", {"os": os})
+    valid = bytearray(base64.b64decode("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="))
+    valid[6] = 2  # canvas width
+    valid[8] = 2  # canvas height
+    valid[20] = 1  # 1px left offset, still within 2x2 canvas
+    valid[22] = 1  # 1px top offset
+    with tempfile.TemporaryDirectory() as directory:
+      path = os.path.join(directory, "preview.gif")
+      with open(path, "wb") as handle:
+        handle.write(valid)
+      self.assertTrue(fn(path))
+
   def test_f5_onroad_view_is_selected_before_vipc_thread_wait(self):
     cc = (ROOT / "selfdrive/ui/qt/home.cc").read_text()
     section = cc.split("void HomeWindow::hideDriverCameraPreview()", 1)[1].split("void HomeWindow::showDriverView", 1)[0]
