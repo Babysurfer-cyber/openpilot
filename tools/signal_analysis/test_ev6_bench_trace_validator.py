@@ -17,11 +17,14 @@ def stock_frame(addr, counter):
 
 
 def health(t, errors=0, **kwargs):
-    return e(t, "health", errors=errors, tx_lost=0, rx_lost=0, **kwargs)
+    record = e(t, "health", bus_off=False, error_warning=False, error_passive=False,
+               errors=errors, tx_lost=0, rx_lost=0, capture_dropped=0)
+    record.update(kwargs)
+    return record
 
 
 def traffic():
-    rows = [health(0)]
+    rows = [health(t) for t in range(0, 651, 50)]
     for i in range(10):
         for addr in SPAS:
             rows.append(e(20*i, "rx", addr, stock_frame(addr, i)))
@@ -36,7 +39,7 @@ def traffic():
     for i in range(10):
         for addr in SPAS:
             rows.append(e(420+i*20, "rx", addr, stock_frame(addr, 10+i)))
-    rows.append(health(610))
+    rows.sort(key=lambda row: row["ms"])
     return rows
 
 
@@ -53,7 +56,7 @@ class TestEvidence(unittest.TestCase):
 
     def test_wrong_or_unsolicited_response(self):
         rows = traffic()
-        rows[22]["data"] = "0250010000000000"
+        next(r for r in rows if r["ms"] == 210 and r["address"] == "0x7b9")["data"] = "0250010000000000"
         self.assertIn("UNSOLICITED_WRONG_OR_LATE_ECU_RESPONSE", analyze(rows)["faults"])
 
     def test_session_ack_on_echo_bus_not_valid(self):
@@ -69,7 +72,8 @@ class TestEvidence(unittest.TestCase):
 
     def test_stock_continues_after_grace(self):
         rows = traffic()
-        rows.insert(25, e(345, "rx", 0x16a, stock_frame(0x16a, 10)))
+        rows.append(e(345, "rx", 0x16a, stock_frame(0x16a, 10)))
+        rows.sort(key=lambda r: r["ms"])
         self.assertIn("OEM_SPAS_STILL_TRANSMITTING_AFTER_DISABLE_GRACE", analyze(rows)["faults"])
 
     def test_restore_no_stock(self):
@@ -79,12 +83,13 @@ class TestEvidence(unittest.TestCase):
 
     def test_external_spas_injection_rejected(self):
         rows = traffic()
-        rows.insert(25, e(345, "tx", 0x16a, stock_frame(0x16a, 10)))
+        rows.append(e(345, "tx", 0x16a, stock_frame(0x16a, 10)))
+        rows.sort(key=lambda r: r["ms"])
         self.assertIn("EXTERNAL_SPAS_TRANSMISSION_PRESENT_IN_PASSIVE_PROBE", analyze(rows)["faults"])
 
     def test_bus_error_increment(self):
         rows = traffic()
-        rows[-1]["errors"] = 1
+        next(r for r in reversed(rows) if r["direction"] == "health")["errors"] = 1
         self.assertIn("CAN_ERROR_COUNTER_INCREASED:errors", analyze(rows)["faults"])
 
     def test_missing_health(self):
@@ -93,22 +98,67 @@ class TestEvidence(unittest.TestCase):
 
     def test_negative_ack(self):
         rows = traffic()
-        rows[22]["data"] = "037f102200000000"
+        next(r for r in rows if r["ms"] == 210 and r["address"] == "0x7b9")["data"] = "037f102200000000"
         self.assertIn("ECU_NEGATIVE_RESPONSE", analyze(rows)["faults"])
 
     def test_spas_bad_crc(self):
         rows = traffic()
-        rows[4]["data"] = "0000" + rows[4]["data"][4:]
+        bad = next(r for r in rows if r["ms"] == 20 and r["address"] == "0x165")
+        bad["data"] = "0000" + bad["data"][4:]
         self.assertIn("INVALID_STOCK_SPAS_CRC_OR_LENGTH", analyze(rows)["faults"])
 
     def test_timestamps_monotonic(self):
         rows = traffic()
-        rows[5]["ms"] = -1
+        rows[5]["ms"] = 10
         self.assertIn("NONMONOTONIC_CAPTURE_TIMESTAMPS", analyze(rows)["faults"])
 
     def test_reply_not_sufficient_without_restore(self):
         rows = [r for r in traffic() if r["ms"] < 350]
         self.assertIn("ECU_RESTORE_NOT_ATTEMPTED", analyze(rows)["faults"])
+
+    def test_missing_health_metrics_must_fail(self):
+        rows = traffic()
+        for row in rows:
+            if row["direction"] == "health":
+                row.pop("errors")
+        result = analyze(rows)
+        self.assertIn("INCOMPLETE_CAN_HEALTH_SAMPLE", result["faults"])
+        self.assertNotEqual(result["diagnostic"], "ISOLATED_BENCH_HANDOFF_AND_RESTORE_OBSERVED")
+
+    def test_missing_post_restore_health_must_fail(self):
+        rows = [r for r in traffic() if r["direction"] != "health" or r["ms"] <= 150]
+        self.assertIn("NO_HEALTH_SAMPLE_AFTER_RESTORE", analyze(rows)["faults"])
+
+    def test_health_capture_gap_must_fail(self):
+        rows = [r for r in traffic() if r["direction"] != "health" or r["ms"] in (0, 50, 100, 600, 650)]
+        self.assertIn("HEALTH_MONITOR_COVERAGE_GAP", analyze(rows)["faults"])
+
+    def test_no_health_during_oem_silence(self):
+        rows = [r for r in traffic() if r["direction"] != "health" or not 240 <= r["ms"] <= 350]
+        self.assertIn("NO_HEALTH_SAMPLE_DURING_OEM_SILENCE", analyze(rows)["faults"])
+
+    def test_capture_dropped_fault(self):
+        rows = traffic()
+        next(r for r in rows if r["direction"] == "health" and r["ms"] == 300)["capture_dropped"] = 1
+        self.assertIn("CAN_ERROR_COUNTER_INCREASED:capture_dropped", analyze(rows)["faults"])
+
+    def test_counter_reset_fault(self):
+        rows = traffic()
+        for r in rows:
+            if r["direction"] == "health":
+                r["errors"] = 1
+        next(r for r in reversed(rows) if r["direction"] == "health")["errors"] = 0
+        self.assertIn("CAN_COUNTER_RESET_OR_UNTRUSTWORTHY:errors", analyze(rows)["faults"])
+
+    def test_nan_timestamp_fault(self):
+        rows = traffic()
+        rows[2]["ms"] = float("nan")
+        self.assertIn("INVALID_CAPTURE_TIMESTAMP", analyze(rows)["faults"])
+
+    def test_bad_health_types_fault(self):
+        rows = traffic()
+        next(r for r in rows if r["direction"] == "health")["bus_off"] = "false"
+        self.assertIn("INVALID_CAN_HEALTH_SAMPLE", analyze(rows)["faults"]
 
 
 if __name__ == "__main__":
