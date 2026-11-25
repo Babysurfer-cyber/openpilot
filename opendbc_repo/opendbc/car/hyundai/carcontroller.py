@@ -200,7 +200,7 @@ class CarController(CarControllerBase):
         crc = ((crc << 1) ^ (0x1D if crc & 0x80 else 0)) & 0xFF
     return crc ^ 0x65
 
-  def _ev6_blinker_stalk_trial(self, CC, CS):
+  def _ev6_blinker_stalk_trial(self, CC, CS, now_nanos):
     """One-shot, P-only replay of the real 0x3C1 one-touch *lever* frame.
 
     This does not touch SPAS/APRK. The vehicle may reject the replay; a
@@ -219,6 +219,19 @@ class CarController(CarControllerBase):
     # Consume immediately, including failed prerequisites. No delayed flash
     # when somebody later shifts into P or applies the brake.
     params.put_int("Ev6BlinkerTest", 0)
+    parser = getattr(CS, "cp", None)
+    def fresh(name):
+      stamps = getattr(parser, "ts_nanos", {}).get(name, {}) if parser is not None else {}
+      stamp = max(stamps.values(), default=0)
+      return stamp > 0 and 0 <= now_nanos - stamp <= 150_000_000
+
+    # Cached P/brake/standstill fields are never proof of stationary operation
+    # after the mandatory powertrain messages stop arriving.
+    gear_msg = getattr(CS, "gear_msg_canfd", "")
+    if (not CS.out.canValid or CS.out.canTimeout
+        or not all(fresh(name) for name in ("WHEEL_SPEEDS", "TCS", gear_msg, "BLINKER_STALKS"))):
+      print("EV6 blinker trial: rejected (CAN invalid or stale wheel/brake/gear/lever)")
+      return []
     parked = (CS.out.gearShifter == structs.CarState.GearShifter.park and
               CS.out.standstill and CS.out.vEgo < 0.05 and
               CS.out.brakePressed and
@@ -576,7 +589,7 @@ class CarController(CarControllerBase):
       self._ev6_spas_dry_run(CC, CS, now_nanos)
 
       # 2022 EV6 P-only one-touch stalk experiment; the panda is the final safety gate.
-      can_sends.extend(self._ev6_blinker_stalk_trial(CC, CS))
+      can_sends.extend(self._ev6_blinker_stalk_trial(CC, CS, now_nanos))
 
       # blinkers (기존에 이미 있던 코드)
       if hda2 and self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
