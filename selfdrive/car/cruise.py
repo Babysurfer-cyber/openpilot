@@ -332,6 +332,11 @@ class VCruiseCarrot:
       self.desiredSource = ""
       self.desiredSpeed = 250
       self.vturn_speed = 250
+      # A command payload must expire together with the on-demand publisher.
+      # Otherwise a pending SPEED/CRUISE index could replay a stale command.
+      self.carrot_cmd_index_last = self.carrot_cmd_index
+      self.carrot_cmd = ""
+      self.carrot_arg = ""
     if sm.alive['longitudinalPlan']:
       lp = sm['longitudinalPlan']
       self.xState = lp.xState
