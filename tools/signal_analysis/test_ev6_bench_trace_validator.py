@@ -115,6 +115,31 @@ class TestEvidence(unittest.TestCase):
                 self.assertIn("UNTRUSTWORTHY_SPAS_TX_PSEUDO_BUS", verdict["faults"])
                 self.assertEqual(verdict["external_spas_tx"], 0)
 
+    def test_aprk_diagnostic_tx_on_other_bus_cannot_be_ignored(self):
+        # The existing genuine-looking bus-0 sequence is NOT proof of an
+        # isolated controller handoff when the trace includes an unexplained
+        # second diagnostic transmitter on another bus or an echo source.
+        for bus in (1, 2, 7, 128, 130, 192):
+            with self.subTest(bus=bus):
+                rows = traffic()
+                rows.append(e(345, "tx", 0x7b1, REQ["disable"], bus=bus))
+                rows.sort(key=lambda row: row["ms"])
+                verdict = analyze(rows)
+                self.assertEqual(verdict["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
+                self.assertIn("APRK_DIAGNOSTIC_TX_ON_UNVERIFIED_BUS", verdict["faults"])
+
+    def test_aprk_response_id_tx_spoof_must_fail(self):
+        # 0x7b9 is observed as a reply; a host TX on this ID cannot be
+        # treated as genuine factory ECU evidence.
+        for bus in (0, 1, 2, 128, 192):
+            with self.subTest(bus=bus):
+                rows = traffic()
+                rows.append(e(345, "tx", 0x7b9, "0268030000000000", bus=bus))
+                rows.sort(key=lambda row: row["ms"])
+                verdict = analyze(rows)
+                self.assertEqual(verdict["diagnostic"], "INCOMPLETE_OR_UNSAFE_BENCH_TRACE")
+                self.assertIn("EXTERNAL_APRK_RESPONSE_ID_TRANSMISSION", verdict["faults"])
+
     def test_bus_error_increment(self):
         rows = traffic()
         next(r for r in reversed(rows) if r["direction"] == "health")["errors"] = 1
