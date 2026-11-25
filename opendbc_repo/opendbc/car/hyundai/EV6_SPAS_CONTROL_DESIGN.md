@@ -134,3 +134,32 @@ GitHub Actions의 PR 실행 또는 상태 체크도 아직 확인되지 않는�
 이 코드는 여전히 `WOULD_*`라는 순수 문자열만 내보내며 실제
 `0x7B1` UDS 또는 `0x165/0x16A` CAN 송신 코드를 포함하지 않는다.
 **독립 ECU 벤치/복구 및 전체 panda 안전 검증 전에는 병합·실차 시험 금지.**
+
+
+## 2026-11-25: 현재 PR #47 소스 전체 실행 검증 및 100ms 공백 차단
+
+이번 검증에서 이전 PR의 로컬 작업 복사본을 찾아 GitHub 원본의 문자 수와
+FNV32 해시를 대조한 후 최신 변경을 동일하게 적용했다.
+
+1. 최신 32개 Python 단위 테스트를 **실제로 실행**: **32/32 PASS**.
+   이전 문서에서 최신 32개 실행 여부가 미확인이라고 기록한 부분은
+   이 실행 결과로 갱신된다.
+2. 새 실패 재현: disable ACK 후 `quiet` 상태에서 planner tick이 **200ms**
+   동안 끊겨도 모의 제어권 취득(`SIMULATED_HANDOFF_ONLY_NO_CAN_TX`)으로
+   넘어갔다. PR #45의 독립 벤치 모니터 연속성 요구는 최대 **100ms**이므로
+   소프트웨어 계획기에 250ms 공백을 허용하는 것은 불일치였다.
+3. `quiet` 상태의 제어기 호출 공백 허용치를 **100ms**로 축소하고,
+   중간 heartbeat 샘플이 없으면 `monitor_continuity_lost`로 복구 계획을
+   시작하도록 수정했다. 200ms 부정 시험과 정상 heartbeat 시험 2개를 추가.
+4. **최신 34개 Python 단위 테스트: 34/34 PASS**,
+   `py_compile` 및 AST의 CAN 송신 API 부재 확인 **PASS**.
+5. 실제 실행본과 GitHub 업로드 소스의 길이/FNV32:
+   `ev6_spas_control.py` **12,822자 / `0x8aaf5b0e`**,
+   `test_ev6_spas_control.py` **12,751자 / `0x397fbff7`**.
+
+**검증 한계:** `tick()` 간격은 소프트웨어 heartbeat일 뿐이므로,
+독립 CAN 분석기의 실제 `capture_dropped`, `rx_lost`, bus-off, 컨트롤러 오류를
+인증하지 않는다. 게다가 모듈에는 CAN/UDS 송신기가 아예 없으므로
+모의 제어권 취득은 차량 제어를 허용하는 증거가 아니다. 실제 독립
+EV6 ECU 벤치 시험과 panda 안전 검증이 필요하며, 차량 설치/브랜치
+병합은 여전히 **NO-GO**다.
