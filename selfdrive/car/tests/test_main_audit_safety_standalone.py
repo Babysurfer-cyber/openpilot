@@ -140,5 +140,26 @@ class AuditSafetyRegression(unittest.TestCase):
       self.assertEqual(variables["carrot_fresh"], age == 0.1)
 
 
+  def test_o1_navigation_loss_without_prior_camera_does_not_create_hold(self):
+    path = "selfdrive/car/cruise.py"
+    cls = next(n for n in read_tree(path).body if isinstance(n, ast.ClassDef) and n.name == "VCruiseCarrot")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_auto_mode_target")
+    nav_guard = [n for n in method.body if isinstance(n, ast.If)
+                 and "navDataValid" in ast.unparse(n.test)]
+    self.assertEqual(len(nav_guard), 1)
+    # No unconditional camera_pending=True when nav data disappears.
+    self.assertFalse(any(isinstance(t, ast.Assign)
+                         and any(ast.unparse(v) == "self.camera_pending" for v in t.targets)
+                         for t in ast.walk(ast.Module(body=nav_guard[0].body, type_ignores=[]))))
+
+  def test_m1_shadow_speed_change_does_not_sound_prompt(self):
+    impl = production_method("selfdrive/car/cruise.py", "VCruiseCarrot", "_auto_mode_prompt", {})
+    instance = impl()
+    instance.carrot_cruise_active = True
+    instance._auto_mode_notification_sent = False
+    instance._auto_mode_prompt("shadow 100→80")
+    self.assertFalse(instance._auto_mode_notification_sent)
+
+
 if __name__ == "__main__":
   unittest.main()
