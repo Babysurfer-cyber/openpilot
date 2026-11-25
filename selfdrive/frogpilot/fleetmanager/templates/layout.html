@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" id="htmlElement">
+<html lang="en" id="htmlElement" class="dark-mode" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1, width=device-width">
@@ -25,14 +25,30 @@
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.9.2/dist/js/uikit-icons.min.js"></script>
 
   <style>
-  /* Dark mode styles */
-  #htmlElement.dark-mode,
-  #htmlElement.dark-mode input,
-  #htmlElement.dark-mode select,
-  #htmlElement.dark-mode body,
-  #htmlElement.dark-mode h1 {
-    background-color: #121212; /* Dark background color */
-    color: #ffffff; /* Light text color */
+  /* Fixed dark theme for Bootstrap, UIkit, and the Fleet Manager pages. */
+  :root {
+    color-scheme: dark;
+    --bs-body-bg: #121212;
+    --bs-body-color: #f0f2f5;
+  }
+  html, body {
+    min-height: 100%;
+    background-color: #121212;
+    color: #f0f2f5;
+  }
+  .uk-input, .uk-select, .uk-textarea, .uk-button-default,
+  .uk-card-default, .uk-modal-dialog {
+    background-color: #242a30;
+    color: #f0f2f5;
+    border-color: #49515a;
+  }
+  .uk-input::placeholder, .uk-textarea::placeholder {
+    color: #aeb6c0;
+  }
+  /* Some older pages explicitly mark footers light. */
+  .bg-light {
+    background-color: #242a30 !important;
+    color: #f0f2f5 !important;
   }
   .nav-link {
     display: inline-block;
@@ -74,30 +90,5 @@
   <main class="container-fluid p-7 text-center"> {% block main %}{% endblock %} </main>
   {% block unformatted %}{% endblock %}
 
-  <button class="uk-button uk-button-default uk-margin-small-right" onclick="toggleDarkMode()">Toggle Dark Mode</button>
-
-  <script>
-    function setCookie(name, value, days) {
-      const date = new Date();
-      date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-      document.cookie = `${name}=${value};expires=${date.toUTCString()};path=/`;
-    }
-    function getCookie(name) {
-      return document.cookie.split('; ')
-        .find(row => row.startsWith(name))
-        ?.split('=')[1] || null;
-    }
-    function toggleDarkMode() {
-      console.log('Toggle Dark Mode function called');
-      const htmlElement = document.documentElement;
-      htmlElement.classList.toggle('dark-mode');
-      setCookie('darkMode', htmlElement.classList.contains('dark-mode'), 365);
-    }
-    document.addEventListener('DOMContentLoaded', function () {
-      const htmlElement = document.documentElement;
-      htmlElement.classList.toggle('dark-mode', getCookie('darkMode') === 'true');
-    });
-  </script>
-
-</body>
+remove cookie toggler</body>
 </html>
