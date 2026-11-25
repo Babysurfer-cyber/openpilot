@@ -156,5 +156,71 @@ class TestPlan(unittest.TestCase):
     self.assertEqual(self.c.reason, 'plan_duration_expired')
 
 
+  def test_stale_session_ack_cannot_be_accepted_by_late_tick(self):
+    self.start()
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x50, 3), 1.25)
+    events = self.c.tick(1.65, SAFE)
+    self.assertIn('WOULD_REQUEST_COMMUNICATION_ENABLE', events)
+    self.assertNotEqual(self.c.phase, 'post_session_stock')
+    self.assertEqual(self.c.reason, 'extended_session_timeout')
+
+  def test_negative_restore_enable_reply_is_sticky_failure(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.c.observe_reply(APRK_RESPONSE, 0, b'\x03\x7f\x28\x22\x00\x00\x00\x00', 1.26)
+    self.assertEqual(self.c.phase, 'locked')
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x68, 0), 1.27)
+    self.assertNotEqual(self.c.phase, 'idle')
+    self.assertEqual(self.c.request('later', 'right', 1.28, SAFE), ['RESTORE_UNCONFIRMED_LOCKOUT', 'REQUEST_DENIED_NOT_IDLE'])
+
+  def test_negative_restore_default_reply_is_sticky_failure(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x68, 0), 1.26)
+    self.c.tick(1.26, SAFE)
+    self.assertEqual(self.c.phase, 'restore_default')
+    self.c.observe_reply(APRK_RESPONSE, 0, b'\x03\x7f\x10\x22\x00\x00\x00\x00', 1.27)
+    self.assertEqual(self.c.phase, 'locked')
+
+  def test_restore_requires_new_oem_stream_after_default_ack(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x68, 0), 1.26)
+    self.c.tick(1.26, SAFE)
+    self.c.observe_reply(APRK_RESPONSE, 0, reply(0x50, 1), 1.27)
+    self.c.tick(1.27, SAFE)
+    self.assertEqual(self.c.phase, 'restore_stock')
+    self.assertNotIn('SIMULATED_RESTORE_CONFIRMED_NO_TX', self.c.tick(1.28, SAFE))
+    for i in (12, 13):
+      t = 1.29 + .02 * (i - 12)
+      for addr in SPAS_LENGTHS:
+        self.c.observe_stock(addr, 0, sample(addr, i), t)
+    self.assertIn('SIMULATED_RESTORE_CONFIRMED_NO_TX', self.c.tick(1.32, SAFE))
+    self.assertEqual(self.c.phase, 'idle')
+
+  def test_factory_indicator_active_blocks_new_request(self):
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12, control=3), 1.24)
+    self.assertEqual(self.c.request('once', 'left', 1.25, SAFE), ['REQUEST_DENIED_FACTORY_INDICATOR_ACTIVE'])
+
+  def test_safety_inputs_reject_truthy_nonboolean_monitor(self):
+    inputs = vars(SAFE).copy()
+    inputs['independent_bus_monitor'] = 'false'
+    self.assertEqual(self.c.request('once', 'left', 1.24, SafetyInputs(**inputs)), ['REQUEST_DENIED_SAFETY'])
+
+  def test_untrusted_control_gap_cannot_validate_silence(self):
+    self.start()
+    self.disable_ack()
+    events = self.c.tick(5.0, SAFE)
+    self.assertNotIn('SIMULATED_HANDOFF_ONLY_NO_CAN_TX', events)
+    self.assertNotEqual(self.c.phase, 'eligible')
+
+  def test_restore_fault_lockout_not_overturned_by_old_acks(self):
+    self.start()
+    self.c.cancel(1.25)
+    self.c.fault('bus_off_during_restore')
+    self.assertEqual(self.c.phase, 'locked')
+    self.assertEqual(self.c.reason, 'bus_off_during_restore')
+
+
 if __name__ == '__main__':
   unittest.main()
