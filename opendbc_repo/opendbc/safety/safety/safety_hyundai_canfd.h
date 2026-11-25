@@ -229,6 +229,12 @@ static bool hyundai_ev6_stock_stalk_idle = false;
 static bool hyundai_ev6_gear_park = false;
 static uint32_t hyundai_ev6_gear_rx_us = 0U;
 
+// safety.h includes policy headers *before* defining these globals.
+// Make the read-only references visible here so both firmware and libsafety
+// compile without relying on the later definition order.
+extern safety_config current_safety_config;
+extern const int MAX_WRONG_COUNTERS;
+
 // Verify the C safety framework's actual RX validation state as well as
 // the last decoded P gear. rx_msg_safety_check() drops frames with invalid
 // CRC *before* calling the Hyundai RX hook, so a cached 'P' alone could
