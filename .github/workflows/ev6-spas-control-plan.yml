@@ -1,0 +1,57 @@
+name: EV6 SPAS2 no-TX planning core
+
+on:
+  push:
+    branches:
+      - 'feature/ev6-spas2-controlled-handoff-draft-20261125'
+    paths:
+      - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py'
+      - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py'
+      - '.github/workflows/ev6-spas-control-plan.yml'
+  pull_request:
+    paths:
+      - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py'
+      - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py'
+      - '.github/workflows/ev6-spas-control-plan.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-vehicle-tx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check syntax
+        run: |
+          python -m py_compile opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py \
+            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py
+      - name: Run synthetic isolated-handoff planning tests (no vehicle)
+        run: |
+          python -m unittest discover -s opendbc_repo/opendbc/car/hyundai \
+            -p 'test_ev6_spas_control.py' -v
+      - name: Enforce no CAN transport in planning core
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          path = Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py')
+          tree = ast.parse(path.read_text())
+          denied_imports = ('panda', 'can', 'isotp', 'socket', 'cereal', 'opendbc')
+          denied_symbols = {'CanData', 'CANPacket', 'can_sends', 'make_can_msg', 'can_send'}
+          for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+              imports = ([x.name for x in node.names] if isinstance(node, ast.Import)
+                         else [node.module or ''])
+              assert all(not value.startswith(denied_imports) for value in imports), imports
+            if isinstance(node, ast.Name):
+              assert node.id not in denied_symbols, node.id
+            if isinstance(node, ast.Attribute):
+              assert node.attr not in denied_symbols, node.attr
+          print('Planning core contains no CAN transmit interfaces.')
+          PY
