@@ -173,3 +173,101 @@ def test_navigation_section_decode_and_freshness_control_real_cruise_hold(
   assert drive.state.navSectionActive == active
   assert update(drive, 1.) == (95. if active else 110.)
   assert drive.helper.camera_pending != active
+
+def test_fixed_camera_clear_resyncs_same_pure_limit_after_high_manual_setpoint(auto_drive):
+  drive = auto_drive
+  helper = drive.helper
+  helper.v_cruise_kph = helper.v_cruise_cluster_kph = 100.
+  helper.auto_prev_limit = 80.
+  helper.auto_speed_offset = 10.
+  # Unknown LinkClass retains the existing high-speed 4A3 source.
+  drive.state.navLinkClass = 0
+  drive.state.speedLimit = 50.  # Mixed 4BE must not replace 4A3's 80.
+  drive.state.navSpeedLimit = 80.
+  drive.state.mapSource = 2
+
+  assert update(drive, 1.) == 100.
+  assert helper.camera_pending
+  assert helper.auto_camera_seen
+
+  drive.state.mapSource = 0
+  assert update(drive, 1.01) == 90.
+  assert not helper.camera_pending
+  assert helper.auto_source_high is True
+  assert helper.auto_prev_limit == 80.
+  assert not helper.auto_camera_seen
+  assert update(drive, 1.02) == 90.
+
+
+def test_fixed_camera_never_releases_from_elapsed_frames_alone(auto_drive):
+  drive = auto_drive
+  drive.helper.v_cruise_kph = drive.helper.v_cruise_cluster_kph = 100.
+  drive.helper.auto_prev_limit = 80.
+  drive.state.navSpeedLimit = 80.
+  drive.state.mapSource = 2
+  for index in range(25):
+    assert update(drive, 1. + index * .01) == 100.
+    assert drive.helper.camera_pending
+  assert drive.helper.auto_camera_seen
+
+
+def test_fixed_camera_clear_waits_for_fresh_valid_pure_limit(auto_drive):
+  drive = auto_drive
+  drive.helper.v_cruise_kph = drive.helper.v_cruise_cluster_kph = 100.
+  drive.helper.auto_prev_limit = 80.
+  drive.helper.auto_speed_offset = 10.
+  drive.state.mapSource = 2
+  drive.state.navSpeedLimit = 80.
+  assert update(drive, 1.) == 100.
+
+  drive.state.navDataValid = False
+  drive.state.mapSource = 0
+  assert update(drive, 1.01) == 100.
+  assert drive.helper.auto_camera_seen
+
+  drive.state.navDataValid = True
+  drive.state.navSpeedLimit = 0
+  assert update(drive, 1.02) == 100.
+  assert drive.helper.auto_camera_seen
+
+  drive.state.navSpeedLimit = 80.
+  assert update(drive, 1.03) == 90.
+  assert not drive.helper.auto_camera_seen
+
+
+def test_section_camera_clear_does_not_apply_second_same_limit_change(auto_drive):
+  drive = auto_drive
+  drive.helper.v_cruise_kph = drive.helper.v_cruise_cluster_kph = 95.
+  drive.helper.auto_prev_limit = 80.
+  drive.helper.auto_speed_offset = 10.
+  drive.state.navSpeedLimit = 80.
+  drive.state.navSectionValid = drive.state.navSectionActive = True
+  assert update(drive, 1.) == 95.
+  assert drive.helper.auto_camera_section_seen
+
+  drive.state.navSectionActive = False
+  drive.state.mapSource = 0
+  assert update(drive, 1.01) == 95.
+  assert not drive.helper.auto_camera_seen
+
+
+def test_manual_speed_override_during_camera_stays_authoritative_on_clear(auto_drive):
+  drive = auto_drive
+  helper = drive.helper
+  helper.v_cruise_kph = helper.v_cruise_cluster_kph = 100.
+  helper.auto_prev_limit = 80.
+  helper.auto_speed_offset = 10.
+  drive.state.navSpeedLimit = 80.
+  drive.state.mapSource = 2
+  assert update(drive, 1.) == 100.
+
+  assert helper._update_auto_mode_target(
+    drive.state, drive.control, 100., physical_speed_button=True,
+    manual_speed_change=True, restore_speed=None,
+  ) == 100.
+  assert helper.auto_camera_override
+
+  drive.state.mapSource = 0
+  assert update(drive, 1.01) == 100.
+  assert not helper.auto_camera_seen
+

@@ -924,6 +924,8 @@ class VCruiseCarrot:
     self.auto_can_resume = False
     self.camera_pending = False
     self.auto_camera_override = False
+    self.auto_camera_seen = False
+    self.auto_camera_section_seen = False
     self.auto_engage_timer = 0
     self.memorized_nav_limit = 0
     self.nav_limit_timer = 0
@@ -1071,14 +1073,24 @@ class VCruiseCarrot:
       return min(v_cruise_kph, self.auto_sync_speed) if self.auto_sync_speed is not None else v_cruise_kph
 
     map_source = CS.mapSource
+    camera_was_overridden = self.auto_camera_override
     if map_source != 2:
       self.auto_camera_override = False
     elif physical_speed_button:
       self.auto_camera_override = True
     section_active = getattr(CS, 'navSectionValid', False) and getattr(CS, 'navSectionActive', False)
     self.camera_pending = map_source == 2 and not (section_active or self.auto_camera_override)
+    if map_source == 2:
+      # A 4A3 camera announcement is not evidence that the camera was passed.
+      # Remember only fresh announcements, not a stale or lost CAN message.
+      if not getattr(self, "auto_camera_seen", False):
+        self._add_log("Auto 4A3 camera announcement: waiting for clear")
+      self.auto_camera_seen = True
+      if section_active:
+        self.auto_camera_section_seen = True
 
-    speed_limit_pure = self._auto_road_limit(CS.navSpeedLimit)
+    observed_pure_limit = self._auto_road_limit(CS.navSpeedLimit)
+    speed_limit_pure = observed_pure_limit
     # Remember only received valid values. A zero stream must not keep an
     # obsolete nonzero limit alive for an entire camera announcement.
     if speed_limit_pure > 0:
@@ -1117,6 +1129,23 @@ class VCruiseCarrot:
         self.prev_is_tollgate = True
         self.v_cruise_before_tollgate = self.expected_tollgate_speed = v_cruise_kph
         self.tollgate_speed_changed = True
+
+    if map_source != 2 and getattr(self, "auto_camera_seen", False):
+      # Fixed-camera clearance may leave the exact same 4A3 speed limit as
+      # before the announcement. Re-evaluate once even if auto_prev_limit
+      # is unchanged, but never use mixed 4BE, stale/zero data, or an
+      # unconfirmed section exit to infer a fixed-camera pass.
+      if (use_pure and observed_pure_limit > 0 and not is_tollgate
+          and not getattr(self, "auto_camera_section_seen", False)
+          and not camera_was_overridden and not manual_speed_change):
+        self.auto_mode_needs_sync = True
+        self._add_log(f"Auto 4A3 fixed camera cleared: resync {observed_pure_limit:g} km/h")
+      # Keep the pending marker across zero/unknown 4A3 speed values;
+      # no automatic setpoint is permitted from a remembered fallback.
+      if observed_pure_limit > 0 or not use_pure or is_tollgate or manual_speed_change:
+        self.auto_camera_seen = False
+        self.auto_camera_section_seen = False
+
     if self.auto_baseline_pending and target_raw_limit > 0:
       self.auto_prev_limit = target_raw_limit
       self.auto_baseline_pending = False
