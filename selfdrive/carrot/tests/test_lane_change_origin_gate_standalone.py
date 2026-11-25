@@ -238,7 +238,7 @@ class OneTouchOriginGate(unittest.TestCase):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
-    namespace = {}
+    namespace = {"time": SimpleNamespace(monotonic_ns=lambda: now)}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), namespace)
     update = namespace["_update_blinker_stalks"]
     stalk = {"LEFT_BLINKER": 1, "RIGHT_BLINKER": 0,
@@ -269,7 +269,7 @@ class OneTouchOriginGate(unittest.TestCase):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
-    scope = {}
+    scope = {"time": SimpleNamespace(monotonic_ns=lambda: now)}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), scope)
     parser = scope["_update_blinker_stalks"]
     now = 1_000_000_000
@@ -299,6 +299,50 @@ class OneTouchOriginGate(unittest.TestCase):
     pressed = replay(10_000_000)
     self.assertTrue(pressed.blinkerStalkValid)
     self.assertEqual((pressed.blinkerLever, owner.left_blinker_stalk_count), (1, 1))
+
+  def test_stalk_expires_when_whole_can_parser_clock_stops(self):
+    # Execute the real CarState parser method: if no CAN frames arrive,
+    # cp._last_update_nanos freezes but independent monotonic time advances.
+    path = ROOT / "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CarState")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_update_blinker_stalks")
+    clock = [1_020_000_000]
+    scope = {"time": SimpleNamespace(monotonic_ns=lambda: clock[0])}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"), scope)
+    update = scope["_update_blinker_stalks"]
+    neutral = {"LEFT_BLINKER": 0, "RIGHT_BLINKER": 0, "LEFT_BLINKER_TAP": 0, "RIGHT_BLINKER_TAP": 0}
+    press = dict(neutral, LEFT_BLINKER=1, LEFT_BLINKER_TAP=1)
+    car = SimpleNamespace(
+      blinker_stalks=neutral, blinker_stalk_armed=False,
+      left_stalk_prev=False, right_stalk_prev=False,
+      left_blinker_stalk_count=0, right_blinker_stalk_count=0,
+      _vehicle_navi_message_timestamp=lambda cp, name: max(cp.ts_nanos.get(name, {}).values(), default=0),
+    )
+    cp = SimpleNamespace(_last_update_nanos=1_020_000_000,
+                         ts_nanos={"BLINKER_STALKS": {"LEFT_BLINKER": 1_000_000_000}})
+    def read():
+      ret = SimpleNamespace(blinkerLever=0, blinkerStalkValid=False)
+      update(car, ret, cp)
+      return ret
+    self.assertTrue(read().blinkerStalkValid)   # fresh neutral -> armed
+    clock[0] = 1_310_000_000                  # all CAN stopped; cp clock freezes
+    self.assertFalse(read().blinkerStalkValid)
+    self.assertFalse(car.blinker_stalk_armed)
+    clock[0] = cp._last_update_nanos = 1_330_000_000
+    cp.ts_nanos["BLINKER_STALKS"]["LEFT_BLINKER"] = 1_320_000_000
+    car.blinker_stalks = press                # resumed already pressed, not a new tap
+    self.assertFalse(read().blinkerStalkValid)
+    self.assertEqual(car.left_blinker_stalk_count, 0)
+    clock[0] = cp._last_update_nanos = 1_530_000_000
+    cp.ts_nanos["BLINKER_STALKS"]["LEFT_BLINKER"] = 1_520_000_000
+    car.blinker_stalks = neutral              # only fresh neutral rearms
+    self.assertTrue(read().blinkerStalkValid)
+    clock[0] = cp._last_update_nanos = 1_750_000_000
+    cp.ts_nanos["BLINKER_STALKS"]["LEFT_BLINKER"] = 1_740_000_000
+    car.blinker_stalks = press
+    self.assertTrue(read().blinkerStalkValid)
+    self.assertEqual(car.left_blinker_stalk_count, 1)
 
   def test_modeld_retracts_stalk_provenance_after_message_timeout(self):
     path = ROOT / "selfdrive/modeld/modeld.py"
