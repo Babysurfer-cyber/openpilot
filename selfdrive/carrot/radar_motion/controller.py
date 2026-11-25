@@ -1519,7 +1519,8 @@ class DPathRadarController:
     # become leadTwo once the model actually starts changing lanes. This never
     # changes leadOne, cruise set speed, acceleration limits, or the CUT-IN
     # detector; and an existing more restrictive leadTwo keeps priority.
-    side_point = self.lane_change_speed_assist.update(time_s, v_ego, model, points)
+    side_point = (self.lane_change_speed_assist.update(time_s, v_ego, model, points)
+                  if self.enable_radar_tracks > 0 else None)
     if side_point is not None and lead_one is not None and lead_one.get("status"):
       side_d_path = project_to_model_path(path, side_point.d_rel, side_point.y_rel).d_path
       if abs(side_d_path) <= 4.4:
