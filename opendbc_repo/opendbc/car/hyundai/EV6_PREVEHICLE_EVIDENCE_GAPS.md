@@ -90,3 +90,53 @@ C 검사기는 명시적으로 **bus 0** 원본 기어·브레이크·속도
 **결론: 병합 금지.** PR #47은 순수 분석/모의 계획
 Draft, 차량용 SPAS2 송신 미구현. PR #46의 실험용
 0x3C1 C 정책도 실차 부착·주행 허가가 아니다.
+
+
+## 2026-11-25 추가: 버스 0/1/2 증거 분리 및 개인정보 최소화
+
+PR #46 실제 panda C 정책을 대조하여 중요한 버스 매핑 문제를 확인했다.
+
+- 일반 HDA2 / non-CAMERA_SCC 구성에서는 \`HYUNDAI_CANFD_COMMON_RX_CHECKS(1)\`가
+  적용될 수 있다. 그러나 PR #46 시험용 독립 주차·브레이크·차륜속도
+  안전 게이트는 검증된 **bus 0**의 \`0x35/0x175/0xA0\`를 요구한다.
+  원본 차량의 \`safetyParam\` 및 물리 버스 구성이 확인되지 않았으므로
+  해당 게이트를 **완화하면 안 된다**.
+- 최신 \`ev6_spas_evidence_gate.py\`는 원본 파일의 버스 0·1·2 CAN ID
+  건수를 별도로 보존하고, 세 안전 입력 신호가 **한 버스에 함께 있는지**
+  표시한다. bus1에서만 세 신호가 관찰되면
+  \`HDA2_BUS1_RX_EVIDENCE_CANNOT_SATISFY_UNVERIFIED_BUS0_PANDA_GUARD\`
+  항목을 추가한다. bus0/1/2의 부분 표본을 합쳐 정상으로 판단하지 않는다.
+- 어느 버스에서 메시지 ID가 발견되어도 그 사실만으로 기어·브레이크·
+  속도값의 정합성, CRC·최신성, 원본 ECU의 출처, 실제 panda
+  RX checker 일치 여부를 증명하지 못한다. 그래서 **NO-GO를 유지**한다.
+- 과거 \`extract_6.csv\` 및 \`extract_7.csv\`는 **모든 버스에서** 세
+  안전 입력 CAN ID의 추출 건수가 0이다. 이는 처음의 CSV 추출 필터가
+  생략했을 가능성을 포함하며, **전체 원본 rlog의 부재를 뜻하지 않는다**.
+
+### 기존 저장 rlog에서 버스별 CAN 건수만 내보내는 방법
+
+원본 rlog가 설치된 오픈파일럿 개발 환경에서만:
+
+~~~bash
+python opendbc_repo/opendbc/car/hyundai/ev6_spas_rlog_extract.py \
+  --input '/path/to/previously_saved/rlog.zst' \
+  --output '/path/to/private_filtered_ev6_can.csv' \
+  --summary-output '/path/to/shareable_bus_counts.json'
+~~~
+
+- 로컬 CSV는 각 메시지의 원시 CAN 데이터를 포함하므로 개인적으로 보관한다.
+- 별도 JSON 파일은 **CAN ID 및 버스별 수신 건수만** 기록한다.
+  CAN payload·개별 타임스탬프·GPS·영상·sendcan은 요약 JSON에 없다.
+  이 JSON으로도 ECU 출처, 진단 송신 여부 또는 안전 상태는 확정하지 못한다.
+- CSV 생성 중 실패하면 불완전한 임시파일을 지우고 기존 출력 파일을
+  보존하도록 **원자적 교체** 방식으로 보강했다.
+- 장치에 시험용 제어기·송신 코드 설치/활성화는 필요하지 않다.
+  파일 추출 과정은 원본 저장 로그를 읽는 것 외에 어떤 CAN 송신도 하지 않는다.
+
+이번 코드에는 기존 Python 96개 + 버스 출처 회귀 4개 + 원자적 추출/
+요약 JSON 4개 = **104/104 로컬 테스트 통과**, syntax 검사 통과.
+GitHub CI와 전체 panda C integration의 성공 기록은 여전히 없다.
+원본 전체 rlog 파일은 현재 접근 가능한 파일 자료에서 확인되지
+않았으므로 **사용자 EV6의 실 물리 RX 버스가 무엇인지 여전히 미확인**.
+
+**실차 적용 NO-GO / Draft PR #47 유지.**
