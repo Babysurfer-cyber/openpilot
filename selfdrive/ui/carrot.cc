@@ -1421,7 +1421,7 @@ public:
           QString desired_src = QString::fromStdString(carrot_man.getDesiredSource()).trimmed();
           float desired_spd = carrot_man.getDesiredSpeed();
           float v_cruise_cluster = sm["carState"].getCarState().getVCruiseCluster();
-          atc_decel_active = (desired_src.compare("atc", Qt::CaseInsensitive) == 0 && desired_spd < v_cruise_cluster);
+          atc_decel_active = ((desired_src.compare("atc", Qt::CaseInsensitive) == 0 || desired_src.compare("atc2", Qt::CaseInsensitive) == 0) && desired_spd < v_cruise_cluster);
 
           nGoPosDist = carrot_man.getNGoPosDist();
           nGoPosTime = carrot_man.getNGoPosTime();

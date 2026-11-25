@@ -275,6 +275,7 @@ struct CarState {
   leftBlinkerStalkCount @88 :UInt8;
   rightBlinkerStalkCount @89 :UInt8;
   blinkerLever @90 :UInt8;  # 0: 꺼짐, 1: 툭(Tap), 2: 제침(Latched)
+  blinkerStalkValid @96 :Bool;  # Fresh BLINKER_STALKS <=250ms, neutral rearmed since startup or CAN gap
 
   navSectionActive @91 :Bool;  # stock 0x4B4 reports a current section-camera average speed
   navSectionValid @92 :Bool;   # 0x4B4 is recent and its average-speed value is valid

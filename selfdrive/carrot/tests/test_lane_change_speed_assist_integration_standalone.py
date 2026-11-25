@@ -91,7 +91,8 @@ class Point:
 
 def model(state="preLaneChange", direction="left"):
   lines = tuple(SimpleNamespace(x=(0.0, 100.0), y=(y, y)) for y in (-5.4, -1.8, 1.8, 5.4))
-  return SimpleNamespace(meta=SimpleNamespace(laneChangeState=state, laneChangeDirection=direction),
+  return SimpleNamespace(meta=SimpleNamespace(laneChangeState=state, laneChangeDirection=direction,
+                                               laneChangeDriverRequest=True),
                          laneLines=lines, laneLineProbs=(.95, .95, .95, .95))
 
 

@@ -165,6 +165,14 @@ class LaneChangeSpeedAssist:
     if state != "laneChangeStarting" or direction not in ("left", "right"):
       self.reset()
       return None
+    # A valid FSM start can also come from ATC or a held stalk. Require the
+    # provenance latched by DesireHelper when a physical one-touch maneuver
+    # actually starts. Missing/old cereal fields fail closed. Never reacquire
+    # if provenance disappears during the active maneuver.
+    if getattr(meta, "laneChangeDriverRequest", False) is not True:
+      self.reset()
+      self._state = state
+      return None
     # Direction is latched in preLaneChange and cannot change during the maneuver.
     if self._pending_direction != direction:
       self.reset()

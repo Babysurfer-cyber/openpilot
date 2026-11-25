@@ -67,7 +67,10 @@ def _valid_road_limit_kph(value: Any) -> int | None:
 
 
 def _text(value: Any, maximum: int) -> str:
-  return str(value or "")[:maximum]
+  # JSON can contain lone UTF-16 surrogates. Never let one road label
+  # prevent unrelated speed or TBT data from being published to cereal.
+  text = str(value or "")[:maximum]
+  return "".join("\ufffd" if 0xD800 <= ord(ch) <= 0xDFFF else ch for ch in text)
 
 
 def _int16_list(value: Any) -> list[int]:

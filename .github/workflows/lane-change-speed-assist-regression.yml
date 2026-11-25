@@ -4,17 +4,27 @@ on:
   push:
     branches:
       - feature/side-lead-lane-change-20261125
+      - fix/side-lead-one-touch-origin-20261126
   pull_request:
     branches:
       - ms-xy-radar3
     paths:
       - .github/workflows/lane-change-speed-assist-regression.yml
+      - cereal/log.capnp
+      - opendbc_repo/opendbc/car/car.capnp
+      - opendbc_repo/opendbc/car/hyundai/carstate.py
+      - selfdrive/modeld/modeld.py
+      - selfdrive/controls/lib/desire_helper.py
+      - selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py
+      - selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py
       - selfdrive/carrot/radar_motion/controller.py
       - selfdrive/carrot/radar_motion/lead_selection.py
       - selfdrive/carrot/radar_motion/lane_change_speed_assist.py
       - selfdrive/carrot/tests/test_lane_change_speed_assist.py
       - selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py
       - selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py
+      - selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py
+      - selfdrive/controls/lib/longitudinal_mpc_lib/long_mpc.py
   workflow_dispatch:
 
 permissions:
@@ -32,7 +42,36 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install minimal test dependencies
-        run: python -m pip install --disable-pip-version-check numpy pytest
+        run: python -m pip install --disable-pip-version-check numpy pytest pycapnp
+      - name: Native Cap'n Proto CarState and ModelDataV2 roundtrip
+        run: |
+          python - <<'PY'
+          import capnp
+          from pathlib import Path
+          schema = capnp.load(str(Path('opendbc_repo/opendbc/car/car.capnp').resolve()))
+          msg = schema.CarState.new_message()
+          assert not msg.blinkerStalkValid
+          msg.blinkerStalkValid = True
+          with schema.CarState.from_bytes(msg.to_bytes()) as parsed:
+            assert parsed.blinkerStalkValid
+          print("CarState stalk field serialized and decoded")
+          PY
+          python - <<'PY'
+          import capnp
+          from pathlib import Path
+          schema = capnp.load(str(Path('cereal/log.capnp').resolve()))
+          msg = schema.ModelDataV2.new_message()
+          assert not msg.meta.laneChangeDriverRequest
+          msg.meta.laneChangeDriverRequest = True
+          with schema.ModelDataV2.from_bytes(msg.to_bytes()) as parsed:
+            assert parsed.meta.laneChangeDriverRequest
+          print("modelV2 one-touch field serialized and decoded")
+          PY
+      - name: Verify canonical CarState schema symlink
+        run: |
+          test -L cereal/car.capnp
+          test "$(readlink cereal/car.capnp)" = "../opendbc_repo/opendbc/car/car.capnp"
+          grep -q 'blinkerStalkValid @96 :Bool;' opendbc_repo/opendbc/car/car.capnp
       - name: Syntax check
         run: |
           python -m py_compile \
@@ -41,10 +80,19 @@ jobs:
             selfdrive/carrot/radar_motion/lane_change_speed_assist.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist.py \
             selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py \
-            selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py
+            selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py \
+            selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py \
+            selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py \
+            selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py \
+            selfdrive/modeld/modeld.py \
+            selfdrive/controls/lib/desire_helper.py \
+            opendbc_repo/opendbc/car/hyundai/carstate.py
       - name: Run direct and production-AST regression tests
         run: |
           export PYTHONPATH="$(dirname "$PWD")"
           python -m pytest -q selfdrive/carrot/tests/test_lane_change_speed_assist.py
           python selfdrive/carrot/tests/test_lane_change_speed_assist_integration_standalone.py -v
           python selfdrive/carrot/tests/test_lane_change_speed_assist_mpc_envelope_standalone.py -v
+          python selfdrive/carrot/tests/test_lane_change_mpc_input_contract_standalone.py -v
+          python selfdrive/carrot/tests/test_lane_change_origin_gate_standalone.py -v
+          python selfdrive/carrot/tests/lane_change_origin_fuzz_standalone.py

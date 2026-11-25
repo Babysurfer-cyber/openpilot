@@ -545,6 +545,17 @@ def main(demo=False):
       DH.update(sm['carState'], modelv2_send.modelV2, sm['carControl'].latActive, lane_change_prob, sm['carrotMan'], sm['radarState'])
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
+      # Preserve the verified stalk origin; laneChangeStarting alone also includes ATC.
+      # Revoke the radar-only provenance immediately if the optional stalk
+      # CAN frames expire, even after an otherwise valid FSM has started.
+      modelv2_send.modelV2.meta.laneChangeDriverRequest = bool(
+        DH.lane_change_driver_request and sm.alive['carState'] and sm.valid['carState']
+        and sm['carState'].canValid and getattr(sm['carState'], 'blinkerStalkValid', False)
+        # An already-started one-touch may subsequently become a held/full-latch
+        # lever. Revoke only the side-lead assist; do not change the lane-change FSM.
+        and DH.stalk_max_level == 1 and sm['carState'].blinkerLever in (0, 1)
+        and not DH.one_touch_completed and not DH.bsd_stalk_cancelled
+      )
       modelv2_send.modelV2.meta.laneChangeBlocked = DH.lane_change_blocked
       modelv2_send.modelV2.meta.desireLog = DH.desireLog #carrot
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state

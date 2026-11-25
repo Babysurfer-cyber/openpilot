@@ -311,7 +311,13 @@ class VCruiseCarrot:
       self.autoCruiseControl_cancel_timer = max(0, self.autoCruiseControl_cancel_timer - 1)
 
     CC = sm['carControl']
-    if sm.alive['carrotMan'] and sm.valid.get('carrotMan', True):
+    # carrotMan is on-demand (0 Hz): SubMaster.alive may remain true after
+    # the publisher stops. Never act on expired VTRUN or restore information.
+    carrot_recv = sm.recv_time.get('carrotMan', 0.)
+    carrot_fresh = (sm.alive['carrotMan'] and sm.valid.get('carrotMan', True)
+                    and carrot_recv > 0
+                    and 0 <= time.monotonic() - carrot_recv <= 1.5)
+    if carrot_fresh:
       carrot_man = sm['carrotMan']
       self.nRoadLimitSpeed = carrot_man.nRoadLimitSpeed
       self.desiredSpeed = carrot_man.desiredSpeed
@@ -326,6 +332,11 @@ class VCruiseCarrot:
       self.desiredSource = ""
       self.desiredSpeed = 250
       self.vturn_speed = 250
+      # A command payload must expire together with the on-demand publisher.
+      # Otherwise a pending SPEED/CRUISE index could replay a stale command.
+      self.carrot_cmd_index_last = self.carrot_cmd_index
+      self.carrot_cmd = ""
+      self.carrot_arg = ""
     if sm.alive['longitudinalPlan']:
       lp = sm['longitudinalPlan']
       self.xState = lp.xState
@@ -984,6 +995,11 @@ class VCruiseCarrot:
     return float(value) if math.isfinite(value) and 30 <= value <= 160 else 0.0
 
   def _auto_mode_prompt(self, text):
+    # During Carrot Cruise this method may be called for shadow targets,
+    # which are not necessarily the actual requested cruise setpoint.
+    # The outer update path still chimes when the final setpoint really changes.
+    if self.carrot_cruise_active:
+      return
     # CarrotServ consumes the text and emits one audio10 chime.
     # Mark this cycle before the direct-chime fallback is considered.
     try:
@@ -1015,6 +1031,17 @@ class VCruiseCarrot:
 
   def _update_auto_mode(self, CS, CC, v_cruise_kph, *, physical_speed_button,
                         manual_speed_change, restore_speed, automatic_carrot_restore_target=None):
+    # Cancel/disengage must clear deferred targets BEFORE they can overwrite
+    # the actual cruise setting on a camera-release cycle.
+    cancel_held = ((self.button_prev == ButtonType.cancel and self.button_cnt > 0)
+                   or any(b.type == ButtonType.cancel and b.pressed for b in CS.buttonEvents))
+    if (not CC.enabled or CS.gearShifter != GearShifter.drive or not CS.cruiseState.available
+        or CS.brakePressed or CS.regenBraking or cancel_held or self._cruise_cancel_state
+        or self._activate_cruise < 0):
+      self._auto_mode_active_last = False
+      self._reset_auto_mode_session()
+      return v_cruise_kph
+
     # The real setpoint is deliberately held at/below vehicle speed in Carrot
     # Cruise. Separately advance the regular mode-5 setpoint so road-limit
     # changes during the coast are not lost when it automatically disengages.
@@ -1145,7 +1172,9 @@ class VCruiseCarrot:
         self.auto_sync_speed = None
         self.auto_mode_needs_sync = False
         self.auto_baseline_pending = True
-      self.camera_pending = True
+      # Preserve a camera hold only when it was already established by
+      # fresh navigation. Missing navigation alone is not camera evidence.
+      # A coast begun with no camera may return to the saved cruise speed.
       if not getattr(CS, 'navDataValid', False):
         self.nav_limit_timer = 0
         self.memorized_nav_limit = 0

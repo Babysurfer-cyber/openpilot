@@ -1,0 +1,76 @@
+name: Main audit safety regression
+
+on:
+  push:
+    branches: [fix/audit-safety-regressions-20261126]
+    paths:
+      - opendbc_repo/opendbc/car/hyundai/carstate.py
+      - opendbc_repo/opendbc/car/hyundai/carcontroller.py
+      - opendbc_repo/opendbc/car/hyundai/interface.py
+      - opendbc_repo/opendbc/safety/**
+      - selfdrive/car/cruise.py
+      - selfdrive/car/tests/test_main_audit_safety_standalone.py
+      - .github/workflows/main-audit-safety-regression.yml
+  pull_request:
+    branches: [ms-xy-radar3]
+    paths:
+      - opendbc_repo/opendbc/car/hyundai/carstate.py
+      - opendbc_repo/opendbc/car/hyundai/carcontroller.py
+      - opendbc_repo/opendbc/car/hyundai/interface.py
+      - opendbc_repo/opendbc/safety/**
+      - selfdrive/car/cruise.py
+      - selfdrive/car/tests/test_main_audit_safety_standalone.py
+      - .github/workflows/main-audit-safety-regression.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python syntax
+        run: |
+          python -m py_compile opendbc_repo/opendbc/car/hyundai/carstate.py opendbc_repo/opendbc/car/hyundai/interface.py opendbc_repo/opendbc/car/hyundai/carcontroller.py selfdrive/car/cruise.py selfdrive/car/tests/test_main_audit_safety_standalone.py
+      - name: Source-backed F1 F2 F3 F4 O1 M1 regression checks
+        run: python selfdrive/car/tests/test_main_audit_safety_standalone.py -v
+      - name: Compile and test exact Panda C input guard
+        working-directory: opendbc_repo
+        run: python opendbc/safety/tests/test_ev6_park_gate_c_contract.py
+      - name: Panda experimental permission is explicit opt-in
+        working-directory: opendbc_repo
+        run: python -m unittest discover -s opendbc/safety/tests -p test_ev6_interface_optin.py -v
+
+  panda-safety-compiled:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: opendbc_repo/pyproject.toml
+      - name: Install opendbc safety test dependencies
+        working-directory: opendbc_repo
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[testing]'
+      - name: Compile native Panda safety library
+        working-directory: opendbc_repo
+        run: |
+          scons -j2
+          test -s opendbc/safety/tests/libsafety/libsafety.so
+      - name: Run actual compiled Panda EV6 gate tests
+        working-directory: opendbc_repo
+        run: python -m pytest -q -o addopts='' opendbc/safety/tests/test_ev6_stalk_park_guard.py

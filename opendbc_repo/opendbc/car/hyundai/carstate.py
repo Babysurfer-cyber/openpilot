@@ -1,6 +1,7 @@
 from collections import deque
 import copy
 import math
+import time
 import numpy as np
 import ast
 
@@ -135,6 +136,7 @@ class CarState(CarStateBase):
     self.blinkers = None
     self.blinkers_alt = None  # 추가
     self.blinker_stalks = None  # 추가
+    self.blinker_stalk_armed = False  # require a freshly observed neutral lever before accepting presses
     self.left_stalk_prev = self.right_stalk_prev = False  # 추가
     self.left_blinker_stalk_count = self.right_blinker_stalk_count = 0  # 추가
     self.doors_seatbelts = None
@@ -598,9 +600,34 @@ class CarState(CarStateBase):
     self.vehicleNaviEvents = self.vehicleNaviEvents[:VEHICLE_NAVI_MAX_EVENTS]
 
   
-  def _update_blinker_stalks(self, ret):
-    """Turn-signal lever (BLINKER_STALKS): presses (rising edges) into carState.*BlinkerStalkCount, position into blinkerLever."""
-    if self.blinker_stalks is not None:
+  def _update_blinker_stalks(self, ret, cp):
+    """Parse physical stalk only when this optional CAN frame is fresh."""
+    timestamp = self._vehicle_navi_message_timestamp(cp, "BLINKER_STALKS")
+    parser_age_ns = cp._last_update_nanos - timestamp
+    # CAN log timestamps come from common/timing.h nanos_since_boot(),
+    # which uses CLOCK_BOOTTIME, not Python's CLOCK_MONOTONIC.
+    # Mixing clocks can falsely expire valid frames after device suspend.
+    boot_age_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME) - timestamp
+    # A valid main CAN bus does not imply that the optional stalk message is
+    # fresh. The parser clock stops advancing if the *whole* CAN bus stops,
+    # so check the independently advancing CLOCK_BOOTTIME as well.
+    # Observed EV6 0x3C1 is about 5 Hz (~200ms); 250ms tolerates normal
+    # jitter but intentionally drops assistance if a frame is missed.
+    frame_fresh = bool(
+      self.blinker_stalks is not None and timestamp > 0
+      and 0 <= parser_age_ns <= 250_000_000
+      and 0 <= boot_age_ns <= 250_000_000
+    )
+    if not frame_fresh:
+      self.blinker_stalk_armed = False
+    elif not any(self.blinker_stalks[k] for k in (
+      "LEFT_BLINKER", "RIGHT_BLINKER", "LEFT_BLINKER_TAP", "RIGHT_BLINKER_TAP",
+    )):
+      # A fresh neutral frame separates a new physical request from a press
+      # that might have begun during an unobserved CAN outage.
+      self.blinker_stalk_armed = True
+    ret.blinkerStalkValid = frame_fresh and self.blinker_stalk_armed
+    if ret.blinkerStalkValid:
       left_stalk, right_stalk = bool(self.blinker_stalks["LEFT_BLINKER"]), bool(self.blinker_stalks["RIGHT_BLINKER"])
       if left_stalk and not self.left_stalk_prev:
         self.left_blinker_stalk_count = (self.left_blinker_stalk_count + 1) % 256
@@ -610,6 +637,11 @@ class CarState(CarStateBase):
       # *_TAP is set only in the one-touch detent; a latch passes through it for ~0.1 s
       tap = self.blinker_stalks["LEFT_BLINKER_TAP"] or self.blinker_stalks["RIGHT_BLINKER_TAP"]
       ret.blinkerLever = 1 if tap else 2 if (left_stalk or right_stalk) else 0
+    else:
+      # Never expose a cached, potentially stuck physical lever to controls.
+      # Preserve prior edge counters until a fresh neutral frame is observed.
+      # Fresh-but-pressed frames after an outage remain ignored until rearmed.
+      ret.blinkerLever = 0
     ret.leftBlinkerStalkCount = self.left_blinker_stalk_count
     ret.rightBlinkerStalkCount = self.right_blinker_stalk_count
 
@@ -772,7 +804,7 @@ class CarState(CarStateBase):
     #ret.steerFaultTemporary = False
 
     # ▼▼▼ 레버 상태 업데이트 함수 호출 추가 ▼▼▼
-    self._update_blinker_stalks(ret)
+    self._update_blinker_stalks(ret, cp)
 
     # ▼▼▼ 기존 램프 처리 로직을 BLINKERS_ALT도 지원하도록 보강 ▼▼▼
     blinkers_info = self.blinkers if self.blinkers is not None else self.blinkers_alt if self.blinkers_alt is not None else None
@@ -1009,10 +1041,14 @@ class CarState(CarStateBase):
     # Register 4A3 up front so its cached dictionary also receives late data.
     msgs = [("HDA_INFO_4A3", math.nan), ("NEW_MSG_4B9", math.nan),
             ("NEW_MSG_4BE", math.nan), ("NEW_MSG_4B4", math.nan)]
-    # Passive SPAS diagnostics on 2022 EV6: parse genuine stock frames.
-    # No ECU disable, no extra TX, and no new CAN validity requirement.
+    # Passive SPAS messages must not affect the driving parser validity.
+    # Register without expected frequency AND without counter enforcement:
+    # math.nan in the constructor disables only the frequency check.
+    pt_parser = CANParser(DBC[CP.carFingerprint][Bus.pt], msgs, CanBus(CP).ECAN)
     if CP.carFingerprint == CAR.KIA_EV6 and CanBus(CP).ECAN == 0:
-      msgs += [("SPAS1", math.nan), ("SPAS2", math.nan)]
+      for name in ("SPAS1", "SPAS2"):
+        if name in pt_parser.dbc.name_to_msg:
+          pt_parser._add_message(name, ignore_counter=True)
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     if not (CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS):
       # TODO: this can be removed once we add dynamic support to vl_all
@@ -1020,7 +1056,7 @@ class CarState(CarStateBase):
         ("CRUISE_BUTTONS", 50)
       ]
     return {
-      Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], msgs, CanBus(CP).ECAN),
+      Bus.pt: pt_parser,
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).CAM),
       Bus.alt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).ACAN),
     }
