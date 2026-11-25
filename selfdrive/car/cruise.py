@@ -817,8 +817,6 @@ class VCruiseCarrot:
         math.isfinite(previous_op_speed) and 0 < previous_op_speed <= self._cruise_speed_max
         and previous_op_speed != V_CRUISE_UNSET else None)
       self.carrot_cruise_min_timer = 500  # <--- [추가] 당근크루즈 켜지면 5초(500프레임) 장전
-        
-    self.prev_carrot_active = getattr(self, 'carrot_cruise_active', False)
 
     # ==============================================================
     # ▼ [통합 복귀 로직] 가속 페달, 정지차량 5초, 목표속도 5초 도달 시 
@@ -884,6 +882,10 @@ class VCruiseCarrot:
       self.stationary_lead_timer = 0
       self.target_speed_reach_timer = 0
     # ==============================================================
+
+    # Record the FINAL cruise state (after automatic exit), otherwise a
+    # re-entry on the next update can miss its new backup capture.
+    self.prev_carrot_active = self.carrot_cruise_active
 
     # Apply mode 5 after the ordinary button/pedal handling so learning uses
     # the actual selected speed, and legacy auto-speed calculations cannot
