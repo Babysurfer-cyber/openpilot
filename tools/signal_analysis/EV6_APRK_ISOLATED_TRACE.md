@@ -126,3 +126,26 @@ bench (correct vehicle-specific ECU, verified connector/pinout and safe power
 supply, actual CAN-FD bus and independent error/loss and power monitoring).
 Do not use this protocol as a vehicle-integrated diagnostic script. Do not
 short or disable the parking ECU's communication while the vehicle is in use.
+
+## Review changes after 35 tests (41 offline regression cases)
+
+- All captures with malformed, missing or untrusted fields now return
+  `INCOMPLETE_OR_UNSAFE_BENCH_TRACE`, never `NOT_TESTED` merely because
+  the diagnostic request could not be read.
+- Duplicate positive UDS responses are rejected; clean bus telemetry must
+  begin with zero recorded errors and loss counters.
+- `vehicle_can_tx` is `null`: this **offline postprocessor cannot
+  measure whether a physical vehicle transmitted**. The separate
+  `offline_verifier_can_tx` remains zero by design. The input may contain
+  `captured_aprk_requests=4` from a deliberately operated, isolated bench.
+- 41 deterministic pure-Python regression tests have been run locally.
+  This is **not** a real ECU or panda firmware test.
+
+## No-go release decision
+
+Do not change a real-car control parameter or enable 0x165/0x16A TX until
+an isolated physical EV6-compatible parking ECU has been tested and a
+qualified independent safety reviewer has checked its firmware identity,
+CAN-FD topology, original stream provenance, 0x7B9 genuine responses,
+session restoration, error counters, and loss-free independent capture.
+The user-facing PREVEHICLE_READINESS document tracks these gates.
