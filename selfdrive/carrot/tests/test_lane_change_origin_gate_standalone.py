@@ -145,6 +145,13 @@ class OneTouchOriginGate(unittest.TestCase):
     self.assertIsNone(assist.update(.40, 27., model("laneChangeStarting", origin=True), (Point(),)))
     self.assertIsNone(assist.update(.45, 27., model("laneChangeStarting", origin=True), (Point(),)))
 
+  def test_carstate_cereal_symlink_still_points_to_canonical_schema(self):
+    link = ROOT / "cereal/car.capnp"
+    target = ROOT / "opendbc_repo/opendbc/car/car.capnp"
+    self.assertTrue(link.is_symlink(), "Do not replace this symlink with a regular file")
+    self.assertEqual(link.readlink().as_posix(), "../opendbc_repo/opendbc/car/car.capnp")
+    self.assertEqual(link.resolve(), target.resolve())
+
   def test_source_contract_has_unique_bool_schema_field(self):
     schema = (ROOT / "cereal/log.capnp").read_text(encoding="utf-8")
     self.assertEqual(schema.count("laneChangeDriverRequest @21 :Bool;"), 1)
