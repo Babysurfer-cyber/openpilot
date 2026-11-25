@@ -836,7 +836,8 @@ class DesireHelper:
         # edge can provisionally set one_touch_triggered without ever observing
         # physical lever depth 1; a full-lock lever depth 2 is not one-touch.
         physical_one_touch = (
-          driver_enabled and carstate.canValid and self.one_touch_triggered
+          driver_enabled and carstate.canValid and getattr(carstate, "blinkerStalkValid", False)
+          and self.one_touch_triggered
           and self.stalk_max_level == 1
           and carstate.blinkerLever in (0, 1)
           and not self.one_touch_completed and not self.bsd_stalk_cancelled
