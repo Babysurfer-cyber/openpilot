@@ -7,11 +7,15 @@ on:
     paths:
       - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py'
       - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py'
+      - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_factory_replay.py'
+      - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_factory_replay.py'
       - '.github/workflows/ev6-spas-control-plan.yml'
   pull_request:
     paths:
       - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py'
       - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py'
+      - 'opendbc_repo/opendbc/car/hyundai/ev6_spas_factory_replay.py'
+      - 'opendbc_repo/opendbc/car/hyundai/test_ev6_spas_factory_replay.py'
       - '.github/workflows/ev6-spas-control-plan.yml'
   workflow_dispatch:
 
@@ -30,28 +34,34 @@ jobs:
       - name: Check syntax
         run: |
           python -m py_compile opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py \
-            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py
+            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_control.py \
+            opendbc_repo/opendbc/car/hyundai/ev6_spas_factory_replay.py \
+            opendbc_repo/opendbc/car/hyundai/test_ev6_spas_factory_replay.py
       - name: Run synthetic isolated-handoff planning tests (no vehicle)
         run: |
           python -m unittest discover -s opendbc_repo/opendbc/car/hyundai \
-            -p 'test_ev6_spas_control.py' -v
-      - name: Enforce no CAN transport in planning core
+            -p 'test_ev6_spas*.py' -v
+      - name: Enforce no CAN transport in planning core and CSV replay
         run: |
           python - <<'PY'
           import ast
           from pathlib import Path
-          path = Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py')
-          tree = ast.parse(path.read_text())
+          paths = (
+              Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_control.py'),
+              Path('opendbc_repo/opendbc/car/hyundai/ev6_spas_factory_replay.py'),
+          )
           denied_imports = ('panda', 'can', 'isotp', 'socket', 'cereal', 'opendbc')
-          denied_symbols = {'CanData', 'CANPacket', 'can_sends', 'make_can_msg', 'can_send'}
-          for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-              imports = ([x.name for x in node.names] if isinstance(node, ast.Import)
-                         else [node.module or ''])
-              assert all(not value.startswith(denied_imports) for value in imports), imports
-            if isinstance(node, ast.Name):
-              assert node.id not in denied_symbols, node.id
-            if isinstance(node, ast.Attribute):
-              assert node.attr not in denied_symbols, node.attr
-          print('Planning core contains no CAN transmit interfaces.')
+          denied_symbols = {'CanData', 'CANPacket', 'can_sends', 'make_can_msg', 'can_send', 'sendcan'}
+          for path in paths:
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+              if isinstance(node, (ast.Import, ast.ImportFrom)):
+                imports = ([x.name for x in node.names] if isinstance(node, ast.Import)
+                           else [node.module or ''])
+                assert all(not value.startswith(denied_imports) for value in imports), (path, imports)
+              if isinstance(node, ast.Name):
+                assert node.id not in denied_symbols, (path, node.id)
+              if isinstance(node, ast.Attribute):
+                assert node.attr not in denied_symbols, (path, node.attr)
+          print('Both planning core and factory replay have no CAN transport interfaces.')
           PY
