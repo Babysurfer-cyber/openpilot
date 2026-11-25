@@ -64,6 +64,41 @@ class AuditSafetyRegression(unittest.TestCase):
     text = (ROOT / path).read_text(encoding="utf-8")
     self.assertNotIn('msgs += [("SPAS1", math.nan), ("SPAS2", math.nan)]', text)
 
+  def test_f1_standard_cruise_buttons_registered_before_spas_parser(self):
+    # CANParser snapshots the initial 'msgs' during __init__. Appending a
+    # required driving CAN check after construction silently drops it.
+    path = "opendbc_repo/opendbc/car/hyundai/carstate.py"
+    class FakeParser:
+      def __init__(self, dbc_name, messages, bus):
+        self.messages = tuple(messages)
+        self.dbc = SimpleNamespace(name_to_msg={"SPAS1": object(), "SPAS2": object()})
+        self.extra = []
+
+      def _add_message(self, name, *, ignore_counter=False):
+        self.extra.append((name, ignore_counter))
+
+    class FakeBus:
+      pt, cam, alt = "pt", "cam", "alt"
+
+    impl = production_method(path, "CarState", "get_can_parsers_canfd", {
+      "CANParser": FakeParser, "Bus": FakeBus,
+      "CanBus": lambda CP: SimpleNamespace(ECAN=0, CAM=1, ACAN=2),
+      "DBC": {"ev6": {FakeBus.pt: "fake"}},
+      "CAR": SimpleNamespace(KIA_EV6="ev6"),
+      "HyundaiFlags": SimpleNamespace(CANFD_ALT_BUTTONS=1),
+      "math": math,
+    })
+    for flags in (0, 1):
+      with self.subTest(flags=flags):
+        pt = impl().get_can_parsers_canfd(SimpleNamespace(
+          carFingerprint="ev6", flags=flags))[FakeBus.pt]
+        self.assertEqual(("CRUISE_BUTTONS", 50) in pt.messages, flags == 0)
+        self.assertEqual(pt.extra, [("SPAS1", True), ("SPAS2", True)])
+    # The existing constructor must not get extra required CAN validity
+    # checks just because optional passive SPAS frames become available.
+    self.assertTrue(math.isnan(impl().get_can_parsers_canfd(
+      SimpleNamespace(carFingerprint="ev6", flags=1))[FakeBus.pt].messages[0][1]))
+
   def test_f2_host_rejects_stale_CAN_even_if_parked(self):
     path = "opendbc_repo/opendbc/car/hyundai/carcontroller.py"
     structs = SimpleNamespace(CarState=SimpleNamespace(GearShifter=GearShifter))
