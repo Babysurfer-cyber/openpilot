@@ -229,6 +229,26 @@ static bool hyundai_ev6_stock_stalk_idle = false;
 static bool hyundai_ev6_gear_park = false;
 static uint32_t hyundai_ev6_gear_rx_us = 0U;
 
+// Verify the C safety framework's actual RX validation state as well as
+// the last decoded P gear. rx_msg_safety_check() drops frames with invalid
+// CRC *before* calling the Hyundai RX hook, so a cached 'P' alone could
+// incorrectly survive a bad subsequent gear packet for up to 120 ms.
+static bool hyundai_ev6_gear_rx_check_valid(uint32_t now) {
+  for (int i = 0; i < current_safety_config.rx_checks_len; i++) {
+    const RxCheck *check = &current_safety_config.rx_checks[i];
+    if (check->status.msg_seen) {
+      const CanMsgCheck *msg = &check->msg[check->status.index];
+      if ((msg->addr == 0x35) && (msg->bus == 0)) {
+        return check->status.valid_checksum && check->status.valid_quality_flag &&
+               (check->status.wrong_counters < MAX_WRONG_COUNTERS) &&
+               !check->status.lagging &&
+               (get_ts_elapsed(now, check->status.last_timestamp) <= 120000U);
+      }
+    }
+  }
+  return false;  // vehicle configuration has no validated bus-0 0x35
+}
+
 // EV6 2022 stock BLINKER_STALKS (0x3C1): CRC8 poly 0x1D,
 // init 0, xorout 0x65 over bytes 1..7; verified against rlog(3)/(6)/(7).
 static uint8_t hyundai_ev6_stalk_crc8(const CANPacket_t *pkt) {
@@ -625,7 +645,8 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
     bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
                    (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
                    !vehicle_moving && brake_pressed && !gas_pressed &&
-                   hyundai_ev6_gear_park && (hyundai_ev6_gear_rx_us != 0U) &&
+                   hyundai_ev6_gear_park && hyundai_ev6_gear_rx_check_valid(now) &&
+                   (hyundai_ev6_gear_rx_us != 0U) &&
                    (get_ts_elapsed(now, hyundai_ev6_gear_rx_us) <= 120000U) &&
                    hyundai_ev6_stock_stalk_idle &&
                    (hyundai_ev6_stalk_rx_us != 0U) &&
