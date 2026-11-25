@@ -362,3 +362,73 @@ def test_zero_op_target_on_entry_does_not_invent_vehicle_or_scc_speed():
   assert result == pytest.approx(0)
   assert helper._carrot_cruise_saved_op_speed is None
   assert helper._carrot_auto_shadow_target == pytest.approx(0)
+
+@pytest.mark.parametrize("button", (ButtonType.accelCruise, ButtonType.lfaButton))
+def test_plus_or_lfa_restore_keeps_high_4a3_selection(button):
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(
+    navLinkClass=0, navSpeedLimit=80, speedLimit=50)
+  helper._lfa_button_mode = 2
+  helper.v_cruise_kph = 40.
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 100.
+  helper._carrot_auto_shadow_target = 80.
+  helper.auto_prev_limit = 80.
+  helper.auto_source_high = True
+  helper.auto_speed_offset = 10.
+  helper._prepare_buttons = lambda _cs, speed: (speed, button, False)
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(80.)
+  assert helper.auto_source_high is True
+  assert not helper._auto_mode_manual_speed_change
+  assert not helper.carrot_cruise_active
+
+
+def camera_coast():
+  helper, (CS, CC) = make_carrot_exit_helper(), make_inputs(
+    navLinkClass=1, navSpeedLimit=80, speedLimit=50, mapSource=2)
+  helper.v_cruise_kph = 40.
+  helper.v_ego_kph_set = 40.
+  helper.prev_carrot_active = True
+  helper._carrot_cruise_saved_op_speed = 100.
+  helper._carrot_auto_shadow_target = 100.
+  helper.auto_prev_limit = 80.
+  helper.auto_speed_offset = 10.
+  helper.carrot_cruise_min_timer = 0
+  helper.desiredSource = "VTRUN"
+  helper.desiredSpeed = 40
+  return helper, CS, CC
+
+
+def test_camera_coast_restores_saved_auto_reference_on_verified_clear():
+  helper, CS, CC = camera_coast()
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  assert not helper.carrot_cruise_active
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+  assert helper.auto_sync_speed == pytest.approx(40.)
+
+  helper.v_cruise_kph = 40.
+  helper.desiredSource = ""
+  CS.mapSource = 0
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(90.)
+  assert helper._carrot_restore_deferred_target is None
+  assert helper.auto_source_high is True
+
+
+def test_camera_coast_does_not_release_on_missing_or_zero_4a3_data():
+  helper, CS, CC = camera_coast()
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  helper.v_cruise_kph = 40.
+  helper.desiredSource = ""
+  CS.navDataValid = False
+  CS.mapSource = 0
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+
+  CS.navDataValid = True
+  CS.navSpeedLimit = 0
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(40.)
+  assert helper._carrot_restore_deferred_target == pytest.approx(100.)
+
+  CS.navSpeedLimit = 80
+  assert helper._update_cruise_buttons(CS, CC, 40.) == pytest.approx(90.)
+  assert helper._carrot_restore_deferred_target is None
+
