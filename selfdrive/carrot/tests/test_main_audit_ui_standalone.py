@@ -85,6 +85,17 @@ class MainAuditUiRegression(unittest.TestCase):
     self.assertIn('desired_src.compare("atc", Qt::CaseInsensitive) == 0', cc)
     self.assertIn('desired_src.compare("atc2", Qt::CaseInsensitive) == 0', cc)
 
+  def test_atc_navigation_fixture_explicitly_enables_opt_in(self):
+    path = "selfdrive/carrot/tests/test_carrot_navi_atc.py"
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MemoryParams")
+    env = {}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[])), path, "exec"), env)
+    params = env["MemoryParams"]()
+    self.assertTrue(params.get_bool("AutoTurnControlEnabled"))
+    self.assertTrue(params.get_bool("IsMetric"))
+    self.assertFalse(params.get_bool("VehicleNaviCanControl"))
+
   def test_e1_lone_surrogate_is_scrubbed_before_cereal(self):
     fn = load_function("selfdrive/carrot/carrot_navi_cereal.py", "_text", {"Any": Any})
     cleaned = fn("\ud800route name", 96)
