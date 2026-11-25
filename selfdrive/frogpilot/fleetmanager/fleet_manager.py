@@ -81,9 +81,11 @@ def _create_preview(segment):
     for source in sources:
       if not os.path.isfile(source) or os.path.getsize(source) == 0:
         continue
-      # Some last segments are shorter than 2s. Retry the first frame if
-      # seeking fails, and try fcamera if qcamera cannot be decoded.
-      for seek_at in (2, 0):
+      # fcamera HEVC is much more expensive to decode on comma hardware:
+      # take the first frame directly. qcamera can afford a 2s seek.
+      # Retry the first qcamera frame if the recording is short.
+      seek_times = (0,) if source.endswith(".hevc") else (2, 0)
+      for seek_at in seek_times:
         try:
           command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1"]
           if source.endswith(".hevc"):
@@ -102,7 +104,10 @@ def _create_preview(segment):
           cloudlog.warning(f"Fleet preview source {os.path.basename(source)} failed for {segment}: {exc}")
         finally:
           if os.path.isfile(temporary):
-            os.remove(temporary)
+            try:
+              os.remove(temporary)
+            except OSError:
+              pass
       if success:
         break
     if not success:
