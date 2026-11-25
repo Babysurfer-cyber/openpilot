@@ -235,24 +235,34 @@ static uint32_t hyundai_ev6_gear_rx_us = 0U;
 extern safety_config current_safety_config;
 extern const int MAX_WRONG_COUNTERS;
 
-// Verify the C safety framework's actual RX validation state as well as
-// the last decoded P gear. rx_msg_safety_check() drops frames with invalid
-// CRC *before* calling the Hyundai RX hook, so a cached 'P' alone could
-// incorrectly survive a bad subsequent gear packet for up to 120 ms.
-static bool hyundai_ev6_gear_rx_check_valid(uint32_t now) {
+// Verify the safety framework's independent CRC/counter/freshness state
+// for all 3 required input streams. The safety RX hook drops invalid frames
+// before reaching Hyundai's driver hook. Without these checks cached Park,
+// brake and standstill states could outlive a corrupted/absent stock message.
+static bool hyundai_ev6_parked_inputs_valid(uint32_t now) {
+  const int required[] = {0x35, 0x175, 0xA0};  // gear/gas, TCS brake, wheel speeds
+  uint8_t seen = 0U;
   for (int i = 0; i < current_safety_config.rx_checks_len; i++) {
     const RxCheck *check = &current_safety_config.rx_checks[i];
     if (check->status.msg_seen) {
       const CanMsgCheck *msg = &check->msg[check->status.index];
-      if ((msg->addr == 0x35) && (msg->bus == 0)) {
-        return check->status.valid_checksum && check->status.valid_quality_flag &&
-               (check->status.wrong_counters < MAX_WRONG_COUNTERS) &&
-               !check->status.lagging &&
-               (get_ts_elapsed(now, check->status.last_timestamp) <= 120000U);
+      if (msg->bus == 0) {
+        for (int j = 0; j < 3; j++) {
+          if (msg->addr == required[j]) {
+            const bool valid = check->status.valid_checksum && check->status.valid_quality_flag &&
+                               (check->status.wrong_counters < MAX_WRONG_COUNTERS) &&
+                               !check->status.lagging &&
+                               (get_ts_elapsed(now, check->status.last_timestamp) <= 120000U);
+            if (!valid) {
+              return false;
+            }
+            seen |= (uint8_t)(1U << j);
+          }
+        }
       }
     }
   }
-  return false;  // vehicle configuration has no validated bus-0 0x35
+  return seen == 0x7U;  // fail closed unless all stock input sources validated
 }
 
 // EV6 2022 stock BLINKER_STALKS (0x3C1): CRC8 poly 0x1D,
@@ -651,7 +661,7 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send_const) {
     bool allowed = hyundai_ev6_blinker_stalk_test && !relay_malfunction &&
                    (GET_BUS(to_send) == 0) && (GET_LEN(to_send) == 8U) &&
                    !vehicle_moving && brake_pressed && !gas_pressed &&
-                   hyundai_ev6_gear_park && hyundai_ev6_gear_rx_check_valid(now) &&
+                   hyundai_ev6_gear_park && hyundai_ev6_parked_inputs_valid(now) &&
                    (hyundai_ev6_gear_rx_us != 0U) &&
                    (get_ts_elapsed(now, hyundai_ev6_gear_rx_us) <= 120000U) &&
                    hyundai_ev6_stock_stalk_idle &&
