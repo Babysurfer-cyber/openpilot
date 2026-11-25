@@ -401,17 +401,21 @@ def route(route):
         abort(404)
     query_params = request.query_string.decode("utf-8").split(",")
     query_segment = query_params[0] if query_params and query_params[0].isdigit() else "0"
-    query_type = query_params[1] if len(query_params) >= 2 and query_params[1] in ("qcamera", "fcamera", "dcamera", "ecamera") else "qcamera"
+    requested_type = (query_params[1] if len(query_params) >= 2
+                      and query_params[1] in ("qcamera", "fcamera", "dcamera", "ecamera") else None)
 
     segments = sorted(fleet.segments_in_route(route),
                       key=lambda segment: int(segment.rsplit("--", 1)[-1]))
     if not segments:
         return render_template("error.html", error="No recording segments are stored for this route")
 
-    file_name = query_type + (".ts" if query_type == "qcamera" else ".hevc")
-    playable = [segment for segment in segments
-                if os.path.isfile(os.path.join(Paths.log_root(), segment, file_name))
-                and os.path.getsize(os.path.join(Paths.log_root(), segment, file_name)) > 0]
+    # With no explicit camera choice, prefer fcamera whenever recorded.
+    # A camera selected through the switcher always remains authoritative.
+    if requested_type:
+        query_type = requested_type
+        playable = fleet.playable_camera_segments(segments, query_type, Paths.log_root())
+    else:
+        query_type, playable = fleet.preferred_camera_segments(segments, Paths.log_root())
     if not playable:
         return render_template("error.html", error="No playable video for this camera; only logs may remain")
 
@@ -443,23 +447,26 @@ def footage():
   rows = []
   for name in page_names:
     numbers = sorted(groups[name])
-    segment = next(
-      (f"{name}--{n}" for n in numbers
-       if os.path.isfile(os.path.join(Paths.log_root(), f"{name}--{n}", "qcamera.ts"))), None
-    )
+    route_segments = [f"{name}--{n}" for n in numbers]
+    # Playlist preference applies to the View link, not thumbnail generation.
+    # Thumbnails still use the existing lightweight qcamera.ts source.
+    camera, playable = fleet.preferred_camera_segments(route_segments, Paths.log_root())
+    play_segment = playable[0] if playable else None
+    previews = fleet.playable_camera_segments(route_segments, "qcamera", Paths.log_root())
+    segment = previews[0] if previews else None
     try:
       date_folder = os.path.join(Paths.log_root(), f"{name}--{numbers[0]}")
       date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.stat(date_folder).st_ctime))
     except (IndexError, OSError):
       date_text = "저장된 날짜 정보 없음"
-    rows.append({"name": name, "segment": segment, "date": date_text})
+    rows.append({"name": name, "segment": segment, "play_segment": play_segment,
+                 "play_type": camera, "date": date_text})
   return render_template("footage.html", routes=rows, page=page,
                          total_pages=total_pages, total_routes=total_routes)
 
 @app.route("/preserved/")
 @app.route("/preserved")
 def preserved():
-  query_type = "qcamera"
   route_paths = []
   gifs = []
   segments = fleet.preserved_routes()
@@ -468,7 +475,8 @@ def preserved():
     output_path = Paths.log_root() + segment + "/preview.gif"
     fleet.video_to_img(input_path, output_path)
     split_segment = segment.split("--")
-    route_paths.append(f"{split_segment[0]}--{split_segment[1]}?{split_segment[2]},{query_type}")
+    # No explicit camera: route() will choose available fcamera or qcamera.
+    route_paths.append(f"{split_segment[0]}--{split_segment[1]}?{split_segment[2]}")
     gif_path = segment + "/preview.gif"
     gifs.append(gif_path)
 
