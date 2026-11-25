@@ -22,6 +22,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
+import math
 import os
 import re
 import secrets
@@ -355,7 +356,22 @@ def fcamera(cameratype, segment):
   file_name = os.path.join(Paths.log_root(), segment, cameratype + (".ts" if cameratype == "qcamera" else ".hevc"))
   if not os.path.isfile(file_name) or os.path.getsize(file_name) == 0:
     abort(404)
-  process = fleet.ffmpeg_mp4_wrap_process_builder(file_name)
+
+  # A stream of remuxed MP4 fragments cannot satisfy random HTTP Range
+  # requests. For 1-minute segments the player requests a new stream from
+  # the selected position instead; this does not generate cached video files.
+  start_arg = request.args.get("start")
+  if start_arg is None:
+    start_seconds = 0.0
+  else:
+    try:
+      start_seconds = float(start_arg)
+    except ValueError:
+      abort(400)
+    if not math.isfinite(start_seconds) or not 0 <= start_seconds < 60:
+      abort(400)
+
+  process = fleet.ffmpeg_mp4_wrap_process_builder(file_name, start_seconds=start_seconds)
 
   def stream_video():
     try:
@@ -375,7 +391,8 @@ def fcamera(cameratype, segment):
           process.kill()
           process.wait()
 
-  return Response(stream_video(), status=200, mimetype="video/mp4")
+  return Response(stream_video(), status=200, mimetype="video/mp4",
+                  headers={"Cache-Control": "no-store", "Accept-Ranges": "none"})
 
 
 @app.route("/footage/<route>")
@@ -386,17 +403,20 @@ def route(route):
     query_segment = query_params[0] if query_params and query_params[0].isdigit() else "0"
     query_type = query_params[1] if len(query_params) >= 2 and query_params[1] in ("qcamera", "fcamera", "dcamera", "ecamera") else "qcamera"
 
-    segments = fleet.segments_in_route(route)
+    segments = sorted(fleet.segments_in_route(route),
+                      key=lambda segment: int(segment.rsplit("--", 1)[-1]))
     if not segments:
         return render_template("error.html", error="No recording segments are stored for this route")
 
     file_name = query_type + (".ts" if query_type == "qcamera" else ".hevc")
+    playable = [segment for segment in segments
+                if os.path.isfile(os.path.join(Paths.log_root(), segment, file_name))
+                and os.path.getsize(os.path.join(Paths.log_root(), segment, file_name)) > 0]
+    if not playable:
+        return render_template("error.html", error="No playable video for this camera; only logs may remain")
+
     selected = f"{route}--{query_segment}"
-    if selected not in segments or not os.path.isfile(os.path.join(Paths.log_root(), selected, file_name)):
-        playable = [segment for segment in segments
-                    if os.path.isfile(os.path.join(Paths.log_root(), segment, file_name))]
-        if not playable:
-            return render_template("error.html", error="No playable video for this camera; only logs may remain")
+    if selected not in playable:
         query_segment = playable[0].rsplit("--", 1)[-1]
 
     links = [f'<a href="{route}?{segment.rsplit("--", 1)[-1]},{query_type}">{segment}</a>'
@@ -404,6 +424,7 @@ def route(route):
     return render_template("route.html", route=route, query_type=query_type,
                            links="<br>".join(links),
                            segments=",".join(f"'{segment}'" for segment in segments),
+                           playable_segments=playable,
                            query_segment=query_segment)
 
 @app.route("/footage/")
