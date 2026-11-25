@@ -24,10 +24,11 @@ class Point:
   radar_track_state: int = 0
 
 
-def model(state="off", direction="none", probabilities=(0.9, 0.9, 0.9, 0.9)):
+def model(state="off", direction="none", probabilities=(0.9, 0.9, 0.9, 0.9), physical_one_touch=True):
   lines = tuple(SimpleNamespace(x=(0.0, 100.0), y=(y, y)) for y in (-5.4, -1.8, 1.8, 5.4))
   return SimpleNamespace(
-    meta=SimpleNamespace(laneChangeState=state, laneChangeDirection=direction),
+    meta=SimpleNamespace(laneChangeState=state, laneChangeDirection=direction,
+                         laneChangeDriverRequest=physical_one_touch),
     laneLines=lines, laneLineProbs=probabilities,
   )
 
