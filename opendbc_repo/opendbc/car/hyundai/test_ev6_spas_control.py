@@ -4,12 +4,13 @@ from ev6_spas_control import (APRK_RESPONSE, EV6SpasControlPlan, SafetyInputs,
                               SPAS_LENGTHS, crc16_xmodem, check_stock_frame)
 
 
-def sample(addr, counter=0, control=0):
+def sample(addr, counter=0, control=0, *, byte7=0, byte18=0):
   size = SPAS_LENGTHS[addr]
   data = bytearray(size)
   data[2] = counter
   if addr == 0x16A:
     data[16] = control << 5
+    data[7], data[18] = byte7, byte18
   xor = {24: 0x819D, 32: 0x9F5B}[size]
   data[:2] = (crc16_xmodem(data[2:] + addr.to_bytes(2, 'little')) ^ xor).to_bytes(2, 'little')
   return bytes(data)
@@ -324,6 +325,38 @@ class TestPlan(unittest.TestCase):
     self.assertEqual(self.c.phase, 'eligible')
     self.assertFalse(hasattr(self.c, 'send'))
 
+
+
+  def test_passive_donor_stock_snapshot_reads_factory_state_fields(self):
+    # Factory 2022 EV6 auto-park study: pre-indicator b7=0x82, b18=0x00.
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12, byte7=0x82), 1.24)
+    status = self.c.passive_spas2_snapshot(1.24)
+    self.assertEqual((status['byte7'], status['byte18'], status['blinker_control']), (0x82, 0, 0))
+    self.assertEqual(status['vehicle_can_tx'], 0)
+    self.assertFalse(status['authenticates_ecu_origin'])
+
+  def test_passive_snapshot_reads_actual_factory_left_on_state(self):
+    # Rlog-derived observation, not a claim these bytes cause lamp activation.
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12, 3, byte7=0x01, byte18=0x40), 1.24)
+    status = self.c.passive_spas2_snapshot(1.24)
+    self.assertEqual((status['byte7'], status['byte18'], status['blinker_control']), (1, 0x40, 3))
+    self.assertEqual(self.c.request('donor', 'left', 1.25, SAFE), ['REQUEST_DENIED_FACTORY_INDICATOR_ACTIVE'])
+
+  def test_wrong_bus_does_not_replace_oem_snapshot(self):
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12, byte7=0x82), 1.24)
+    self.c.observe_stock(0x16A, 2, sample(0x16A, 13, 4, byte7=1, byte18=0x40), 1.25)
+    self.assertEqual(self.c.passive_spas2_snapshot(1.25)['byte7'], 0x82)
+
+  def test_corrupt_crc_clears_passive_snapshot(self):
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12, byte7=0x82), 1.24)
+    bad = bytearray(sample(0x16A, 13))
+    bad[18] ^= 0x40
+    self.c.observe_stock(0x16A, 0, bytes(bad), 1.26)
+    self.assertIsNone(self.c.passive_spas2_snapshot(1.26))
+
+  def test_stale_oem_snapshot_cannot_be_used_as_fresh_evidence(self):
+    self.c.observe_stock(0x16A, 0, sample(0x16A, 12, byte7=0x82), 1.24)
+    self.assertIsNone(self.c.passive_spas2_snapshot(1.45))
 
 
 if __name__ == '__main__':
