@@ -137,3 +137,35 @@ correctly rejected by the local test runner:
 This only establishes that the standalone checks are sensitive to these
 specific regressions. The current branch still has **no confirmed remote
 GitHub Actions job execution** and no full panda safety compilation.
+
+## HDA2 버스 설정의 실제 적용 차이 (2026-11-25)
+
+**중요한 추가 발견:** 처음 작성한 긍정 테스트는
+`CANFD_LKA_STEERING | CAMERA_SCC | EV_GAS | EV6_BLINKER_STALK_TEST`
+safetyParam을 사용한다. 이때 panda의 HDA2 RX 검사에는
+`HYUNDAI_CANFD_COMMON_RX_CHECKS(0)`가 적용되므로 새
+`hyundai_ev6_parked_inputs_valid()`가 추적하는 0x35/0x175/0xA0
+**bus 0** 유효 상태와 일치한다.
+
+반면 **일반 HDA2 / CAMERA_SCC 미설정** 구성에서는 같은
+RX 검사에 `HYUNDAI_CANFD_COMMON_RX_CHECKS(1)`가 적용된다.
+현재 PR #46의 독립 안전 게이트는 **bus 0**에서 세 가지 원본
+메시지가 safety RX checker에 의해 확인돼야만 통과하므로,
+이 구성에서는 정상 기어·브레이크·정차 정보를 수신해도
+0x3C1 시험 송신은 **차단되는 것이 맞다(fail closed)**.
+
+- 이번에 `test_ev6_stalk_park_guard.py`에 2개 테스트를 추가해
+  HDA2 non-camera-SCC에서 bus0 및 bus1 수신 양쪽 모두
+  0x3C1이 차단돼야 함을 명시했다.
+- 총 **21개** compiled-libsafety 테스트가 작성됐으나
+  **전체 C 빌드 및 21개 테스트의 실제 실행은 아직 미확인**이다.
+  기존 "19개" 테스트라는 표기는 더 이상 최신 상태가 아니다.
+- 실제 사용자 차량이 어떤 safetyParam 및 panda physical bus
+  구성을 사용하는지는 현시점에 독립적으로 확정되지 않았다.
+- 버스가 다르다는 이유로 guard를 완화하거나 RX checker를
+  강제로 변경해서는 안 된다. 필요하다면 정확한 자동차 배선,
+  원본 수신 경로 및 ECU 기능 안전성을 별도 검증한 후
+  새 안전 설계를 검토해야 한다.
+
+이 PR은 SPAS2 실제 점등용 코드가 아니며, 기존의 실패한
+`0x3C1` 일회성 실험을 보호하는 목적이다. **현재 차량 병합 NO-GO.**
