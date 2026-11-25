@@ -243,7 +243,9 @@ class CarrotServ:
 
     self.autoTurnControlSpeedTurn = self.params.get_int("AutoTurnControlSpeedTurn")
     self.autoTurnMapChange = self.params.get_int("AutoTurnMapChange")
-    self.autoTurnControl = self.params.get_int("AutoTurnControl")
+    configured_atc_mode = self.params.get_int("AutoTurnControl")
+    # OFF has precisely the mode-0 behavior without losing the saved setting.
+    self.autoTurnControl = configured_atc_mode if self.params.get_bool("AutoTurnControlEnabled") else 0
     self.autoTurnControlTurnEnd = self.params.get_int("AutoTurnControlTurnEnd")
     #self.autoNaviSpeedDecelRate = float(self.params.get_int("AutoNaviSpeedDecelRate")) * 0.01
     self.autoCurveSpeedLowerLimit = int(self.params.get("AutoCurveSpeedLowerLimit"))
