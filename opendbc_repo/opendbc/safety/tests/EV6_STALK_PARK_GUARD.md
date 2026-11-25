@@ -231,3 +231,26 @@ AST 정적 계약 테스트도 호스트 세 제어 상태와 C 조건을 검사
 PR은 Draft이며, `ms-xy-radar3`에 병합되지 않았다.
 전체 panda 빌드·21개 compiled-libsafety 테스트의 실제
 통과 기록도 아직 없다. 그 전에는 차량에 설치하지 않는다.
+
+## CI execution blocker / workflow dispatch limitation
+
+The dedicated `.github/workflows/ev6-panda-safety.yml` currently exists
+**only in this Draft PR branch**, not in default `ms-xy-radar3`.
+GitHub documents that `workflow_dispatch` (the **Run workflow**
+manual trigger) only receives events when its workflow definition is
+present on the default branch. Therefore the button cannot be relied
+on to run this unmerged new workflow.
+
+Reference:
+https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
+
+The branch `push` and `pull_request` triggers are configured but
+GitHub has not reported an EV6 panda test run; this document does **not**
+claim that default-branch placement is the only explanation for absent
+automatic runs.
+
+**Do not add the experimental C safety policy to the driving branch
+merely to expose a CI button.** Compile and run the exact PR branch
+under an isolated developer CI/workstation first, then obtain an
+independent safety review. Until then, compiled C tests: NOT RUN,
+vehicle operation: NO-GO.
