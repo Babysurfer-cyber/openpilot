@@ -9,10 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from openpilot.selfdrive.carrot.radar_motion.lead_dynamics import LEAD_ACCEL_TAU_S, LeadAccelTau
-from openpilot.selfdrive.carrot.radar_motion.lane_change_speed_assist import (
-  LaneChangeSpeedAssist,
-  side_lead_may_replace,
-)
 from openpilot.selfdrive.carrot.radar_motion.lead_selection import (
   DPathLeadCandidate,
   DPathStationaryPrimaryHandoffTracker,
@@ -545,7 +541,6 @@ class DPathRadarController:
     self.production_live_tracks = bool(production_live_tracks)
     self.motion_sensor = "corner" if prefer_corner_radar else "front"
     self.cut_in_sensitivity = max(0, min(5, int(cut_in_sensitivity)))
-    self.lane_change_speed_assist = LaneChangeSpeedAssist()
     self._reset_motion_pipeline()
     self.primary_cut_out_predictor = RadarMotionPredictor(cut_out_only=True)
     self.trajectory_cutout = TrajectoryCutOutTracker()
@@ -697,7 +692,6 @@ class DPathRadarController:
     return limit, anchor_time_s
 
   def _reset_motion_pipeline(self) -> None:
-    self.lane_change_speed_assist.reset()
     self.trajectory_cutin = TrajectoryCutInDetector(self.cut_in_sensitivity)
     self._same_row_suppressed_until: dict[tuple[str, int, int], float] = {}
 
@@ -1021,7 +1015,6 @@ class DPathRadarController:
       self.trajectory_cutout.reset()
       self.lead_dynamics.reset()
       self.trajectory_cutin.reset()
-      self.lane_change_speed_assist.reset()
       self._reset_stationary_vision_range_mismatch()
       self._moving_range_last_point = None
       self._moving_range_last_time_s = None
@@ -1514,20 +1507,6 @@ class DPathRadarController:
       )
     ):
       lead_two = scc_lead_two
-
-    # Human-like lane changes: a stable vehicle in the destination lane may
-    # become leadTwo once the model actually starts changing lanes. This never
-    # changes leadOne, cruise set speed, acceleration limits, or the CUT-IN
-    # detector; and an existing more restrictive leadTwo keeps priority.
-    side_point = (self.lane_change_speed_assist.update(time_s, v_ego, model, points)
-                  if self.enable_radar_tracks > 0 else None)
-    if side_point is not None and lead_one is not None and lead_one.get("status"):
-      side_d_path = project_to_model_path(path, side_point.d_rel, side_point.y_rel).d_path
-      if abs(side_d_path) <= 4.4:
-        side_lead = self._lead_from_radar_point(side_point, side_d_path, 0.03, 0.0)
-        if not lead_duplicates_primary(side_lead, lead_one) and side_lead_may_replace(side_lead, lead_two):
-          lead_two = side_lead
-
     return DPathRadarOutput(
       lead_one=lead_one,
       lead_two=lead_two,
