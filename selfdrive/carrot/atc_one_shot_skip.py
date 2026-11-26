@@ -25,6 +25,33 @@ def should_request_atc_skip(*, paddle_mode, button_type, left_paddle_type,
           not long_pressed and cruise_enabled and cruise_available)
 
 
+def atc_skip_early_window_m(guide_m, cruise_kph, turn_speed_kph, atc_dist_m, decel_mps2):
+  """Give a pre-deceleration skip opportunity even when ATC slows before the HUD guide.
+
+  Uses the same v² = vf² + 2*a*x deceleration model and 2s target-time
+  buffer as CarrotServ.update_auto_turn. Never changes the ATC decel policy.
+  """
+  try:
+    values = tuple(float(v) for v in
+                   (guide_m, cruise_kph, turn_speed_kph, atc_dist_m, decel_mps2))
+  except (TypeError, ValueError, OverflowError):
+    return 0.0
+  if not all(math.isfinite(v) for v in values):
+    return 0.0
+  guide_m, cruise_kph, turn_speed_kph, atc_dist_m, decel_mps2 = values
+  if guide_m <= 0:
+    return 0.0
+  if cruise_kph <= turn_speed_kph or turn_speed_kph <= 0 or decel_mps2 <= 0:
+    return guide_m
+
+  cruise_mps, turn_mps = cruise_kph / 3.6, turn_speed_kph / 3.6
+  braking_m = (cruise_mps ** 2 - turn_mps ** 2) / (2.0 * decel_mps2)
+  # Four seconds to request a skip BEFORE the calculated braking onset;
+  # the remaining ATC control itself is untouched.
+  early_m = braking_m + max(0.0, atc_dist_m) + turn_mps * 2.0 + min(160.0, max(60.0, cruise_mps * 4.0))
+  return max(guide_m, min(1000.0, early_m))
+
+
 class AtcOneShotSkip:
   def __init__(self):
     self.guidance_key = None
@@ -87,7 +114,7 @@ class AtcOneShotSkip:
     if (not math.isfinite(distance_m) or not math.isfinite(guide_distance_m) or
         distance_m <= 0 or guide_distance_m <= 0 or distance_m > guide_distance_m):
       return False
-    if deceleration_started or not atc_type or atc_type.endswith((" prepare", " canceled")) or atc_type == "none":
+    if deceleration_started or not atc_type or atc_type.endswith(" canceled") or atc_type == "none":
       return False
     self.skipped = True
     return True
