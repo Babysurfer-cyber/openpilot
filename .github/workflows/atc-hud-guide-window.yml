@@ -1,0 +1,37 @@
+name: ATC HUD guide-window tests
+
+on:
+  pull_request:
+    branches: [ms-xy-radar3]
+    paths:
+      - '.github/workflows/atc-hud-guide-window.yml'
+      - 'cereal/custom.capnp'
+      - 'selfdrive/carrot/carrot_serv.py'
+      - 'selfdrive/carrot/tests/test_carrot_navi_atc.py'
+      - 'selfdrive/ui/carrot.cc'
+      - 'selfdrive/ui/atc_icon_visibility.h'
+      - 'selfdrive/ui/tests/test_atc_icon_visibility.cc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visibility-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile and test pure C++ visibility predicate
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I . \
+            selfdrive/ui/tests/test_atc_icon_visibility.cc \
+            -o /tmp/test_atc_icon_visibility
+          /tmp/test_atc_icon_visibility
+      - name: Check Python syntax
+        run: |
+          python3 -m py_compile \
+            selfdrive/carrot/carrot_serv.py \
+            selfdrive/carrot/tests/test_carrot_navi_atc.py
