@@ -322,3 +322,55 @@ def test_atc_hud_guide_window_is_published_from_live_road_limit(navi_drive):
   assert result.atcGuideStartDistanceM == 290.
   assert result.xTurnInfo == 2
   assert result.xDistToTurn == 200
+
+
+def test_mode4_one_shot_current_atc_skip_and_next_guidance_restore(navi_drive, monkeypatch):
+  # Integration check: the short-click event reaches CarrotServ via the
+  # ephemeral request, silences only the current ATC speed/type source,
+  # and a new navigation item is eligible again.
+  serv, sm = navi_drive.serv, navi_drive.sm
+  orig_get_int = serv.params.get_int
+  serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
+  serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
+  sm.data['carState'].cruiseState.available = True
+  sm.data['carState'].vCruiseCluster = 15.0
+  monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
+
+  current = navigation_message(turn_type=13, distance=200)
+  normal = navi_drive.update(message=current)
+  assert normal.xTurnInfo == 2
+  assert normal.atcType in ('atc right', 'turn right')
+  assert not serv.atc_one_shot_skip.skipped
+
+  serv.params_memory.put_nonblocking('AtcSkipRequest', '99990000000')
+  skipped = navi_drive.update(message=current)
+  assert serv.atc_one_shot_skip.skipped
+  assert skipped.atcType == 'none'
+  assert skipped.desiredSource != 'atc'
+
+  skipped_again = navi_drive.update(message=current, distance=10.)
+  assert serv.atc_one_shot_skip.skipped
+  assert skipped_again.atcType == 'none'
+
+  next_turn = navigation_message(turn_type=13, distance=250)
+  next_turn.guidanceCurrent.meta.sequence = 2
+  restored = navi_drive.update(message=next_turn, distance=10.)
+  assert not serv.atc_one_shot_skip.skipped
+  assert restored.atcType in ('atc right', 'turn right')
+
+
+def test_mode4_atc_request_rejected_after_deceleration_has_started(navi_drive, monkeypatch):
+  serv, sm = navi_drive.serv, navi_drive.sm
+  orig_get_int = serv.params.get_int
+  serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
+  serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
+  sm.data['carState'].cruiseState.available = True
+  sm.data['carState'].vCruiseCluster = 40.0  # 144 km/h, ATC target is lower
+  monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
+
+  current = navigation_message(turn_type=13, distance=200)
+  navi_drive.update(message=current)
+  serv.params_memory.put_nonblocking('AtcSkipRequest', '99990000000')
+  result = navi_drive.update(message=current)
+  assert not serv.atc_one_shot_skip.skipped
+  assert result.atcType != 'none'
