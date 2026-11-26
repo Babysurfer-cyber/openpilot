@@ -15,6 +15,23 @@ int main() {
   assert(!atc_mode_background_warning_phase(2099));
   assert(atc_mode_background_warning_phase(2100));
 
+  // Outside the preparation window: ATC enabled keeps the old steady
+  // yellow, and ATC disabled keeps the native mode background.
+  assert(atc_mode_background_yellow(true, false, 0));
+  assert(atc_mode_background_yellow(true, false, 700));
+  assert(atc_mode_background_yellow(true, false, 1400));
+  assert(!atc_mode_background_yellow(false, false, 0));
+  assert(!atc_mode_background_yellow(false, false, 700));
+
+  // Inside the preparation window: native color for 0-699ms, warning
+  // yellow for 700-1399ms, and repeat. Disabling ATC stops blinking.
+  assert(!atc_mode_background_yellow(true, true, 0));
+  assert(!atc_mode_background_yellow(true, true, 699));
+  assert(atc_mode_background_yellow(true, true, 700));
+  assert(atc_mode_background_yellow(true, true, 1399));
+  assert(!atc_mode_background_yellow(true, true, 1400));
+  assert(!atc_mode_background_yellow(false, true, 700));
+
   for (int driving_mode : {3, 5}) {
     for (int maneuver : {1, 2, 3, 4}) {
       const char* active = maneuver == 1 ? "atc left" : maneuver == 2 ? "turn right"
