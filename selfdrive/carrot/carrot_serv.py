@@ -805,7 +805,7 @@ class CarrotServ:
     # releasing that limit in mid-deceleration could provoke acceleration.
     deceleration_started = False
     if self.autoTurnControl in (2, 3):
-      cruise_kph = float(CS.vCruiseCluster) * 3.6
+      cruise_kph = float(CS.vCruiseCluster)
       if not math.isfinite(cruise_kph) or cruise_kph <= 0:
         return
       # Reject if this or the preceding cycle actually requested an ATC
@@ -1546,7 +1546,7 @@ class CarrotServ:
 
     desired_speed, source = min(speed_n_sources, key=lambda x: x[0])
     if CS is not None:
-      cruise_kph = float(CS.vCruiseCluster) * 3.6
+      cruise_kph = float(CS.vCruiseCluster)
       self._atc_speed_reduction_last = (source in ("atc", "atc2") and
                                         math.isfinite(cruise_kph) and cruise_kph > 0 and
                                         desired_speed < cruise_kph - 0.5)
