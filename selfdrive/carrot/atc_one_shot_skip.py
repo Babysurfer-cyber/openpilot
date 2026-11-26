@@ -18,6 +18,13 @@ def fresh_atc_skip_request(raw, previous_raw, now_ns):
   return 0 <= now_ns - sent_ns <= ATC_SKIP_REQUEST_MAX_AGE_NS
 
 
+def should_request_atc_skip(*, paddle_mode, button_type, left_paddle_type,
+                            long_pressed, cruise_enabled, cruise_available):
+  """Only a short left-paddle release in mode 4 may request an ATC one-shot skip."""
+  return (paddle_mode == 4 and button_type == left_paddle_type and
+          not long_pressed and cruise_enabled and cruise_available)
+
+
 class AtcOneShotSkip:
   def __init__(self):
     self.guidance_key = None
