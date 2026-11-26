@@ -1,5 +1,6 @@
 #include "selfdrive/ui/carrot.h"
 #include "selfdrive/ui/route_progress.h"
+#include "selfdrive/ui/atc_icon_visibility.h"
 
 #include <cassert>
 #include <cmath>
@@ -1070,6 +1071,7 @@ private:
     QString szSdiDescr = "";
     QString atc_type;
     bool atc_decel_active = false;
+  float atc_guide_start_distance_m = 0.0f;
     QString szPosRoadName = "";
     QString szTBTMainText = "";
 
@@ -1272,13 +1274,16 @@ protected:
             int bx = tbt_x + 100;
             int by = tbt_y + 67;
 
-            // Normal navigation: maneuver icons remain steadily visible.
-            // When ATC is actually setting the lower speed target, blink all
-            // maneuver *icons* using the existing indicator pulse. Do not
-            // blink route distance, ETA, speed limits, or TG/destination text.
+            // Show maneuver icons ONLY inside the actual road-speed-dependent
+            // ATC preparation window. Keep the existing blink rule unchanged
+            // when ATC is the active speed-limiting source.
+            // Distance text, ETA and route progress remain visible outside it.
+            const bool icon_in_guide_window =
+                atc_guide_icon_in_range(xDistToTurn, atc_guide_start_distance_m);
             const bool atc_active = atc_decel_active &&
                                     !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
-            const bool show_maneuver_icon = !atc_active || _blinker_pulse;
+            const bool show_maneuver_icon =
+                icon_in_guide_window && (!atc_active || _blinker_pulse);
 
             // > 1000 m: invisible; 1000 m: 25%; <= 100 m: 100%.
             // Interpolate opacity smoothly between 1000 m and 100 m.
@@ -1409,6 +1414,7 @@ public:
         }
         xTurnInfo = carrot_man.getXTurnInfo();
         xDistToTurn = carrot_man.getXDistToTurn();
+        atc_guide_start_distance_m = carrot_man.getAtcGuideStartDistanceM();
         nRoadLimitSpeed = carrot_man.getNRoadLimitSpeed();
         if (active_carrot > 1 || carrot_man.getNGoPosDist() > 0) {
           atc_type = QString::fromStdString(carrot_man.getAtcType()).trimmed();
