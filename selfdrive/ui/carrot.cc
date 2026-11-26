@@ -2,10 +2,12 @@
 #include "selfdrive/ui/route_progress.h"
 #include "selfdrive/ui/atc_icon_visibility.h"
 #include "selfdrive/ui/atc_mode_background.h"
+#include "selfdrive/ui/navi_signal_hud.h"
 
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <vector>
 
@@ -166,6 +168,97 @@ static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
   }
   nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
   ui_draw_text(s, cx, cy + 27, "신호보조", 19, COLOR_WHITE_ALPHA(200), BOLD, 1.);
+  nvgRestore(s->vg);
+}
+
+
+/*
+ * Four traffic-indication positions (red / amber / left / straight).
+ * Observation only: do NOT connect these values to any vehicle control.
+ */
+static void ui_draw_naver_signal_hud(UIState *s, int hud_left, int hud_top) {
+  const SubMaster &sm = *s->sm;
+  if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
+  const auto nav = sm["carrotNavi"].getCarrotNavi();
+  const auto hud = nav.getSignalHud();
+  const auto meta = hud.getMeta();
+
+  std::vector<navi_signal_hud::Lamp> lamps;
+  const auto candidates = hud.getCandidates();
+  if (candidates.size() > 4) return;
+  for (const auto candidate : candidates) {
+    lamps.push_back({std::string(candidate.getDirection().cStr()),
+                     std::string(candidate.getState().cStr()),
+                     candidate.getRemainingValid(), candidate.getRemainingSec(),
+                     candidate.getGroupIndex(), candidate.getSignalIndex()});
+  }
+  const uint64_t now_ns = nanos_monotonic();
+  const auto lights = navi_signal_hud::four_lights(
+      nav.getConnected(), meta.getPresent(), now_ns,
+      meta.getReceivedMonoTimeNanos(), lamps);
+  if (!lights.valid) return;
+
+  // Align the compact bar with the left edge of the existing 475px HUD panel.
+  constexpr int width = 475;
+  constexpr int height = 68;
+  constexpr int gap = 10;
+  if (s->fb_w < width + 16 || hud_top < height + gap + 8) return;
+  const int x = std::max(8, std::min(hud_left, s->fb_w - width - 8));
+  const int y = hud_top - height - gap;
+  const float cy = y + height / 2.0f;
+
+  const bool phase_off = (now_ns / 500000000ULL) % 2 == 0;
+  const bool enabled[4] = {lights.red && !(lights.red_blink && phase_off),
+                           lights.amber && !(lights.amber_blink && phase_off),
+                           lights.left && !(lights.left_blink && phase_off),
+                           lights.straight && !(lights.straight_blink && phase_off)};
+  const NVGcolor colors[4] = {COLOR_RED, COLOR_ORANGE, COLOR_GREEN, COLOR_GREEN};
+  const int cx[4] = {x + 43, x + 111, x + 179, x + 247};
+
+  nvgSave(s->vg);
+  NVGcolor border = COLOR_GREY_ALPHA(170);
+  ui_fill_rect(s->vg, {x, y, width, height}, COLOR_BLACK_ALPHA(195), height / 2.0f, 2, &border);
+
+  for (int i = 0; i < 4; ++i) {
+    if (enabled[i]) {
+      nvgBeginPath(s->vg);
+      nvgCircle(s->vg, cx[i], cy, 27);
+      const NVGcolor glow = nvgRGBAf(colors[i].r, colors[i].g, colors[i].b, 0.28f);
+      nvgFillColor(s->vg, glow);
+      nvgFill(s->vg);
+    }
+    nvgBeginPath(s->vg);
+    nvgCircle(s->vg, cx[i], cy, 20);
+    // Left turn is a green arrow on a dark indicator, like the supplied image.
+    const NVGcolor fill = (i == 2 || !enabled[i]) ?
+                          nvgRGBA(49, 57, 67, 245) : colors[i];
+    nvgFillColor(s->vg, fill);
+    nvgFill(s->vg);
+    if (i == 2) {
+      const NVGcolor arrow_color = enabled[i] ? COLOR_GREEN : nvgRGBA(86, 97, 112, 235);
+      nvgBeginPath(s->vg);
+      nvgMoveTo(s->vg, cx[i] + 11, cy);
+      nvgLineTo(s->vg, cx[i] - 10, cy);
+      nvgLineTo(s->vg, cx[i], cy - 9);
+      nvgMoveTo(s->vg, cx[i] - 10, cy);
+      nvgLineTo(s->vg, cx[i], cy + 9);
+      nvgStrokeWidth(s->vg, 5.0f);
+      nvgLineCap(s->vg, NVG_ROUND);
+      nvgLineJoin(s->vg, NVG_ROUND);
+      nvgStrokeColor(s->vg, arrow_color);
+      nvgStroke(s->vg);
+    }
+  }
+
+  const std::string countdown = lights.remaining_valid ?
+                                std::to_string(lights.remaining_seconds) : "--";
+  const NVGcolor time_color = lights.countdown_shade == navi_signal_hud::Shade::red ? COLOR_RED :
+                              lights.countdown_shade == navi_signal_hud::Shade::yellow ? COLOR_ORANGE :
+                              lights.countdown_shade == navi_signal_hud::Shade::green ? COLOR_GREEN :
+                              COLOR_WHITE;
+  nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  ui_draw_text(s, x + 305, cy, countdown.c_str(), 44,
+               lights.remaining_valid ? time_color : COLOR_WHITE_ALPHA(155), BOLD, 0.0f);
   nvgRestore(s->vg);
 }
 
@@ -2650,6 +2743,8 @@ public:
         
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
+        // Show read-only Naver signal candidates immediately above this HUD box.
+        ui_draw_naver_signal_hud(s, bx - 120, by - 85);
 
         // draw speed
         char speed[32];
