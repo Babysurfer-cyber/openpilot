@@ -367,6 +367,50 @@ def test_mode4_one_shot_current_atc_skip_and_next_guidance_restore(navi_drive, m
   assert restored.atcType in ('atc right', 'turn right')
 
 
+def test_mode4_can_skip_prepare_phase_before_braking_on_fast_roads(navi_drive, monkeypatch):
+  serv, sm = navi_drive.serv, navi_drive.sm
+  orig_get_int = serv.params.get_int
+  serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
+  serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
+  sm.data['carState'].cruiseState.available = True
+  sm.data['carState'].vCruiseCluster = 80.0  # already km/h
+  monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
+
+  current = navigation_message(turn_type=13, distance=340)
+  current.speed.roadLimitKph = 80
+  current.guidanceCurrent.pointValid = True
+  current.guidanceCurrent.latitude = 37.1
+  current.guidanceCurrent.longitude = 127.1
+  before = navi_drive.update(message=current)
+  assert before.atcType == 'turn right prepare'
+  assert before.xDistToTurn == 340
+  assert not serv.atc_one_shot_skip.skipped
+
+  serv.params_memory.put_nonblocking('AtcSkipRequest', '99990000000')
+  after = navi_drive.update(message=current)
+  assert serv.atc_one_shot_skip.skipped
+  assert after.atcType == 'none'
+  assert after.desiredSource not in ('atc', 'atc2')
+
+
+def test_mode4_rejects_skip_when_braking_cap_already_active(navi_drive, monkeypatch):
+  serv, sm = navi_drive.serv, navi_drive.sm
+  orig_get_int = serv.params.get_int
+  serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
+  serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
+  sm.data['carState'].cruiseState.available = True
+  sm.data['carState'].vCruiseCluster = 80.0
+  monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
+
+  current = navigation_message(turn_type=13, distance=260)
+  current.speed.roadLimitKph = 80
+  navi_drive.update(message=current)
+  serv.params_memory.put_nonblocking('AtcSkipRequest', '99990000000')
+  after = navi_drive.update(message=current)
+  assert not serv.atc_one_shot_skip.skipped
+  assert after.atcType != 'none'
+
+
 def test_mode4_atc_request_rejected_after_deceleration_has_started(navi_drive, monkeypatch):
   serv, sm = navi_drive.serv, navi_drive.sm
   orig_get_int = serv.params.get_int
