@@ -45,7 +45,7 @@ def build_signal_hud(snapshot: dict[str, Any]) -> dict[str, Any]:
     telemetry = _dict(value.get("traffic_signal"))
     if not telemetry and name == "traffic_signal":
       telemetry = value
-    if (telemetry.get("schema_version") != 1 or
+    if (type(telemetry.get("schema_version")) is not int or telemetry["schema_version"] != 1 or
         telemetry.get("source") != "naver_traffic_signal_live_data" or
         telemetry.get("vehicle_control_allowed") is not False or
         type(telemetry.get("direction_match_verified")) is not bool):
