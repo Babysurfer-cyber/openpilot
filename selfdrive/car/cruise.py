@@ -809,12 +809,13 @@ class VCruiseCarrot:
         self.carrot_cruise_active = False  
         self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
 
-    if self._paddle_mode == 4 and button_type == ButtonType.paddleLeft:
-      # One release event per short click; the long-press threshold event is
-      # deliberately ignored. The original paddle CAN signal is untouched.
-      # Only the Carrot navigation process may decide whether ATC is eligible
-      # to skip. Never issue an engage/cancel or change the cruise set speed.
-      if not long_pressed and CC.enabled and CS.cruiseState.available:
+    if self._paddle_mode == 4:
+      # A previous mode-2 paddle-resume latch must never engage cruise
+      # when the user switches modes. Left short release is ATC-only.
+      self._paddle_decel_active = False
+      # The original paddle CAN signal is untouched. Only CarrotServ decides
+      # whether the current ATC maneuver is still eligible for one-shot skip.
+      if button_type == ButtonType.paddleLeft and not long_pressed and CC.enabled and CS.cruiseState.available:
         self.params_memory.put_nonblocking("AtcSkipRequest", str(time.monotonic_ns()))
     elif self._paddle_mode in (1, 2, 3) and button_type in [ButtonType.paddleLeft, ButtonType.paddleRight]:
       if long_pressed:
