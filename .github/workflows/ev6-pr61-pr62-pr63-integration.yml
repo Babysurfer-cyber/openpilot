@@ -88,3 +88,25 @@ jobs:
       - name: Run compiled Panda EV6 park gate checks
         working-directory: opendbc_repo
         run: python -m pytest -q -o addopts='' opendbc/safety/tests/test_ev6_stalk_park_guard.py
+
+  # This runs the actual generated Acados Cython solver and the full root
+  # SCons/Qt build, using the fork's existing CI Docker setup.
+  # This must not be marked successful based on source-only or proxy tests.
+  openpilot-build-and-native-mpc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      BASE_IMAGE: openpilot-base
+      BUILD: selfdrive/test/docker_build.sh base
+      RUN: docker run --shm-size 2G -v $PWD:/tmp/openpilot -w /tmp/openpilot -e CI=1 -e PYTHONWARNINGS=error -e PYTHONPATH=/tmp/openpilot -e FILEREADER_CACHE=1 -v $GITHUB_WORKSPACE/.ci_cache/scons_cache:/tmp/scons_cache -v $GITHUB_WORKSPACE/.ci_cache/comma_download_cache:/tmp/comma_download_cache -v $GITHUB_WORKSPACE/.ci_cache/openpilot_cache:/tmp/openpilot_cache $BASE_IMAGE /bin/bash -c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: ./.github/workflows/setup-with-retry
+      - name: Full openpilot and Qt SCons build
+        timeout-minutes: 35
+        run: ${{ env.RUN }} "scons -j2"
+      - name: Actual native Acados side-lead entry and exit acceleration / jerk
+        timeout-minutes: 10
+        run: ${{ env.RUN }} "python3 selfdrive/carrot/tests/test_ev6_side_lead_native_mpc_handoff.py -v"
