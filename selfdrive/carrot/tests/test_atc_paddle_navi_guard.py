@@ -33,6 +33,13 @@ def poll_function():
   return namespace["_poll_atc_one_shot_request"]
 
 
+class FakeSubMaster(dict):
+  def __init__(self, entries):
+    super().__init__(entries)
+    self.alive = dict.fromkeys(entries, True)
+    self.valid = dict.fromkeys(entries, True)
+
+
 class ParamStore:
   def __init__(self, mode=4):
     self.mode = mode
@@ -64,15 +71,11 @@ class NavState:
     self.serv.atc_one_shot_skip.observe(("nav", 1), 2, 180.)
     self.car_state = SimpleNamespace(vCruiseCluster=cruise_kph,
                                      cruiseState=SimpleNamespace(available=True))
-    self.sm = SimpleNamespace(
-      alive={"carState": True, "carControl": True, "modelV2": True},
-      valid={"carState": True, "carControl": True, "modelV2": True},
-    )
-    self.entries = {
+    self.sm = FakeSubMaster({
       "carControl": SimpleNamespace(enabled=cruise_on),
       "modelV2": SimpleNamespace(meta=SimpleNamespace(laneChangeState=lane_state)),
-    }
-    self.sm.__class__.__getitem__ = lambda master, name: self.entries[name]
+      "carState": self.car_state,
+    })
     self.poll = poll_function()
 
   def click(self, atc_kph=65., event_ns=99_990_000_000):
