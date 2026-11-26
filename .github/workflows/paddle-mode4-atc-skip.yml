@@ -1,6 +1,8 @@
 name: Paddle Mode 4 ATC one-shot tests
 
 on:
+  push:
+    branches: [feature/paddle-mode4-atc-one-shot-skip-20261126]
   pull_request:
     branches: [ms-xy-radar3]
     paths:
