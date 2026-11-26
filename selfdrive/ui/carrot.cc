@@ -173,9 +173,10 @@ static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
 
 
 /*
- * CarrotNM's signal samples are only observed data. They are never a traffic
- * light decision for our lane and never influence cruise / ATC / controls.
- * Keep this view directly above the existing bottom-left HUD rectangle.
+ * CarrotNM signal is NAVIGATION TELEMETRY ONLY. Do not use it for control.
+ * Compact indicator: [off red] [off yellow] [on green] [remaining seconds].
+ * A multi-direction report is ambiguous without verified lane matching;
+ * never pick an arbitrary lamp to render as if it were the driver's signal.
  */
 static void ui_draw_naver_signal_hud(UIState *s, int hud_left, int hud_top) {
   const SubMaster &sm = *s->sm;
@@ -185,48 +186,60 @@ static void ui_draw_naver_signal_hud(UIState *s, int hud_left, int hud_top) {
   const auto hud = nav.getSignalHud();
   const auto meta = hud.getMeta();
   const auto candidates = hud.getCandidates();
-  std::vector<navi_signal_hud::Lamp> lamps;
-  // Never arbitrarily select the first two of several intersections.
-  if (candidates.size() > 2) return;
-  for (const auto candidate : candidates) {
-    lamps.push_back({std::string(candidate.getDirection().cStr()),
-                     std::string(candidate.getState().cStr()),
-                     candidate.getRemainingValid(), candidate.getRemainingSec()});
-  }
+  if (candidates.size() != 1) return;
+
+  const auto candidate = candidates[0];
+  const navi_signal_hud::Lamp lamp = {
+    std::string(candidate.getDirection().cStr()),
+    std::string(candidate.getState().cStr()),
+    candidate.getRemainingValid(), candidate.getRemainingSec(),
+  };
   const uint64_t now_ns = nanos_monotonic();
-  if (!navi_signal_hud::visible(nav.getConnected(), meta.getPresent(), now_ns,
-                                meta.getReceivedMonoTimeNanos(), lamps)) return;
+  if (!navi_signal_hud::compact_visible(
+          nav.getConnected(), meta.getPresent(), now_ns,
+          meta.getReceivedMonoTimeNanos(), {lamp})) return;
 
-  constexpr int width = 475;
-  constexpr int height = 172;
-  if (s->fb_w < width + 16 || hud_top < height + 20) return;
+  constexpr int width = 445;
+  constexpr int height = 68;
+  constexpr int gap = 10;
+  if (s->fb_w < width + 16 || hud_top < height + gap + 8) return;
+
   const int x = std::max(8, std::min(hud_left, s->fb_w - width - 8));
-  const int y = hud_top - height - 13;
-  nvgSave(s->vg);
-  NVGcolor stroke = COLOR_GREY_ALPHA(100);
-  ui_fill_rect(s->vg, {x, y, width, height}, COLOR_BLACK_ALPHA(165), 24, 2, &stroke);
-  nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  ui_draw_text(s, x + 19, y + 22, "네이버 신호 · 참고", 25, COLOR_WHITE_ALPHA(230), BOLD, 1.0f);
+  const int y = hud_top - height - gap;
+  const float cy = y + height / 2.0f;
+  const auto active_shade = navi_signal_hud::shade(lamp.state);
+  const NVGcolor active_color = active_shade == navi_signal_hud::Shade::red ? COLOR_RED :
+                               active_shade == navi_signal_hud::Shade::yellow ? COLOR_YELLOW : COLOR_GREEN;
+  const bool blink_off = lamp.state.find("_BLINK") != std::string::npos &&
+                         (now_ns / 500000000ULL) % 2 == 0;
 
-  for (size_t i = 0; i < lamps.size(); ++i) {
-    const auto &lamp = lamps[i];
-    const float cy = float(y + 69 + 44 * i);
-    const auto shade = navi_signal_hud::shade(lamp.state);
-    const NVGcolor color = shade == navi_signal_hud::Shade::red ? COLOR_RED :
-                           shade == navi_signal_hud::Shade::yellow ? COLOR_YELLOW : COLOR_GREEN;
+  nvgSave(s->vg);
+  NVGcolor border = COLOR_GREY_ALPHA(170);
+  ui_fill_rect(s->vg, {x, y, width, height}, COLOR_BLACK_ALPHA(195), height / 2.0f, 2, &border);
+  const int circle_x[3] = {x + 49, x + 120, x + 191};
+  const navi_signal_hud::Shade shades[3] = {
+    navi_signal_hud::Shade::red, navi_signal_hud::Shade::yellow, navi_signal_hud::Shade::green,
+  };
+  for (int i = 0; i < 3; ++i) {
+    const bool illuminated = shades[i] == active_shade && !blink_off;
+    if (illuminated) {
+      // Soft glow only around the active signal.
+      nvgBeginPath(s->vg);
+      nvgCircle(s->vg, circle_x[i], cy, 26);
+      nvgFillColor(s->vg, nvgRGBA(active_color.r * 255, active_color.g * 255,
+                                 active_color.b * 255, 72));
+      nvgFill(s->vg);
+    }
     nvgBeginPath(s->vg);
-    nvgCircle(s->vg, x + 38, cy, 17);
-    nvgFillColor(s->vg, color);
+    nvgCircle(s->vg, circle_x[i], cy, 19);
+    nvgFillColor(s->vg, illuminated ? active_color : nvgRGBA(50, 59, 70, 245));
     nvgFill(s->vg);
-    std::string label = std::string(navi_signal_hud::direction_label(lamp.direction)) + " " +
-                        navi_signal_hud::state_label(lamp.state);
-    label += lamp.remaining_valid ? "  " + std::to_string(lamp.remaining_seconds) + "초" : "  시간 미제공";
-    ui_draw_text(s, x + 72, cy, label.c_str(), 30, COLOR_WHITE, BOLD, 1.0f);
   }
+
+  const std::string countdown = lamp.remaining_valid ? std::to_string(lamp.remaining_seconds) + "초" : "--";
   nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  ui_draw_text(s, x + 19, y + 149,
-               hud.getDirectionMatchVerified() ? "내비 제공 정보 · 운전 판단 금지" :
-                                                 "교차로·차로 매칭 미확인", 20, COLOR_WHITE_ALPHA(190), BOLD, 0.0f);
+  ui_draw_text(s, x + 263, cy, countdown.c_str(), 44,
+               lamp.remaining_valid ? active_color : COLOR_WHITE_ALPHA(150), BOLD, 0.0f);
   nvgRestore(s->vg);
 }
 
