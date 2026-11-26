@@ -6,6 +6,7 @@ from cereal import car, log
 from openpilot.common.conversions import Conversions as CV
 from openpilot.selfdrive.car.can_cruise_recovery import CanErrorCruiseRecovery
 from openpilot.selfdrive.carrot.route_congestion_cruise import RouteCongestionCruiseCap
+from openpilot.selfdrive.carrot.atc_one_shot_skip import should_request_atc_skip
 from opendbc.car.hyundai.values import HyundaiFlags
 
 from opendbc.car import structs
@@ -815,7 +816,10 @@ class VCruiseCarrot:
       self._paddle_decel_active = False
       # The original paddle CAN signal is untouched. Only CarrotServ decides
       # whether the current ATC maneuver is still eligible for one-shot skip.
-      if button_type == ButtonType.paddleLeft and not long_pressed and CC.enabled and CS.cruiseState.available:
+      if should_request_atc_skip(paddle_mode=self._paddle_mode, button_type=button_type,
+                                 left_paddle_type=ButtonType.paddleLeft,
+                                 long_pressed=long_pressed, cruise_enabled=CC.enabled,
+                                 cruise_available=CS.cruiseState.available):
         self.params_memory.put_nonblocking("AtcSkipRequest", str(time.monotonic_ns()))
     elif self._paddle_mode in (1, 2, 3) and button_type in [ButtonType.paddleLeft, ButtonType.paddleRight]:
       if long_pressed:
