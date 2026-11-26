@@ -337,6 +337,9 @@ def test_mode4_one_shot_current_atc_skip_and_next_guidance_restore(navi_drive, m
   monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
 
   current = navigation_message(turn_type=13, distance=200)
+  current.guidanceCurrent.pointValid = True
+  current.guidanceCurrent.latitude = 37.1
+  current.guidanceCurrent.longitude = 127.1
   normal = navi_drive.update(message=current)
   assert normal.xTurnInfo == 2
   assert normal.atcType in ('atc right', 'turn right')
@@ -348,12 +351,17 @@ def test_mode4_one_shot_current_atc_skip_and_next_guidance_restore(navi_drive, m
   assert skipped.atcType == 'none'
   assert skipped.desiredSource != 'atc'
 
+  current.guidanceCurrent.meta.sequence = 2  # packet update, same turn point
+  current.guidanceCurrent.distanceM = 190
   skipped_again = navi_drive.update(message=current, distance=10.)
   assert serv.atc_one_shot_skip.skipped
   assert skipped_again.atcType == 'none'
 
   next_turn = navigation_message(turn_type=13, distance=250)
-  next_turn.guidanceCurrent.meta.sequence = 2
+  next_turn.guidanceCurrent.meta.sequence = 3
+  next_turn.guidanceCurrent.pointValid = True
+  next_turn.guidanceCurrent.latitude = 37.2
+  next_turn.guidanceCurrent.longitude = 127.2
   restored = navi_drive.update(message=next_turn, distance=10.)
   assert not serv.atc_one_shot_skip.skipped
   assert restored.atcType in ('atc right', 'turn right')
