@@ -50,4 +50,34 @@ int main() {
   assert(!atc_mode_background_should_blink(true, 5, 8, 100, 200.0f, "straight"));
   assert(!atc_mode_background_should_blink(true, 5, 2, 100, 200.0f, ""));
   assert(!atc_mode_background_should_blink(true, 5, 2, 100, 200.0f, "none"));
+
+  // Regression: ATC can already select a speed limit farther away than the
+  // normal TBT icon window (e.g. cruise 80, turn target 20, guide 290m).
+  assert(atc_mode_background_current_decel_active("atc", 74.0f, 80.0f));
+  assert(!atc_mode_background_current_decel_active("atc2", 74.0f, 80.0f));
+  assert(!atc_mode_background_current_decel_active("CAM", 74.0f, 80.0f));
+  assert(!atc_mode_background_current_decel_active("atc", 80.0f, 80.0f));
+  assert(!atc_mode_background_current_decel_active("atc", 79.7f, 80.0f));  // tolerance
+  assert(!atc_mode_background_current_decel_active("atc", 0.0f, 80.0f));
+  assert(!atc_mode_background_current_decel_active("atc", 74.0f, 0.0f));
+
+  // An active current ATC reduction blinks regardless of icon threshold.
+  // "prepare" may still be published in this interval.
+  assert(atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right prepare", true));
+  assert(atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "atc right", true));
+  assert(atc_mode_background_should_blink(true, 3, 3, 350, 290.0f, "fork left prepare", true));
+  assert(!atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right prepare", false));
+  assert(!atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right", false));
+  assert(!atc_mode_background_should_blink(true, 5, 2, 120, 290.0f, "turn right canceled", true));
+  assert(!atc_mode_background_should_blink(false, 5, 2, 320, 290.0f, "atc right", true));
+  assert(!atc_mode_background_should_blink(true, 5, 2, 0, 290.0f, "atc right", true));
+  assert(!atc_mode_background_should_blink(true, 5, 5, 120, 290.0f, "straight", true));
+  assert(!atc_mode_background_should_blink(true, 2, 2, 320, 290.0f, "atc right", true));
+
+  // Once ATC is actively limiting, the existing 700ms phase continues to
+  // alternate; no speed or steering commands are touched by this gate.
+  const bool active = atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right prepare", true);
+  assert(!atc_mode_background_yellow(true, active, 0));
+  assert(atc_mode_background_yellow(true, active, 700));
+  assert(!atc_mode_background_yellow(true, active, 1400));
 }
