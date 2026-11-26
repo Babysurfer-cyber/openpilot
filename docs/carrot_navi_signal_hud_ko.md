@@ -51,3 +51,29 @@ g++ -std=c++17 -Wall -Wextra -pedantic -I. \
 ## 되돌리기
 
 별도 브랜치의 PR을 병합하지 않으면 기존 `ms-xy-radar3` 동작에는 영향이 없습니다.
+
+
+## 기존 APK 무수정 수신 지원 (이번 PR)
+
+기존 당근내비 APK가 이미 전송하는 신호 이벤트를 **콤마에서만** 처리합니다.
+APK 재빌드, Java/Smali 수정, V2 프로토콜 확장은 필요하지 않습니다.
+
+- **기존 TCP 7712 / HTTP 7713:** `carrot_man.py`가 수신하는 `sinf` 및 `ssinf`를 기존 내비 로직을 유지한 채, `navi_signal_legacy.py`에서 표시 전용 관측치로 변환합니다. `ssinf`가 동시에 있으면 상세 방향 정보를 우선합니다.
+- **기존 WebSocket V2 7714:** 원래 `traffic_signal.value.lights`의 빨강·직진·좌회전 활성 신호와 남은 시간을 읽습니다. 방향별 `movements`에 인식 가능한 상태가 있으면 우선합니다. 새로운 `schema_version/source/signals` 래핑을 APK에 강요하지 않습니다.
+- **프로세스 간 전달:** 기존 `carrot_man`과 별도 `carrot_navi` 게시 프로세스 사이에서 `/dev/shm/carrot_navi_legacy_signal_hud.json`만 원자적 교체 방식으로 사용합니다. **수신 시각을 새로 갱신하지 않는** 2.5초 TTL로, 신호가 끊기면 HUD에 남지 않습니다.
+- **원본보다 상세한 정보를 꾸며내지 않습니다.** `sinf.redLightOn`은 전역 빨간불 표시이며, 직진 차로 신호임이 검증된 값은 아닙니다. 빨강+직진초록이 동시에 참이면 모호하므로 숨깁니다. 노랑은 `ssinf` 또는 V2에서 명시적으로 보내는 경우에만 표시하며, `sinf`의 누락된 노랑을 추측하지 않습니다.
+- **제어 분리:** `signalHud`만 갱신합니다. `carrotMan.trafficState`, `DETECT`, `TrafficLightDetectMode`, 가감속, ATC, 크루즈는 변경하지 않습니다. V2 연결이 없어도 signalHud는 보일 수 있으나, 기존 `carrotNavi.connected`는 거짓 그대로 유지합니다.
+
+### 검증 방법
+
+```bash
+python -m pytest -q selfdrive/carrot/tests/test_navi_signal_legacy.py selfdrive/carrot/tests/test_navi_signal_hud.py
+```
+
+1. 설치된 **기존 APK를 그대로** 실행하고 정차 상태에서 경로를 시작합니다.
+2. `carrot_man` 수신 로그 또는 기존 내비 진단에서 `sinf`, `ssinf` 혹은 V2의 `traffic_signal`이 **실제로** 도착하는지 확인합니다. APK 버전에 따라 신호 메시지가 전혀 없을 수 있습니다.
+3. 수신되면 왼쪽 하단 HUD 위에 빨강/노랑/좌회전/직진 표시가 나타나는지 확인하고, 방향별 정보·거리·남은 시간의 정확성을 교차 검증합니다.
+4. 앱 연결을 끊거나 해당 신호 전송을 멈춘 뒤 2.5초 내 사라지는지 확인합니다. 테스트는 차량 정지 중 실시합니다.
+
+**중요:** 브랜치 변경만으로 APK가 전송하지 않는 데이터를 새로 만들어낼 수는 없습니다.
+기존 APK가 해당 이벤트를 이미 내보내는지 확인해야 합니다.
