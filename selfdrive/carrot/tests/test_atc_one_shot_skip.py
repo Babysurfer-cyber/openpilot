@@ -1,6 +1,6 @@
 import unittest
 
-from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request
+from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request, should_request_atc_skip
 
 
 class TestAtcOneShotSkip(unittest.TestCase):
@@ -73,6 +73,18 @@ class TestAtcOneShotSkip(unittest.TestCase):
     for value in (float("nan"), float("inf"), -float("inf")):
       self.assertFalse(self.skip.request(**dict(self.base, distance_m=value)))
       self.assertFalse(self.skip.request(**dict(self.base, guide_distance_m=value)))
+
+  def test_only_short_left_release_in_mode_4_requests_skip(self):
+    base = dict(paddle_mode=4, button_type=1, left_paddle_type=1,
+                long_pressed=False, cruise_enabled=True, cruise_available=True)
+    self.assertTrue(should_request_atc_skip(**base))
+    for override in (
+      {"paddle_mode": 0}, {"paddle_mode": 1}, {"paddle_mode": 2},
+      {"paddle_mode": 3}, {"button_type": 2}, {"button_type": 0},
+      {"long_pressed": True}, {"cruise_enabled": False}, {"cruise_available": False},
+    ):
+      with self.subTest(override=override):
+        self.assertFalse(should_request_atc_skip(**dict(base, **override)))
 
   def test_request_timestamp_freshness_deduplication(self):
     now = 9_000_000_000
