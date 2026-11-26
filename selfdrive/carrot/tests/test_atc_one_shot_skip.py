@@ -55,9 +55,19 @@ class TestAtcOneShotSkip(unittest.TestCase):
       self.assertFalse(self.skip.request(**case), msg=str(change))
     self.assertTrue(self.skip.request(**dict(self.base, distance_m=200)))
 
-  def test_reset_if_no_current_instruction(self):
+  def test_transient_navigation_gap_keeps_same_maneuver_skipped(self):
     self.assertTrue(self.skip.request(**self.base))
     self.assertFalse(self.skip.observe(None, -1, 0))
+    self.assertTrue(self.skip.skipped)
+    self.assertTrue(self.skip.observe(self.key, 2, 170))
+    self.assertFalse(self.skip.observe(("carrotNavi", "new-session", 1, 13), 2, 280))
+    self.assertFalse(self.skip.skipped)
+
+  def test_explicit_reset(self):
+    self.assertTrue(self.skip.request(**self.base))
+    self.skip.reset()
+    self.assertFalse(self.skip.skipped)
+    self.assertIsNone(self.skip.guidance_key)
 
   def test_no_nan_inf(self):
     for value in (float("nan"), float("inf"), -float("inf")):
