@@ -1,7 +1,10 @@
 #include "selfdrive/ui/carrot.h"
 #include "selfdrive/ui/route_progress.h"
+#include "selfdrive/ui/atc_icon_visibility.h"
+#include "selfdrive/ui/atc_mode_background.h"
 
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -1070,6 +1073,7 @@ private:
     QString szSdiDescr = "";
     QString atc_type;
     bool atc_decel_active = false;
+  float atc_guide_start_distance_m = 0.0f;
     QString szPosRoadName = "";
     QString szTBTMainText = "";
 
@@ -1272,13 +1276,16 @@ protected:
             int bx = tbt_x + 100;
             int by = tbt_y + 67;
 
-            // Normal navigation: maneuver icons remain steadily visible.
-            // When ATC is actually setting the lower speed target, blink all
-            // maneuver *icons* using the existing indicator pulse. Do not
-            // blink route distance, ETA, speed limits, or TG/destination text.
+            // Show maneuver icons ONLY inside the actual road-speed-dependent
+            // ATC preparation window. Keep the existing blink rule unchanged
+            // when ATC is the active speed-limiting source.
+            // Distance text, ETA and route progress remain visible outside it.
+            const bool icon_in_guide_window =
+                atc_guide_icon_in_range(xDistToTurn, atc_guide_start_distance_m);
             const bool atc_active = atc_decel_active &&
                                     !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
-            const bool show_maneuver_icon = !atc_active || _blinker_pulse;
+            const bool show_maneuver_icon =
+                icon_in_guide_window && (!atc_active || _blinker_pulse);
 
             // > 1000 m: invisible; 1000 m: 25%; <= 100 m: 100%.
             // Interpolate opacity smoothly between 1000 m and 100 m.
@@ -1409,6 +1416,7 @@ public:
         }
         xTurnInfo = carrot_man.getXTurnInfo();
         xDistToTurn = carrot_man.getXDistToTurn();
+        atc_guide_start_distance_m = carrot_man.getAtcGuideStartDistanceM();
         nRoadLimitSpeed = carrot_man.getNRoadLimitSpeed();
         if (active_carrot > 1 || carrot_man.getNGoPosDist() > 0) {
           atc_type = QString::fromStdString(carrot_man.getAtcType()).trimmed();
@@ -2194,6 +2202,8 @@ public:
     int     myDrivingMode = 1;
     bool    atc_enabled = false;
     int     atc_params_count = 0;
+    bool    atc_mode_background_active = false;
+    std::chrono::steady_clock::time_point atc_mode_background_started{};
 
     QString szPosRoadName = "";
     QString szPosRoadName_last = ""; // 💡 [추가] 이전 안내 텍스트 기억용
@@ -2310,6 +2320,19 @@ public:
         trafficState = lp.getTrafficState();
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
+
+        // Badge-only ATC status: use the real maneuver and preparation distance.
+        // Do not infer activity from AutoTurnControlEnabled alone. Restart the
+        // 0.7s phase from the native mode color whenever an ATC window begins.
+        const bool atc_badge_now = carrot_man_alive && sm.valid("carrotMan") &&
+            atc_mode_background_should_blink(
+                atc_enabled, myDrivingMode, carrot_man.getXTurnInfo(),
+                carrot_man.getXDistToTurn(), carrot_man.getAtcGuideStartDistanceM(),
+                QString::fromStdString(carrot_man.getAtcType()).trimmed().toStdString());
+        if (atc_badge_now && (!atc_mode_background_active || myDrivingMode != myDrivingMode_last)) {
+            atc_mode_background_started = std::chrono::steady_clock::now();
+        }
+        atc_mode_background_active = atc_badge_now;
 
         // ▼▼▼ [수정] 오토모드(5번) 깜빡임 로직을 '안내음(🔔) 송출 시점'과 100% 완벽 동기화 ▼▼▼
         bool trigger_blink = false;
@@ -2746,18 +2769,29 @@ public:
         int driving_mode = myDrivingMode;// params.getInt("MyDrivingMode");
         NVGcolor mode_color = COLOR_BLUE_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
+        int64_t atc_blink_elapsed_ms = 0;
+        if (atc_mode_background_active) {
+            atc_blink_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - atc_mode_background_started).count();
+        }
+        // Outside the ATC guide window, retain the original steady yellow
+        // whenever ATC is enabled. Inside, alternate native/yellow every 0.7s.
+        const bool atc_warning_color = atc_mode_background_yellow(
+            atc_enabled, atc_mode_background_active, atc_blink_elapsed_ms);
         switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str());
-                mode_color = atc_enabled ? nvgRGBA(255, 228, 158, 210) : COLOR_WHITE_ALPHA(210);
+                // Native white <-> light ATC yellow, 700ms per color.
+                mode_color = atc_warning_color ? nvgRGBA(255, 228, 158, 210) : COLOR_WHITE_ALPHA(210);
                 text_color = COLOR_BLACK; break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // ▼ [수정] 5번 모드: 바탕은 항상 녹색 고정, 글씨(AUTO)만 3초간 나타났다 사라지며 깜빡임!
-        case 5: 
-            strcpy(driving_mode_str, tr("AUTO").toStdString().c_str()); 
-            mode_color = atc_enabled ? nvgRGBA(169, 118, 0, 210) : COLOR_GREEN_ALPHA(210);
+        // AUTO background: native green <-> dark ATC yellow (700ms each).
+        // The existing three-second AUTO text pulse remains unchanged.
+        case 5:
+            strcpy(driving_mode_str, tr("AUTO").toStdString().c_str());
+            mode_color = atc_warning_color ? nvgRGBA(169, 118, 0, 210) : COLOR_GREEN_ALPHA(210);
             
             if (auto_blink_timer > 0) {
                 auto_blink_timer--; // 매 프레임마다 숫자 1씩 감소

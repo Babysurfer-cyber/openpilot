@@ -756,6 +756,12 @@ class CarrotServ:
 
     return new_lat, new_lon
 
+  @staticmethod
+  def atc_guide_start_distance(road_limit_kph):
+    # One source of truth for the speed-dependent ATC preparation window.
+    # numpy.interp clamps <30 km/h to 160m and >100 km/h to 350m.
+    return float(np.interp(road_limit_kph, [30, 50, 100], [160, 200, 350]))
+
   def update_auto_turn(self, v_ego_kph, sm, x_turn_info, x_dist_to_turn, check_steer=False):
     turn_speed = self.autoTurnControlSpeedTurn
     fork_speed = self.nRoadLimitSpeed
@@ -763,7 +769,7 @@ class CarrotServ:
     turn_dist_for_speed = self.autoTurnControlTurnEnd * turn_speed / 3.6 # 5
     fork_dist_for_speed = self.autoTurnControlTurnEnd * fork_speed / 3.6 # 5
     stop_dist_for_speed = 5
-    start_fork_dist = np.interp(self.nRoadLimitSpeed, [30, 50, 100], [160, 200, 350])
+    start_fork_dist = self.atc_guide_start_distance(self.nRoadLimitSpeed)
     start_turn_dist = np.interp(self.nTBTNextRoadWidth, [5, 10], [43, 60])
     turn_info_mapping = {
         1: {"type": "turn left", "speed": turn_speed, "dist": turn_dist_for_speed, "start": start_fork_dist},
@@ -1524,6 +1530,8 @@ class CarrotServ:
     msg.carrotMan.xSpdCountDown = int(left_spd_sec)
     msg.carrotMan.xTurnInfo = int(self.xTurnInfo)
     msg.carrotMan.xDistToTurn = int(self.xDistToTurn)
+    # The HUD must use the real road-speed preparation window, not its AUTO speed-limit label.
+    msg.carrotMan.atcGuideStartDistanceM = self.atc_guide_start_distance(self.nRoadLimitSpeed)
     msg.carrotMan.xTurnCountDown = int(left_tbt_sec)
     msg.carrotMan.atcType = self.atcType
     msg.carrotMan.vTurnSpeed = int(vturn_speed)

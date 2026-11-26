@@ -44,6 +44,8 @@ struct CarrotMan @0x81c2f05a394cf4af {
 	roadCategory @29 : Int32;
 	roadCategoryValid @30 : Bool;
 	roadCategoryMonoTimeNanos @31 : UInt64;
+	# ATC road-speed-dependent preparation window (HUD icon visibility only).
+	atcGuideStartDistanceM @32 : Float32;
 }
 
 struct CarrotNaviState @0xaedffd8f31e7b55d {
