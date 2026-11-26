@@ -303,3 +303,22 @@ def test_lane_category_item_expiry_is_not_extended_by_other_fresh_items(navi_dri
   assert result.activeCarrot > 1
   assert not result.roadCategoryValid
   assert result.roadCategoryMonoTimeNanos == 0
+
+
+@pytest.mark.parametrize(('road_limit', 'distance_m'), (
+  (0, 160.), (30, 160.), (40, 180.), (50, 200.),
+  (60, 230.), (80, 290.), (100, 350.), (120, 350.),
+))
+def test_atc_hud_guide_start_distance_matches_deceleration_window(road_limit, distance_m):
+  # The value for the HUD comes from the exact same helper as ATC's
+  # speed-dependent "prepare" transition, not the AUTO mode display label.
+  assert carrot_serv.CarrotServ.atc_guide_start_distance(road_limit) == distance_m
+
+
+def test_atc_hud_guide_window_is_published_from_live_road_limit(navi_drive):
+  message = navigation_message(turn_type=13, distance=200)
+  message.speed.roadLimitKph = 80
+  result = navi_drive.update(message=message)
+  assert result.atcGuideStartDistanceM == 290.
+  assert result.xTurnInfo == 2
+  assert result.xDistToTurn == 200
