@@ -85,6 +85,18 @@ def test_legacy_payload_unaffected():
   assert build_signal_hud(snap(value=data))["meta"]["present"] is False
 
 
+def test_malformed_values_cannot_crash_publisher():
+  data = sample()
+  data["signals"][0]["direction"] = []
+  assert build_signal_hud(snap(value=data))["candidates"] == []
+  data["signals"][0]["direction"] = "STRAIGHT"
+  data["signals"][0]["state"] = {}
+  assert build_signal_hud(snap(value=data))["candidates"] == []
+  data = sample()
+  data["schema_version"] = True
+  assert build_signal_hud(snap(value=data))["candidates"] == []
+
+
 def test_missing_mono_rejected():
   s = snap()
   s["items"]["traffic_signal"]["received_mono_ns"] = 0
