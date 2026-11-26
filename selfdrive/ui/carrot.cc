@@ -173,73 +173,92 @@ static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
 
 
 /*
- * CarrotNM signal is NAVIGATION TELEMETRY ONLY. Do not use it for control.
- * Compact indicator: [off red] [off yellow] [on green] [remaining seconds].
- * A multi-direction report is ambiguous without verified lane matching;
- * never pick an arbitrary lamp to render as if it were the driver's signal.
+ * Four traffic-indication positions (red / amber / left / straight).
+ * Observation only: do NOT connect these values to any vehicle control.
  */
 static void ui_draw_naver_signal_hud(UIState *s, int hud_left, int hud_top) {
   const SubMaster &sm = *s->sm;
   if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
-
   const auto nav = sm["carrotNavi"].getCarrotNavi();
   const auto hud = nav.getSignalHud();
   const auto meta = hud.getMeta();
+
+  std::vector<navi_signal_hud::Lamp> lamps;
   const auto candidates = hud.getCandidates();
-  if (candidates.size() != 1) return;
-
-  const auto candidate = candidates[0];
-  const navi_signal_hud::Lamp lamp = {
-    std::string(candidate.getDirection().cStr()),
-    std::string(candidate.getState().cStr()),
-    candidate.getRemainingValid(), candidate.getRemainingSec(),
-  };
+  if (candidates.size() > 4) return;
+  for (const auto candidate : candidates) {
+    lamps.push_back({std::string(candidate.getDirection().cStr()),
+                     std::string(candidate.getState().cStr()),
+                     candidate.getRemainingValid(), candidate.getRemainingSec(),
+                     candidate.getGroupIndex(), candidate.getSignalIndex()});
+  }
   const uint64_t now_ns = nanos_monotonic();
-  if (!navi_signal_hud::compact_visible(
-          nav.getConnected(), meta.getPresent(), now_ns,
-          meta.getReceivedMonoTimeNanos(), {lamp})) return;
+  const auto lights = navi_signal_hud::four_lights(
+      nav.getConnected(), meta.getPresent(), now_ns,
+      meta.getReceivedMonoTimeNanos(), lamps);
+  if (!lights.valid) return;
 
-  constexpr int width = 445;
+  // Align the compact bar with the left edge of the existing 475px HUD panel.
+  constexpr int width = 475;
   constexpr int height = 68;
   constexpr int gap = 10;
   if (s->fb_w < width + 16 || hud_top < height + gap + 8) return;
-
   const int x = std::max(8, std::min(hud_left, s->fb_w - width - 8));
   const int y = hud_top - height - gap;
   const float cy = y + height / 2.0f;
-  const auto active_shade = navi_signal_hud::shade(lamp.state);
-  const NVGcolor active_color = active_shade == navi_signal_hud::Shade::red ? COLOR_RED :
-                               active_shade == navi_signal_hud::Shade::yellow ? COLOR_YELLOW : COLOR_GREEN;
-  const bool blink_off = lamp.state.find("_BLINK") != std::string::npos &&
-                         (now_ns / 500000000ULL) % 2 == 0;
+
+  const bool phase_off = (now_ns / 500000000ULL) % 2 == 0;
+  const bool enabled[4] = {lights.red && !(lights.red_blink && phase_off),
+                           lights.amber && !(lights.amber_blink && phase_off),
+                           lights.left && !(lights.left_blink && phase_off),
+                           lights.straight && !(lights.straight_blink && phase_off)};
+  const NVGcolor colors[4] = {COLOR_RED, COLOR_ORANGE, COLOR_GREEN, COLOR_GREEN};
+  const int cx[4] = {x + 43, x + 111, x + 179, x + 247};
 
   nvgSave(s->vg);
   NVGcolor border = COLOR_GREY_ALPHA(170);
   ui_fill_rect(s->vg, {x, y, width, height}, COLOR_BLACK_ALPHA(195), height / 2.0f, 2, &border);
-  const int circle_x[3] = {x + 49, x + 120, x + 191};
-  const navi_signal_hud::Shade shades[3] = {
-    navi_signal_hud::Shade::red, navi_signal_hud::Shade::yellow, navi_signal_hud::Shade::green,
-  };
-  for (int i = 0; i < 3; ++i) {
-    const bool illuminated = shades[i] == active_shade && !blink_off;
-    if (illuminated) {
-      // Soft glow only around the active signal.
+
+  for (int i = 0; i < 4; ++i) {
+    if (enabled[i]) {
       nvgBeginPath(s->vg);
-      nvgCircle(s->vg, circle_x[i], cy, 26);
-      nvgFillColor(s->vg, nvgRGBA(active_color.r * 255, active_color.g * 255,
-                                 active_color.b * 255, 72));
+      nvgCircle(s->vg, cx[i], cy, 27);
+      const NVGcolor glow = nvgRGBAf(colors[i].r, colors[i].g, colors[i].b, 0.28f);
+      nvgFillColor(s->vg, glow);
       nvgFill(s->vg);
     }
     nvgBeginPath(s->vg);
-    nvgCircle(s->vg, circle_x[i], cy, 19);
-    nvgFillColor(s->vg, illuminated ? active_color : nvgRGBA(50, 59, 70, 245));
+    nvgCircle(s->vg, cx[i], cy, 20);
+    // Left turn is a green arrow on a dark indicator, like the supplied image.
+    const NVGcolor fill = (i == 2 || !enabled[i]) ?
+                          nvgRGBA(49, 57, 67, 245) : colors[i];
+    nvgFillColor(s->vg, fill);
     nvgFill(s->vg);
+    if (i == 2) {
+      const NVGcolor arrow_color = enabled[i] ? COLOR_GREEN : nvgRGBA(86, 97, 112, 235);
+      nvgBeginPath(s->vg);
+      nvgMoveTo(s->vg, cx[i] + 11, cy);
+      nvgLineTo(s->vg, cx[i] - 10, cy);
+      nvgLineTo(s->vg, cx[i], cy - 9);
+      nvgMoveTo(s->vg, cx[i] - 10, cy);
+      nvgLineTo(s->vg, cx[i], cy + 9);
+      nvgStrokeWidth(s->vg, 5.0f);
+      nvgLineCap(s->vg, NVG_ROUND);
+      nvgLineJoin(s->vg, NVG_ROUND);
+      nvgStrokeColor(s->vg, arrow_color);
+      nvgStroke(s->vg);
+    }
   }
 
-  const std::string countdown = lamp.remaining_valid ? std::to_string(lamp.remaining_seconds) + "초" : "--";
+  const std::string countdown = lights.remaining_valid ?
+                                std::to_string(lights.remaining_seconds) : "--";
+  const NVGcolor time_color = lights.countdown_shade == navi_signal_hud::Shade::red ? COLOR_RED :
+                              lights.countdown_shade == navi_signal_hud::Shade::yellow ? COLOR_ORANGE :
+                              lights.countdown_shade == navi_signal_hud::Shade::green ? COLOR_GREEN :
+                              COLOR_WHITE;
   nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  ui_draw_text(s, x + 263, cy, countdown.c_str(), 44,
-               lamp.remaining_valid ? active_color : COLOR_WHITE_ALPHA(150), BOLD, 0.0f);
+  ui_draw_text(s, x + 305, cy, countdown.c_str(), 44,
+               lights.remaining_valid ? time_color : COLOR_WHITE_ALPHA(155), BOLD, 0.0f);
   nvgRestore(s->vg);
 }
 
