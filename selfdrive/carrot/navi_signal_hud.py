@@ -50,6 +50,15 @@ def build_signal_hud(snapshot: dict[str, Any]) -> dict[str, Any]:
         telemetry.get("source") != "naver_traffic_signal_live_data" or
         telemetry.get("vehicle_control_allowed") is not False or
         type(telemetry.get("direction_match_verified")) is not bool):
+      # Existing, unmodified CarrotNavi v2 APK publishes lights/movements,
+      # not the experimental schema. Use only its observed, unverified lamps.
+      if name == "traffic_signal":
+        from openpilot.selfdrive.carrot.navi_signal_legacy import lamps_from_v2_lights, signal_hud_from_lamps
+        fallback = signal_hud_from_lamps(
+          lamps_from_v2_lights(value), record.get("received_mono_ns"),
+          record.get("sequence"), record.get("source_timestamp_ms"))
+        if fallback is not None:
+          return fallback
       continue
     raw_signals = telemetry.get("signals")
     if not isinstance(raw_signals, list) or not 1 <= len(raw_signals) <= MAX_SIGNALS:
