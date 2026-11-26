@@ -148,6 +148,7 @@ class CarrotServ:
     # Read-only route-intent diagnostics: no ATC control output or persistence.
     self.atc_route_intent_shadow = AtcRouteIntentShadow()
     self.atc_route_intent_last = None
+    self.atc_route_intent_last_log_s = -100.0
 
     self.nPosSpeed = 0.0
     self.nPosAngle = 0.0
@@ -1099,7 +1100,11 @@ class CarrotServ:
     label = (evidence.state, evidence.reason)
     if label != self.atc_route_intent_last:
       self.atc_route_intent_last = label
-      cloudlog.info(f"ATC_INTENT_SHADOW state={evidence.state} reason={evidence.reason} frames={evidence.consecutive_frames}")
+      now = time.monotonic()
+      # Avoid 20Hz log spam if confidence oscillates near a threshold.
+      if evidence.state == 'candidate_only' or now - self.atc_route_intent_last_log_s >= 2.0:
+        self.atc_route_intent_last_log_s = now
+        cloudlog.info(f"ATC_INTENT_SHADOW state={evidence.state} reason={evidence.reason} frames={evidence.consecutive_frames}")
 
   def update_navi(self, remote_ip, sm, pm, vturn_speed, coords, distances, route_speed, gps_service):
 
