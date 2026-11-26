@@ -64,6 +64,8 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 	crossroad @12 :Crossroad;
 	route @13 :Route;
 	navigationStatus @14 :NavigationStatus;
+	# HUD-only telemetry, never used by navigation / vehicle controls.
+	signalHud @15 :SignalHud;
 
 	struct ItemMeta {
 		present @0 :Bool;
@@ -169,6 +171,21 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 		uturnRemainSec @18 :Int16;
 		uiCounterValid @19 :Bool;
 		uiCounterRemainSec @20 :Int16;
+	}
+
+
+	# Read-only, unverified Naver signal indicators from CarrotNM.
+	struct SignalHud {
+		meta @0 :ItemMeta;
+		directionMatchVerified @1 :Bool;
+		candidates @2 :List(Candidate);
+
+		struct Candidate {
+			direction @0 :Text;
+			state @1 :Text;
+			remainingValid @2 :Bool;
+			remainingSec @3 :Int16;
+		}
 	}
 
 	struct Crossroad {
