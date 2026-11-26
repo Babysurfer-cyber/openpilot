@@ -52,8 +52,13 @@ class AtcOneShotSkip:
       self.reset()
       return False
 
-    if (self.guidance_key != guidance_key or
-        (self.last_distance_m is not None and distance_m > self.last_distance_m + ATC_GUIDANCE_RESET_JUMP_M)):
+    # CarrotNavi supplies an explicit maneuver sequence: corrections to the
+    # remaining distance must NOT re-arm the same skipped maneuver. Only
+    # unsequenced legacy guidance needs a distance-jump fallback.
+    legacy_distance_jump = (isinstance(guidance_key, tuple) and guidance_key[0] == "legacy"
+                            and self.last_distance_m is not None
+                            and distance_m > self.last_distance_m + ATC_GUIDANCE_RESET_JUMP_M)
+    if self.guidance_key != guidance_key or legacy_distance_jump:
       self.skipped = False
 
     self.guidance_key = guidance_key
