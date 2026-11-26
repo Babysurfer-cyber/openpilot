@@ -35,7 +35,13 @@ class AtcOneShotSkip:
     CarrotNavi uses a session+guidance sequence. Legacy TBT falls back to
     type/text and a large distance jump to identify the next maneuver.
     """
-    if guidance_key is None or turn_type not in ATC_ONESHOT_TURNS or not math.isfinite(distance_m) or distance_m <= -50:
+    if guidance_key is None or turn_type not in ATC_ONESHOT_TURNS or not math.isfinite(distance_m):
+      # Temporary navigation absence must not re-arm the very same turn
+      # when its original message returns. Retain the identity and last
+      # known distance until the next real maneuver is observed.
+      return False
+    if distance_m <= -50:
+      # The previously targeted maneuver has been passed.
       self.reset()
       return False
 
