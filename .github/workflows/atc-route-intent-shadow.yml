@@ -1,0 +1,35 @@
+name: ATC route intent shadow diagnostics
+
+on:
+  pull_request:
+    branches:
+      - ms-xy-radar3
+    paths:
+      - .github/workflows/atc-route-intent-shadow.yml
+      - selfdrive/carrot/atc_route_intent_shadow.py
+      - selfdrive/carrot/carrot_serv.py
+      - selfdrive/carrot/tests/test_atc_route_intent_shadow.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-intent-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python syntax
+        run: |
+          python -m py_compile \
+            selfdrive/carrot/atc_route_intent_shadow.py \
+            selfdrive/carrot/carrot_serv.py \
+            selfdrive/carrot/tests/test_atc_route_intent_shadow.py
+      - name: Run pure-Python route intent tests
+        run: python selfdrive/carrot/tests/test_atc_route_intent_shadow.py -v
