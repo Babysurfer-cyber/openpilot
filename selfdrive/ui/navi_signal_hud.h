@@ -54,4 +54,11 @@ inline bool visible(bool connected, bool signal_present, uint64_t now_ns, uint64
   return true;
 }
 
+// Compact one-row panel is only safe for a single unambiguous signal.
+// Multi-direction candidates must not be silently mapped to the driver's lane.
+inline bool compact_visible(bool connected, bool signal_present, uint64_t now_ns, uint64_t receive_ns,
+                            const std::vector<Lamp> &lamps) {
+  return lamps.size() == 1 && visible(connected, signal_present, now_ns, receive_ns, lamps);
+}
+
 }  // namespace navi_signal_hud
