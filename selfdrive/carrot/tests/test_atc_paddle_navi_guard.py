@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request
+from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request, atc_skip_early_window_m
 
 
 class FakeLaneChange:
@@ -28,6 +28,7 @@ def poll_function():
     "time": SimpleNamespace(monotonic_ns=lambda: 100_000_000_000),
     "log": SimpleNamespace(LaneChangeState=FakeLaneChange),
     "fresh_atc_skip_request": fresh_atc_skip_request,
+    "atc_skip_early_window_m": atc_skip_early_window_m,
   }
   exec(compile(ast.Module(body=[matches[0]], type_ignores=[]), str(path), "exec"), namespace)
   return namespace["_poll_atc_one_shot_request"]
@@ -67,6 +68,7 @@ class NavState:
       xTurnInfo=2, xDistToTurn=180., nRoadLimitSpeed=50.,
       _atc_speed_reduction_last=prev_decel,
       atc_guide_start_distance=lambda limit: 200.,
+      atcSpeed=20., atcDist=6 * 20 / 3.6, autoNaviSpeedDecelRate=0.8,
     )
     self.serv.atc_one_shot_skip.observe(("nav", 1), 2, 180.)
     self.car_state = SimpleNamespace(vCruiseCluster=cruise_kph,
