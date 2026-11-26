@@ -796,7 +796,11 @@ class CarrotServ:
       cruise_kph = float(CS.vCruiseCluster) * 3.6
       if not math.isfinite(cruise_kph) or cruise_kph <= 0:
         return
-      deceleration_started = atc_desired < cruise_kph - 0.5
+      # Also reject if the preceding navigation cycle already selected ATC,
+      # even if the current target has just changed. Never abruptly release
+      # an existing ATC speed reduction.
+      deceleration_started = (atc_desired < cruise_kph - 0.5 or
+                              self.source_last in ("atc", "atc2"))
 
     self.atc_one_shot_skip.request(
       enabled=self.autoTurnControl > 0,
