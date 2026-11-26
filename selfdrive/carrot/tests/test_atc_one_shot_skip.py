@@ -6,7 +6,7 @@ from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_re
 class TestAtcOneShotSkip(unittest.TestCase):
   def setUp(self):
     self.skip = AtcOneShotSkip()
-    self.key = ("carrotNavi", "session-1", 10, 13)
+    self.key = ("carrotNavi", "session-1", 2, "Right turn", "", "", (37.1, 127.1))
     self.base = dict(enabled=True, cruise_active=True, turn_type=2,
                      distance_m=180, guide_distance_m=200, atc_type="atc right",
                      deceleration_started=False)
@@ -21,14 +21,35 @@ class TestAtcOneShotSkip(unittest.TestCase):
     self.assertFalse(self.skip.observe(self.key, 2, -51))
     self.assertFalse(self.skip.skipped)
 
-  def test_next_maneuver_new_sequence_resets(self):
+  def test_next_maneuver_new_point_resets(self):
     self.assertTrue(self.skip.request(**self.base))
-    self.assertFalse(self.skip.observe(("carrotNavi", "session-1", 11, 13), 2, 290))
+    self.assertFalse(self.skip.observe(("carrotNavi", "session-1", 2, "Right turn", "", "", (37.2, 127.2)), 2, 290))
     self.assertTrue(self.skip.request(**self.base))
+
+  def test_wire_packet_sequence_is_not_a_maneuver_identity(self):
+    # This identity deliberately excludes per-packet guidance sequence.
+    # Its steady position survives both ordinary and unexpectedly large
+    # distance corrections without reactivating ATC.
+    self.assertTrue(self.skip.request(**self.base))
+    same_turn_new_packet = ("carrotNavi", "session-1", 2, "Right turn", "", "", (37.1, 127.1))
+    self.assertTrue(self.skip.observe(same_turn_new_packet, 2, 120))
+    self.assertTrue(self.skip.observe(same_turn_new_packet, 2, 290))
+
+  def test_missing_point_then_same_point_preserves_skip(self):
+    unknown = ("carrotNavi", "session-1", 2, "Right turn", "", "", None)
+    self.skip.observe(unknown, 2, 180)
+    self.assertTrue(self.skip.request(**self.base))
+    self.assertTrue(self.skip.observe(self.key, 2, 175))
+
+  def test_new_point_even_same_text_resets(self):
+    self.assertTrue(self.skip.request(**self.base))
+    next_turn = ("carrotNavi", "session-1", 2, "Right turn", "", "", (37.11, 127.11))
+    self.assertFalse(self.skip.observe(next_turn, 2, 230))
+    self.assertFalse(self.skip.skipped)
 
   def test_new_session_resets(self):
     self.assertTrue(self.skip.request(**self.base))
-    self.assertFalse(self.skip.observe(("carrotNavi", "session-2", 10, 13), 2, 180))
+    self.assertFalse(self.skip.observe(("carrotNavi", "session-2", 2, "Right turn", "", "", (37.1, 127.1)), 2, 180))
 
   def test_legacy_same_text_next_turn_resets_on_distance_jump(self):
     legacy = ("legacy", 2, 13, "우회전", "", "")
@@ -63,7 +84,7 @@ class TestAtcOneShotSkip(unittest.TestCase):
     self.assertFalse(self.skip.observe(None, -1, 0))
     self.assertTrue(self.skip.skipped)
     self.assertTrue(self.skip.observe(self.key, 2, 170))
-    self.assertFalse(self.skip.observe(("carrotNavi", "new-session", 1, 13), 2, 280))
+    self.assertFalse(self.skip.observe(("carrotNavi", "new-session", 2, "Right turn", "", "", (37.1, 127.1)), 2, 280))
     self.assertFalse(self.skip.skipped)
 
   def test_explicit_reset(self):
