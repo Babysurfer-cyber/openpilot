@@ -22,6 +22,8 @@ from opendbc.car.common.conversions import Conversions as CV
 from openpilot.common.gps import get_gps_location_service
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.carrot.carrot_navi_control import CarrotNaviControl, get_carrot_navi_control
+from openpilot.selfdrive.carrot.atc_route_intent_shadow import AtcRouteIntentShadow
+from openpilot.common.swaglog import cloudlog
 
 nav_type_mapping = {
   12: ("turn", "left", 1),
@@ -143,6 +145,9 @@ class CarrotServ:
     self.carrot_navi_off_route = False
     self.carrot_navi_control = None
     self._reset_carrot_navi_sequences("")
+    # Read-only route-intent diagnostics: no ATC control output or persistence.
+    self.atc_route_intent_shadow = AtcRouteIntentShadow()
+    self.atc_route_intent_last = None
 
     self.nPosSpeed = 0.0
     self.nPosAngle = 0.0
@@ -1077,6 +1082,25 @@ class CarrotServ:
       self.active_count = self.active_sdi_count = 0
     return self.carrot_navi_has_control
 
+  def _observe_atc_route_intent(self, sm, car_state):
+    # Observational only. No writes to xTurnInfo, ATC speed targets, or any car state.
+    # Failure of this optional detector must never interrupt existing ATC.
+    try:
+      model = sm['modelV2'] if sm.alive['modelV2'] and sm.valid['modelV2'] else None
+      evidence = self.atc_route_intent_shadow.observe(
+        self.carrot_navi_control if self.carrot_navi_active else None,
+        car_state, model, self.xTurnInfo, self.xDistToTurn)
+    except Exception as exc:
+      label = ('keep_atc', 'observer_error')
+      if label != self.atc_route_intent_last:
+        self.atc_route_intent_last = label
+        cloudlog.warning(f"ATC_INTENT_SHADOW observer_error={type(exc).__name__}")
+      return
+    label = (evidence.state, evidence.reason)
+    if label != self.atc_route_intent_last:
+      self.atc_route_intent_last = label
+      cloudlog.info(f"ATC_INTENT_SHADOW state={evidence.state} reason={evidence.reason} frames={evidence.consecutive_frames}")
+
   def update_navi(self, remote_ip, sm, pm, vturn_speed, coords, distances, route_speed, gps_service):
 
     self.debugText = ""
@@ -1104,6 +1128,7 @@ class CarrotServ:
     self.xSpdDist = max(self.xSpdDist - delta_dist, -1000)
     self.xDistToTurn = self.xDistToTurn - delta_dist
     self.xDistToTurnNext = self.xDistToTurnNext - delta_dist
+    self._observe_atc_route_intent(sm, CS)
     self.active_count = max(self.active_count - 1, 0)
     self.active_sdi_count = max(self.active_sdi_count - 1, 0)
     self.active_kisa_count = max(self.active_kisa_count - 1, 0)
