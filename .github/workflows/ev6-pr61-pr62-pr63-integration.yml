@@ -38,7 +38,8 @@ jobs:
             selfdrive/modeld/modeld.py \
             selfdrive/controls/lib/desire_helper.py \
             selfdrive/carrot/radar_motion/controller.py \
-            selfdrive/carrot/radar_motion/lane_change_speed_assist.py
+            selfdrive/carrot/radar_motion/lane_change_speed_assist.py \
+            selfdrive/carrot/tests/test_ev6_side_lead_native_mpc_handoff.py
       - name: PR61 source-backed safety and stock-cruise parser regression
         run: |
           python selfdrive/car/tests/test_main_audit_safety_standalone.py -v
