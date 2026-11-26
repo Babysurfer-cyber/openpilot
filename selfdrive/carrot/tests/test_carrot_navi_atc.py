@@ -333,7 +333,7 @@ def test_mode4_one_shot_current_atc_skip_and_next_guidance_restore(navi_drive, m
   serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
   serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
   sm.data['carState'].cruiseState.available = True
-  sm.data['carState'].vCruiseCluster = 15.0
+  sm.data['carState'].vCruiseCluster = 54.0  # km/h, not m/s
   monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
 
   current = navigation_message(turn_type=13, distance=200)
@@ -365,7 +365,7 @@ def test_mode4_atc_request_rejected_after_deceleration_has_started(navi_drive, m
   serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
   serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
   sm.data['carState'].cruiseState.available = True
-  sm.data['carState'].vCruiseCluster = 40.0  # 144 km/h, ATC target is lower
+  sm.data['carState'].vCruiseCluster = 100.0  # km/h, ATC target is lower
   monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
 
   current = navigation_message(turn_type=13, distance=200)
@@ -382,7 +382,7 @@ def test_mode4_skip_rejected_during_active_lane_change(navi_drive, monkeypatch):
   serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
   serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
   sm.data['carState'].cruiseState.available = True
-  sm.data['carState'].vCruiseCluster = 15.0
+  sm.data['carState'].vCruiseCluster = 54.0  # km/h, not m/s
   sm.data['modelV2'].meta.laneChangeState = log.LaneChangeState.laneChangeStarting
   monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
 
