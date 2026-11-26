@@ -1,6 +1,6 @@
 import unittest
 
-from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request, should_request_atc_skip
+from selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request, should_request_atc_skip, atc_skip_early_window_m
 
 
 class TestAtcOneShotSkip(unittest.TestCase):
@@ -72,7 +72,7 @@ class TestAtcOneShotSkip(unittest.TestCase):
       {"enabled": False}, {"cruise_active": False},
       {"turn_type": 5}, {"distance_m": -1}, {"distance_m": 0},
       {"distance_m": 201}, {"guide_distance_m": 0},
-      {"atc_type": "atc right prepare"}, {"atc_type": "atc right canceled"},
+      {"atc_type": "atc right canceled"},
       {"atc_type": "none"}, {"deceleration_started": True},
     ):
       case = dict(self.base, **change)
@@ -92,6 +92,20 @@ class TestAtcOneShotSkip(unittest.TestCase):
     self.skip.reset()
     self.assertFalse(self.skip.skipped)
     self.assertIsNone(self.skip.guidance_key)
+
+  def test_early_window_allows_prepare_before_longitudinal_atc_decel(self):
+    # At 80 km/h, normal UI guide=290m but ATC's braking onset is ~334m.
+    # Make a safe early skip possible *before* the 290m HUD guide appears.
+    early = atc_skip_early_window_m(290., 80., 20., 6 * 20 / 3.6, 0.8)
+    self.assertGreater(early, 400.)
+    self.assertLessEqual(early, 1000.)
+    self.assertTrue(self.skip.request(**dict(self.base, atc_type="turn right prepare",
+                                             distance_m=390., guide_distance_m=early)))
+
+  def test_early_window_does_not_expand_for_invalid_or_slower_cruise(self):
+    self.assertEqual(atc_skip_early_window_m(290., 20., 30., 50., 0.8), 290.)
+    self.assertEqual(atc_skip_early_window_m(290., 80., 20., 33., 0.), 290.)
+    self.assertEqual(atc_skip_early_window_m(290., float("nan"), 20., 33., 0.8), 0.)
 
   def test_no_nan_inf(self):
     for value in (float("nan"), float("inf"), -float("inf")):
