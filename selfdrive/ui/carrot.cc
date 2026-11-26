@@ -193,8 +193,11 @@ static void ui_draw_naver_signal_hud(UIState *s, int hud_left, int hud_top) {
                      candidate.getGroupIndex(), candidate.getSignalIndex()});
   }
   const uint64_t now_ns = nanos_monotonic();
+  // Legacy sinf/ssinf packets can arrive over 7712/7713 with no V2 session.
+  // SignalHud is independently validated as read-only; do not spoof the
+  // carrotNavi.connected flag, which other navigation controls consume.
   const auto lights = navi_signal_hud::four_lights(
-      nav.getConnected(), meta.getPresent(), now_ns,
+      nav.getConnected() || meta.getPresent(), meta.getPresent(), now_ns,
       meta.getReceivedMonoTimeNanos(), lamps);
   if (!lights.valid) return;
 

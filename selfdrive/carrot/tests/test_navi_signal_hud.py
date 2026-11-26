@@ -115,9 +115,12 @@ def test_malformed_group_and_duplicate():
   assert build_signal_hud(snap(value=data))["candidates"] == []
 
 
-def test_legacy_payload_unaffected():
+def test_stock_v2_lights_allowed_without_custom_apk():
   data = {"visible": True, "lights": {"red": {"on": True, "remain_sec": 12}}}
-  assert build_signal_hud(snap(value=data))["meta"]["present"] is False
+  hud = build_signal_hud(snap(value=data))
+  assert hud["meta"]["present"]
+  assert hud["directionMatchVerified"] is False
+  assert hud["candidates"][0]["state"] == "RED"
 
 
 def test_malformed_values_cannot_crash_publisher():

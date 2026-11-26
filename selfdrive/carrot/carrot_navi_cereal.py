@@ -8,6 +8,7 @@ from typing import Any, TYPE_CHECKING
 
 from openpilot.selfdrive.carrot.route_traffic import extract_route_traffic
 from openpilot.selfdrive.carrot.navi_signal_hud import build_signal_hud
+from openpilot.selfdrive.carrot.navi_signal_legacy import read_legacy_signal_hud
 
 if TYPE_CHECKING:
   from openpilot.selfdrive.carrot.carrot_navi import CarrotNaviReceiver
@@ -147,7 +148,8 @@ def _signal_light(value: Any) -> tuple[bool, bool, int]:
   return True, light.get("on") is True, _integer(light.get("remain_sec"), minimum=0, maximum=999)
 
 
-def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | None = None) -> dict[str, Any]:
+def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | None = None,
+                              legacy_signal_hud: dict[str, Any] | None = None) -> dict[str, Any]:
   vehicle_record = _record(snapshot, "vehicle")
   vehicle = _dict(vehicle_record.get("value")) if vehicle_record.get("present") else {}
   latitude = _finite(vehicle.get("lat"), default=math.nan)
@@ -172,6 +174,11 @@ def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | N
   road_limit_kph = _valid_road_limit_kph(speed.get("road_limit_kph"))
   road_limit_valid = road_limit_kph is not None
 
+  # Prefer a currently connected V2 signal over legacy TCP/HTTP telemetry.
+  # Neither path is promoted to carrotMan.trafficState or any control input.
+  signal_hud = build_signal_hud(snapshot)
+  if not signal_hud["meta"]["present"] and legacy_signal_hud is not None:
+    signal_hud = legacy_signal_hud
   traffic_record = _record(snapshot, "traffic_signal")
   traffic = _dict(traffic_record.get("value")) if traffic_record.get("present") else {}
   lights = _dict(traffic.get("lights"))
@@ -262,7 +269,7 @@ def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | N
       "sectionSuspended": section.get("suspended") is True,
       "sectionOffRoute": section.get("off_route") is True,
     },
-    "signalHud": build_signal_hud(snapshot),
+    "signalHud": signal_hud,
     "trafficSignal": {
       "meta": _meta(traffic_record),
       "visible": bool(traffic.get("visible", False)),
@@ -340,7 +347,7 @@ class CarrotNaviCerealPublisher:
     if snapshot is None:
       snapshot = self.receiver.cereal_snapshot()
     message = self.messaging.new_message("carrotNavi", valid=True)
-    message.carrotNavi = build_carrot_navi_payload(snapshot)
+    message.carrotNavi = build_carrot_navi_payload(snapshot, legacy_signal_hud=read_legacy_signal_hud())
     self.pm.send("carrotNavi", message)
     self.receiver.record_cereal_publish()
     return _integer(snapshot.get("generation"), minimum=0)
