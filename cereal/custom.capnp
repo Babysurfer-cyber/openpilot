@@ -185,6 +185,8 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 			state @1 :Text;
 			remainingValid @2 :Bool;
 			remainingSec @3 :Int16;
+			groupIndex @4 :Int16; # junction grouping, used only to reject ambiguity
+			signalIndex @5 :Int16;
 		}
 	}
 
