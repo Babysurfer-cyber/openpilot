@@ -52,13 +52,27 @@ class AtcOneShotSkip:
       self.reset()
       return False
 
-    # CarrotNavi supplies an explicit maneuver sequence: corrections to the
-    # remaining distance must NOT re-arm the same skipped maneuver. Only
-    # unsequenced legacy guidance needs a distance-jump fallback.
-    legacy_distance_jump = (isinstance(guidance_key, tuple) and guidance_key[0] == "legacy"
-                            and self.last_distance_m is not None
-                            and distance_m > self.last_distance_m + ATC_GUIDANCE_RESET_JUMP_M)
-    if self.guidance_key != guidance_key or legacy_distance_jump:
+    # CarrotNavi's wire sequence is a packet update counter, not a maneuver
+    # ID. A valid navigation point is the strongest available identity.
+    # In the absence of a point, retain the skip across text-identical
+    # guidance updates, then use a distance jump as a new-turn heuristic.
+    same_maneuver = self.guidance_key == guidance_key
+    same_position = False
+    if (isinstance(self.guidance_key, tuple) and isinstance(guidance_key, tuple)
+        and len(self.guidance_key) == len(guidance_key) == 7
+        and self.guidance_key[0] == guidance_key[0] == "carrotNavi"
+        and self.guidance_key[1:3] == guidance_key[1:3]):
+      old_point, new_point = self.guidance_key[6], guidance_key[6]
+      if old_point is not None and new_point is not None:
+        same_position = old_point == new_point
+        same_maneuver = same_position
+      else:
+        same_maneuver = self.guidance_key[3:6] == guidance_key[3:6]
+
+    no_confirmed_position = not same_position
+    distance_jump = (self.last_distance_m is not None and
+                     distance_m > self.last_distance_m + ATC_GUIDANCE_RESET_JUMP_M)
+    if not same_maneuver or (no_confirmed_position and distance_jump):
       self.skipped = False
 
     self.guidance_key = guidance_key
