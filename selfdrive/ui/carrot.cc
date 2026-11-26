@@ -2769,12 +2769,15 @@ public:
         int driving_mode = myDrivingMode;// params.getInt("MyDrivingMode");
         NVGcolor mode_color = COLOR_BLUE_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
-        bool atc_warning_color = false;
+        int64_t atc_blink_elapsed_ms = 0;
         if (atc_mode_background_active) {
-            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            atc_blink_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - atc_mode_background_started).count();
-            atc_warning_color = atc_mode_background_warning_phase(elapsed_ms);
         }
+        // Outside the ATC guide window, retain the original steady yellow
+        // whenever ATC is enabled. Inside, alternate native/yellow every 0.7s.
+        const bool atc_warning_color = atc_mode_background_yellow(
+            atc_enabled, atc_mode_background_active, atc_blink_elapsed_ms);
         switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
