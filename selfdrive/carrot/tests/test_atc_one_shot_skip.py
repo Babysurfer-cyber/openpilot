@@ -42,6 +42,9 @@ class TestAtcOneShotSkip(unittest.TestCase):
     self.assertTrue(self.skip.request(**self.base))
     self.assertTrue(self.skip.observe(self.key, 2, 150))
     self.assertTrue(self.skip.observe(self.key, 2, 200))  # +50m, no new maneuver
+    # Even a large correction on the same sequenced CarrotNavi item must
+    # not accidentally re-enable ATC in the middle of a skipped turn.
+    self.assertTrue(self.skip.observe(self.key, 2, 300))
 
   def test_skip_requires_active_guide_not_actual_decel(self):
     for change in (
