@@ -1,83 +1,46 @@
+#include "selfdrive/ui/atc_icon_visibility.h"
 #include "selfdrive/ui/atc_mode_background.h"
 
 #include <cassert>
-#include <cstdint>
-#include <initializer_list>
 
+// This test verifies the actual shared icon state, not a second ATC badge
+// timer or an independently interpreted maneuver type.
 int main() {
-  // Every color lasts exactly 700ms; each full cycle lasts 1400ms.
-  assert(!atc_mode_background_warning_phase(-1));
-  assert(!atc_mode_background_warning_phase(0));
-  assert(!atc_mode_background_warning_phase(699));
-  assert(atc_mode_background_warning_phase(700));
-  assert(atc_mode_background_warning_phase(1399));
-  assert(!atc_mode_background_warning_phase(1400));
-  assert(!atc_mode_background_warning_phase(2099));
-  assert(atc_mode_background_warning_phase(2100));
-
-  // Outside the preparation window: ATC enabled keeps the old steady
-  // yellow, and ATC disabled keeps the native mode background.
-  assert(atc_mode_background_yellow(true, false, 0));
-  assert(atc_mode_background_yellow(true, false, 700));
-  assert(atc_mode_background_yellow(true, false, 1400));
-  assert(!atc_mode_background_yellow(false, false, 0));
-  assert(!atc_mode_background_yellow(false, false, 700));
-
-  // Inside the preparation window: native color for 0-699ms, warning
-  // yellow for 700-1399ms, and repeat. Disabling ATC stops blinking.
-  assert(!atc_mode_background_yellow(true, true, 0));
-  assert(!atc_mode_background_yellow(true, true, 699));
-  assert(atc_mode_background_yellow(true, true, 700));
-  assert(atc_mode_background_yellow(true, true, 1399));
-  assert(!atc_mode_background_yellow(true, true, 1400));
-  assert(!atc_mode_background_yellow(false, true, 700));
-
-  for (int driving_mode : {3, 5}) {
-    for (int maneuver : {1, 2, 3, 4}) {
-      const char* active = maneuver == 1 ? "atc left" : maneuver == 2 ? "turn right"
-                           : maneuver == 3 ? "fork left" : "fork right";
-      assert(atc_mode_background_should_blink(true, driving_mode, maneuver, 200, 200.0f, active));
-      assert(!atc_mode_background_should_blink(true, driving_mode, maneuver, 201, 200.0f, active));
-      assert(!atc_mode_background_should_blink(true, driving_mode, maneuver, 0, 200.0f, active));
-      assert(!atc_mode_background_should_blink(false, driving_mode, maneuver, 100, 200.0f, active));
-      assert(!atc_mode_background_should_blink(true, driving_mode, maneuver, 100, 200.0f, "atc right prepare"));
-      assert(!atc_mode_background_should_blink(true, driving_mode, maneuver, 100, 200.0f, "fork right canceled"));
-    }
+  const bool blinking_icon = atc_guide_icon_blink_active(2, 140, 200.0f, true, false);
+  assert(blinking_icon);
+  for (bool pulse : {false, true}) {
+    const bool icon_drawn = atc_guide_icon_in_range(140, 200.0f) &&
+                            (!blinking_icon || pulse);
+    // With the same pulse the badge's yellow phase is exactly when the
+    // blinking TBT icon is visible; otherwise the native mode color shows.
+    assert(atc_mode_background_yellow(true, blinking_icon, pulse) == icon_drawn);
+    assert(atc_mode_background_yellow(false, blinking_icon, pulse) == icon_drawn);
   }
 
-  assert(!atc_mode_background_should_blink(true, 2, 2, 100, 200.0f, "atc right"));
-  assert(!atc_mode_background_should_blink(true, 4, 2, 100, 200.0f, "turn right"));
-  assert(!atc_mode_background_should_blink(true, 5, 8, 100, 200.0f, "straight"));
-  assert(!atc_mode_background_should_blink(true, 5, 2, 100, 200.0f, ""));
-  assert(!atc_mode_background_should_blink(true, 5, 2, 100, 200.0f, "none"));
+  // A visible, but non-blinking icon must leave the badge steady.
+  const bool icon_not_blinking = atc_guide_icon_blink_active(2, 140, 200.0f, false, false);
+  assert(!icon_not_blinking);
+  assert(atc_mode_background_yellow(true, icon_not_blinking, true));
+  assert(atc_mode_background_yellow(true, icon_not_blinking, false));
+  assert(!atc_mode_background_yellow(false, icon_not_blinking, true));
+  assert(!atc_mode_background_yellow(false, icon_not_blinking, false));
 
-  // Regression: ATC can already select a speed limit farther away than the
-  // normal TBT icon window (e.g. cruise 80, turn target 20, guide 290m).
-  assert(atc_mode_background_current_decel_active("atc", 74.0f, 80.0f));
-  assert(!atc_mode_background_current_decel_active("atc2", 74.0f, 80.0f));
-  assert(!atc_mode_background_current_decel_active("CAM", 74.0f, 80.0f));
-  assert(!atc_mode_background_current_decel_active("atc", 80.0f, 80.0f));
-  assert(!atc_mode_background_current_decel_active("atc", 79.7f, 80.0f));  // tolerance
-  assert(!atc_mode_background_current_decel_active("atc", 0.0f, 80.0f));
-  assert(!atc_mode_background_current_decel_active("atc", 74.0f, 0.0f));
+  // Phase is shared over arbitrary repeated frames: no 700ms local timer.
+  for (int frame = 0; frame < 140; ++frame) {
+    const bool actual_icon_pulse = (frame % 14) < 6;
+    assert(atc_mode_background_yellow(true, blinking_icon, actual_icon_pulse) == actual_icon_pulse);
+  }
 
-  // An active current ATC reduction blinks regardless of icon threshold.
-  // "prepare" may still be published in this interval.
-  assert(atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right prepare", true));
-  assert(atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "atc right", true));
-  assert(atc_mode_background_should_blink(true, 3, 3, 350, 290.0f, "fork left prepare", true));
-  assert(!atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right prepare", false));
-  assert(!atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right", false));
-  assert(!atc_mode_background_should_blink(true, 5, 2, 120, 290.0f, "turn right canceled", true));
-  assert(!atc_mode_background_should_blink(false, 5, 2, 320, 290.0f, "atc right", true));
-  assert(!atc_mode_background_should_blink(true, 5, 2, 0, 290.0f, "atc right", true));
-  assert(!atc_mode_background_should_blink(true, 5, 5, 120, 290.0f, "straight", true));
-  assert(!atc_mode_background_should_blink(true, 2, 2, 320, 290.0f, "atc right", true));
-
-  // Once ATC is actively limiting, the existing 700ms phase continues to
-  // alternate; no speed or steering commands are touched by this gate.
-  const bool active = atc_mode_background_should_blink(true, 5, 2, 320, 290.0f, "turn right prepare", true);
-  assert(!atc_mode_background_yellow(true, active, 0));
-  assert(atc_mode_background_yellow(true, active, 700));
-  assert(!atc_mode_background_yellow(true, active, 1400));
+  // The canceled, outside-window, invalid-distance, invalid-guide and
+  // unrendered (straight/tollgate) cases must never blink.
+  assert(!atc_guide_icon_blink_active(2, 140, 200.0f, true, true));
+  assert(!atc_guide_icon_blink_active(2, 201, 200.0f, true, false));
+  assert(!atc_guide_icon_blink_active(2, 0, 200.0f, true, false));
+  assert(!atc_guide_icon_blink_active(2, 140, 0.0f, true, false));
+  assert(!atc_guide_icon_blink_active(5, 140, 200.0f, true, false));
+  assert(!atc_guide_icon_blink_active(6, 140, 200.0f, true, false));
+  assert(!atc_guide_icon_blink_active(-1, 140, 200.0f, true, false));
+  for (int type : {1, 2, 3, 4, 7, 8}) {
+    assert(atc_guide_icon_blink_active(type, 140, 200.0f, true, false));
+  }
 }
