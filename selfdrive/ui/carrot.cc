@@ -2321,14 +2321,21 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // Badge-only ATC status: use the real maneuver and preparation distance.
-        // Do not infer activity from AutoTurnControlEnabled alone. Restart the
-        // 0.7s phase from the native mode color whenever an ATC window begins.
+        // Badge-only ATC status. ATC speed deceleration can begin BEFORE the
+        // road-speed-dependent HUD icon window. Cover both the guide window
+        // and an actually selected current ATC speed reduction; do not flash
+        // for the next maneuver ("atc2") or for camera/curve speed sources.
+        const bool current_atc_decel_active = carrot_man_alive && sm.valid("carrotMan") &&
+            atc_mode_background_current_decel_active(
+                QString::fromStdString(carrot_man.getDesiredSource()).trimmed().toStdString(),
+                carrot_man.getDesiredSpeed(), v_cruise);
         const bool atc_badge_now = carrot_man_alive && sm.valid("carrotMan") &&
             atc_mode_background_should_blink(
                 atc_enabled, myDrivingMode, carrot_man.getXTurnInfo(),
                 carrot_man.getXDistToTurn(), carrot_man.getAtcGuideStartDistanceM(),
-                QString::fromStdString(carrot_man.getAtcType()).trimmed().toStdString());
+                QString::fromStdString(carrot_man.getAtcType()).trimmed().toStdString(),
+                current_atc_decel_active);
+        // Restart the 0.7s phase from the native mode color at each ATC window.
         if (atc_badge_now && (!atc_mode_background_active || myDrivingMode != myDrivingMode_last)) {
             atc_mode_background_started = std::chrono::steady_clock::now();
         }
