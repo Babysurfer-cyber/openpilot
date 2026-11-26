@@ -66,8 +66,11 @@ class AtcOneShotSkip:
   def observe(self, guidance_key, turn_type, distance_m):
     """Keep a skip latched for the exact maneuver, not the full navigation route.
 
-    CarrotNavi uses a session+guidance sequence. Legacy TBT falls back to
-    type/text and a large distance jump to identify the next maneuver.
+    CarrotNavi wire sequences track packet revisions, not turn identity.
+    Use the session, turn type, descriptive text and optional turn-point
+    coordinates to retain a cancellation across packet updates. Without a
+    point (including legacy TBT), a large distance increase is a fallback
+    hint that the next maneuver has started.
     """
     if guidance_key is None or turn_type not in ATC_ONESHOT_TURNS or not math.isfinite(distance_m):
       # Temporary navigation absence must not re-arm the very same turn
@@ -108,7 +111,7 @@ class AtcOneShotSkip:
 
   def request(self, *, enabled, cruise_active, turn_type, distance_m, guide_distance_m,
               atc_type, deceleration_started):
-    """Only cancel a not-yet-decelerating current turn/fork in its guide window."""
+    """Only cancel a current turn/fork before deceleration in the eligible pre-braking window."""
     if self.skipped or not enabled or not cruise_active or turn_type not in ATC_ONESHOT_TURNS:
       return False
     if (not math.isfinite(distance_m) or not math.isfinite(guide_distance_m) or
