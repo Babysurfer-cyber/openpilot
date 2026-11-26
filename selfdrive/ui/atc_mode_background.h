@@ -26,3 +26,10 @@ inline bool atc_mode_background_should_blink(bool enabled, int driving_mode,
 inline bool atc_mode_background_warning_phase(int64_t elapsed_ms) {
   return elapsed_ms >= 0 && ((elapsed_ms / 700) % 2) == 1;
 }
+
+// When ATC is enabled but no turn is in its preparation window, retain
+// the pre-existing steady ATC color (AUTO: dark yellow; NORM: pale yellow).
+// Only inside the window does it alternate with the mode's native color.
+inline bool atc_mode_background_yellow(bool enabled, bool blinking, int64_t elapsed_ms) {
+  return enabled && (!blinking || atc_mode_background_warning_phase(elapsed_ms));
+}
