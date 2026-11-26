@@ -1282,10 +1282,12 @@ protected:
             // Distance text, ETA and route progress remain visible outside it.
             const bool icon_in_guide_window =
                 atc_guide_icon_in_range(xDistToTurn, atc_guide_start_distance_m);
-            const bool atc_active = atc_decel_active &&
-                                    !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
+            // AUTO/NORM use this same predicate and the same _blinker_pulse.
+            const bool icon_blink_active = atc_guide_icon_blink_active(
+                xTurnInfo, xDistToTurn, atc_guide_start_distance_m,
+                atc_decel_active, atc_type.endsWith(" canceled", Qt::CaseInsensitive));
             const bool show_maneuver_icon =
-                icon_in_guide_window && (!atc_active || _blinker_pulse);
+                icon_in_guide_window && (!icon_blink_active || _blinker_pulse);
 
             // > 1000 m: invisible; 1000 m: 25%; <= 100 m: 100%.
             // Interpolate opacity smoothly between 1000 m and 100 m.
@@ -2203,7 +2205,6 @@ public:
     bool    atc_enabled = false;
     int     atc_params_count = 0;
     bool    atc_mode_background_active = false;
-    std::chrono::steady_clock::time_point atc_mode_background_started{};
 
     QString szPosRoadName = "";
     QString szPosRoadName_last = ""; // 💡 [추가] 이전 안내 텍스트 기억용
@@ -2321,25 +2322,20 @@ public:
         cruiseTarget = lp.getCruiseTarget();
         myDrivingMode = lp.getMyDrivingMode();
 
-        // Badge-only ATC status. ATC speed deceleration can begin BEFORE the
-        // road-speed-dependent HUD icon window. Cover both the guide window
-        // and an actually selected current ATC speed reduction; do not flash
-        // for the next maneuver ("atc2") or for camera/curve speed sources.
-        const bool current_atc_decel_active = carrot_man_alive && sm.valid("carrotMan") &&
-            atc_mode_background_current_decel_active(
-                QString::fromStdString(carrot_man.getDesiredSource()).trimmed().toStdString(),
-                carrot_man.getDesiredSpeed(), v_cruise);
-        const bool atc_badge_now = carrot_man_alive && sm.valid("carrotMan") &&
-            atc_mode_background_should_blink(
-                atc_enabled, myDrivingMode, carrot_man.getXTurnInfo(),
-                carrot_man.getXDistToTurn(), carrot_man.getAtcGuideStartDistanceM(),
-                QString::fromStdString(carrot_man.getAtcType()).trimmed().toStdString(),
-                current_atc_decel_active);
-        // Restart the 0.7s phase from the native mode color at each ATC window.
-        if (atc_badge_now && (!atc_mode_background_active || myDrivingMode != myDrivingMode_last)) {
-            atc_mode_background_started = std::chrono::steady_clock::now();
-        }
-        atc_mode_background_active = atc_badge_now;
+        // The AUTO/NORM background follows the exact SAME active gate as the
+        // blinking TBT icon. Do not use an independent ATC mode/string rule or
+        // another clock: both must respond to the _blinker_pulse frame.
+        const bool icon_data_ready = carrot_man_alive && sm.valid("carrotMan") &&
+                                     sm.alive("modelV2");
+        const bool icon_atc_decel_active = icon_data_ready &&
+            (carrot_man.getActiveCarrot() > 1 || carrot_man.getNGoPosDist() > 0) &&
+            QString::fromStdString(carrot_man.getDesiredSource()).trimmed().compare("atc", Qt::CaseInsensitive) == 0 &&
+            carrot_man.getDesiredSpeed() < v_cruise;
+        atc_mode_background_active = icon_data_ready &&
+            atc_guide_icon_blink_active(
+                carrot_man.getXTurnInfo(), carrot_man.getXDistToTurn(),
+                carrot_man.getAtcGuideStartDistanceM(), icon_atc_decel_active,
+                QString::fromStdString(carrot_man.getAtcType()).trimmed().endsWith(" canceled", Qt::CaseInsensitive));
 
         // ▼▼▼ [수정] 오토모드(5번) 깜빡임 로직을 '안내음(🔔) 송출 시점'과 100% 완벽 동기화 ▼▼▼
         bool trigger_blink = false;
@@ -2776,26 +2772,22 @@ public:
         int driving_mode = myDrivingMode;// params.getInt("MyDrivingMode");
         NVGcolor mode_color = COLOR_BLUE_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
-        int64_t atc_blink_elapsed_ms = 0;
-        if (atc_mode_background_active) {
-            atc_blink_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - atc_mode_background_started).count();
-        }
-        // Outside the ATC guide window, retain the original steady yellow
-        // whenever ATC is enabled. Inside, alternate native/yellow every 0.7s.
+        // The icon and AUTO/NORM background now change on the same frame:
+        // icon visible -> ATC yellow, icon hidden -> native green/white.
+        // Outside an icon blink window, preserve the existing steady colors.
         const bool atc_warning_color = atc_mode_background_yellow(
-            atc_enabled, atc_mode_background_active, atc_blink_elapsed_ms);
+            atc_enabled, atc_mode_background_active, _blinker_pulse);
         switch (driving_mode) {
         case 1: strcpy(driving_mode_str, tr("ECO").toStdString().c_str()); mode_color = COLOR_GREEN_ALPHA(210);  break;
         case 2: strcpy(driving_mode_str, tr("SAFE").toStdString().c_str()); mode_color = COLOR_ORANGE_ALPHA(210);  text_color = COLOR_WHITE;  break;
         case 3: strcpy(driving_mode_str, tr("NORM").toStdString().c_str());
-                // Native white <-> light ATC yellow, 700ms per color.
+                // Native white <-> light ATC yellow on the icon pulse.
                 mode_color = atc_warning_color ? nvgRGBA(255, 228, 158, 210) : COLOR_WHITE_ALPHA(210);
                 text_color = COLOR_BLACK; break;
         case 4: strcpy(driving_mode_str, tr("FAST").toStdString().c_str()); mode_color = COLOR_RED_ALPHA(210);  break;
         
-        // AUTO background: native green <-> dark ATC yellow (700ms each).
-        // The existing three-second AUTO text pulse remains unchanged.
+        // AUTO background: native green <-> dark ATC yellow, exactly in
+        // phase with the TBT icon. The three-second text pulse is unchanged.
         case 5:
             strcpy(driving_mode_str, tr("AUTO").toStdString().c_str());
             mode_color = atc_warning_color ? nvgRGBA(169, 118, 0, 210) : COLOR_GREEN_ALPHA(210);
