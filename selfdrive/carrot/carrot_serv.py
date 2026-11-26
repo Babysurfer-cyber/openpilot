@@ -790,6 +790,17 @@ class CarrotServ:
     if not cruise_control.enabled or not CS.cruiseState.available:
       return
 
+    # During ATC lane-assist modes, do not cancel once the actual modeld
+    # DesireHelper FSM has started lateral motion. Merely having a TBT
+    # preparation alert is not proof that the lane change is still idle.
+    if self.autoTurnControl in (1, 2):
+      if not sm.alive.get('modelV2', False) or not sm.valid.get('modelV2', False):
+        return
+      lane_state = sm['modelV2'].meta.laneChangeState
+      if lane_state in (log.LaneChangeState.laneChangeStarting,
+                        log.LaneChangeState.laneChangeFinishing):
+        return
+
     # Ignore a cancellation once ATC has already lowered the target speed:
     # releasing that limit in mid-deceleration could provoke acceleration.
     deceleration_started = False
