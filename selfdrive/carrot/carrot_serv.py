@@ -766,8 +766,15 @@ class CarrotServ:
     if self.carrot_navi_active and self.carrot_navi_control is not None:
       guidance = self.carrot_navi_control.current
       if guidance.present:
+        point = None
+        if (guidance.point_latitude is not None and guidance.point_longitude is not None
+            and math.isfinite(guidance.point_latitude) and math.isfinite(guidance.point_longitude)):
+          point = (round(guidance.point_latitude, 4), round(guidance.point_longitude, 4))
+        # The CarrotNavi item sequence is a packet revision counter, NOT a
+        # maneuver ID. Preserve a skip across updates to the same TBT point.
         return ("carrotNavi", self.carrot_navi_control.session_id,
-                guidance.sequence, guidance.turn_type)
+                guidance.turn_type, guidance.main_text, guidance.near_direction,
+                guidance.far_direction, point)
     # Legacy UDP/navInstruction has no reliable maneuver sequence.
     # AtcOneShotSkip additionally resets on a large distance jump.
     return ("legacy", self.xTurnInfo, self.nTBTTurnType,
