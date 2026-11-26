@@ -11,6 +11,7 @@ on:
       - 'selfdrive/carrot/carrot_serv.py'
       - 'selfdrive/carrot/tests/test_atc_one_shot_skip.py'
       - 'selfdrive/carrot/tests/test_atc_paddle_press_classifier.py'
+      - 'selfdrive/carrot/tests/test_atc_paddle_navi_guard.py'
       - 'selfdrive/carrot/tests/test_carrot_navi_atc.py'
       - 'selfdrive/ui/qt/offroad/settings.cc'
   workflow_dispatch:
@@ -34,8 +35,11 @@ jobs:
             selfdrive/carrot/carrot_serv.py \
             selfdrive/carrot/tests/test_atc_one_shot_skip.py \
             selfdrive/carrot/tests/test_atc_paddle_press_classifier.py \
+            selfdrive/carrot/tests/test_atc_paddle_navi_guard.py \
             selfdrive/carrot/tests/test_carrot_navi_atc.py
       - name: Maneuver-scope and request-boundary tests
         run: python3 -m unittest discover -s selfdrive/carrot/tests -p test_atc_one_shot_skip.py -v
       - name: Paddle physical event classification tests
         run: python3 -m unittest discover -s selfdrive/carrot/tests -p test_atc_paddle_press_classifier.py -v
+      - name: CarrotServ ATC request guard tests
+        run: python3 -m unittest discover -s selfdrive/carrot/tests -p test_atc_paddle_navi_guard.py -v
