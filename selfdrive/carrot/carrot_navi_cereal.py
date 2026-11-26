@@ -7,6 +7,7 @@ import time
 from typing import Any, TYPE_CHECKING
 
 from openpilot.selfdrive.carrot.route_traffic import extract_route_traffic
+from openpilot.selfdrive.carrot.navi_signal_hud import build_signal_hud
 
 if TYPE_CHECKING:
   from openpilot.selfdrive.carrot.carrot_navi import CarrotNaviReceiver
@@ -261,6 +262,7 @@ def build_carrot_navi_payload(snapshot: dict[str, Any], publish_mono_ns: int | N
       "sectionSuspended": section.get("suspended") is True,
       "sectionOffRoute": section.get("off_route") is True,
     },
+    "signalHud": build_signal_hud(snapshot),
     "trafficSignal": {
       "meta": _meta(traffic_record),
       "visible": bool(traffic.get("visible", False)),
