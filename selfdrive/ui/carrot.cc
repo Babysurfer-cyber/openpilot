@@ -2,10 +2,12 @@
 #include "selfdrive/ui/route_progress.h"
 #include "selfdrive/ui/atc_icon_visibility.h"
 #include "selfdrive/ui/atc_mode_background.h"
+#include "selfdrive/ui/navi_signal_hud.h"
 
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <vector>
 
@@ -166,6 +168,65 @@ static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
   }
   nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
   ui_draw_text(s, cx, cy + 27, "신호보조", 19, COLOR_WHITE_ALPHA(200), BOLD, 1.);
+  nvgRestore(s->vg);
+}
+
+
+/*
+ * CarrotNM's signal samples are only observed data. They are never a traffic
+ * light decision for our lane and never influence cruise / ATC / controls.
+ * Keep this view directly above the existing bottom-left HUD rectangle.
+ */
+static void ui_draw_naver_signal_hud(UIState *s, int hud_left, int hud_top) {
+  const SubMaster &sm = *s->sm;
+  if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
+
+  const auto nav = sm["carrotNavi"].getCarrotNavi();
+  const auto hud = nav.getSignalHud();
+  const auto meta = hud.getMeta();
+  const auto candidates = hud.getCandidates();
+  std::vector<navi_signal_hud::Lamp> lamps;
+  // Never arbitrarily select the first two of several intersections.
+  if (candidates.size() > 2) return;
+  for (const auto candidate : candidates) {
+    lamps.push_back({std::string(candidate.getDirection().cStr()),
+                     std::string(candidate.getState().cStr()),
+                     candidate.getRemainingValid(), candidate.getRemainingSec()});
+  }
+  const uint64_t now_ns = nanos_monotonic();
+  if (!navi_signal_hud::visible(nav.getConnected(), meta.getPresent(), now_ns,
+                                meta.getReceivedMonoTimeNanos(), lamps)) return;
+
+  constexpr int width = 475;
+  constexpr int height = 172;
+  if (s->fb_w < width + 16 || hud_top < height + 20) return;
+  const int x = std::max(8, std::min(hud_left, s->fb_w - width - 8));
+  const int y = hud_top - height - 13;
+  nvgSave(s->vg);
+  NVGcolor stroke = COLOR_GREY_ALPHA(100);
+  ui_fill_rect(s->vg, {x, y, width, height}, COLOR_BLACK_ALPHA(165), 24, 2, &stroke);
+  nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  ui_draw_text(s, x + 19, y + 22, "네이버 신호 · 참고", 25, COLOR_WHITE_ALPHA(230), BOLD, 1.0f);
+
+  for (size_t i = 0; i < lamps.size(); ++i) {
+    const auto &lamp = lamps[i];
+    const float cy = float(y + 69 + 44 * i);
+    const auto shade = navi_signal_hud::shade(lamp.state);
+    const NVGcolor color = shade == navi_signal_hud::Shade::red ? COLOR_RED :
+                           shade == navi_signal_hud::Shade::yellow ? COLOR_YELLOW : COLOR_GREEN;
+    nvgBeginPath(s->vg);
+    nvgCircle(s->vg, x + 38, cy, 17);
+    nvgFillColor(s->vg, color);
+    nvgFill(s->vg);
+    std::string label = std::string(navi_signal_hud::direction_label(lamp.direction)) + " " +
+                        navi_signal_hud::state_label(lamp.state);
+    label += lamp.remaining_valid ? "  " + std::to_string(lamp.remaining_seconds) + "초" : "  시간 미제공";
+    ui_draw_text(s, x + 72, cy, label.c_str(), 30, COLOR_WHITE, BOLD, 1.0f);
+  }
+  nvgTextAlign(s->vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  ui_draw_text(s, x + 19, y + 149,
+               hud.getDirectionMatchVerified() ? "내비 제공 정보 · 운전 판단 금지" :
+                                                 "교차로·차로 매칭 미확인", 20, COLOR_WHITE_ALPHA(190), BOLD, 0.0f);
   nvgRestore(s->vg);
 }
 
@@ -2650,6 +2711,8 @@ public:
         
         // 👇 좌측 하단 HUD 배경 그리기 (위아래 5px씩 다시 늘림!)
         ui_fill_rect(s->vg, { bx - 120, by - 85, 475, 295 }, bg_color, 30, 5, &stroke_color);
+        // Show read-only Naver signal candidates immediately above this HUD box.
+        ui_draw_naver_signal_hud(s, bx - 120, by - 85);
 
         // draw speed
         char speed[32];
