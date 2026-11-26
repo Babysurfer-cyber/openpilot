@@ -37,7 +37,8 @@ def build_signal_hud(snapshot: dict[str, Any]) -> dict[str, Any]:
     return output
 
   for name in ("traffic_signal", "route", "guidance_current", "guidance_next",
-               "navigation_status"):
+               "navigation_status", "vehicle", "speed", "lane_current",
+               "crossroad", "app_status", "camera_state", "composition_state"):
     record = _record(snapshot, name)
     if record.get("present") is not True:
       continue
