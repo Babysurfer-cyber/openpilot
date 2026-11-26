@@ -1,6 +1,7 @@
 #include "selfdrive/ui/atc_icon_visibility.h"
 
 #include <cassert>
+#include <initializer_list>
 #include <limits>
 
 int main() {
