@@ -780,7 +780,9 @@ class CarrotServ:
     self._atc_skip_request_seen = raw
     if not fresh_atc_skip_request(raw, previous, time.monotonic_ns()):
       return
-    if CS is None or not sm.alive.get('carControl', False) or not sm.valid.get('carControl', False):
+    if (self.params.get_int("PaddleMode") != 4 or CS is None
+        or not sm.alive.get('carState', False) or not sm.valid.get('carState', False)
+        or not sm.alive.get('carControl', False) or not sm.valid.get('carControl', False)):
       return
 
     cruise_control = sm['carControl']
