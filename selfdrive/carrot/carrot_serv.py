@@ -1004,7 +1004,9 @@ class CarrotServ:
     self.atcType = "none"
     self.atc_paused = False
     self.atc_activate_count = 0
-    self.atc_one_shot_skip.reset()
+    # Keep the last skipped maneuver identity across transient disconnects:
+    # replaying the same TBT item must not resume its ATC request.
+    # A new TBT identity or passed-point distance resets the one-shot latch.
     self._atc_speed_reduction_last = False
     self.nGoPosDist = self.nGoPosTime = 0
     self.last_update_gps_time_navi = 0
