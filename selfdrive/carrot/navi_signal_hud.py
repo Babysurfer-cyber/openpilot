@@ -9,7 +9,7 @@ from typing import Any
 
 ALLOWED_DIRECTIONS = frozenset(("STRAIGHT", "LEFT", "RIGHT", "U_TURN"))
 ALLOWED_STATES = frozenset(("RED", "YELLOW", "GREEN", "RED_BLINK", "YELLOW_BLINK", "GREEN_BLINK"))
-MAX_SIGNALS = 2  # No arbitrary first-N selection when several junctions are reported.
+MAX_SIGNALS = 4  # Up to four original indications; never arbitrarily choose a junction.
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -56,6 +56,7 @@ def build_signal_hud(snapshot: dict[str, Any]) -> dict[str, Any]:
       continue
     candidates: list[dict[str, Any]] = []
     seen: set[tuple[str, int, int]] = set()
+    group_ids: set[int] = set()
     for raw in raw_signals:
       item = _dict(raw)
       direction = item.get("direction")
@@ -70,12 +71,15 @@ def build_signal_hud(snapshot: dict[str, Any]) -> dict[str, Any]:
         candidates = []
         break
       seen.add((direction, group, index))
+      group_ids.add(group)
       remaining = item.get("remaining_seconds")
       remaining_valid = type(remaining) is int and 0 <= remaining <= 600
       candidates.append({"direction": direction, "state": state,
                          "remainingValid": remaining_valid,
-                         "remainingSec": remaining if remaining_valid else 0})
-    if not candidates:
+                         "remainingSec": remaining if remaining_valid else 0,
+                         "groupIndex": group, "signalIndex": index})
+    # Refuse mixed intersections; the compact strip cannot identify lanes.
+    if len(group_ids) != 1 or not candidates:
       continue
     received = record.get("received_mono_ns")
     sequence = record.get("sequence")
