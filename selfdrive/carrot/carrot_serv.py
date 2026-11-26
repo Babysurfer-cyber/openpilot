@@ -199,6 +199,7 @@ class CarrotServ:
     self.atc_paused = False
     self.atc_activate_count = 0
     self.atc_one_shot_skip = AtcOneShotSkip()
+    self._atc_speed_reduction_last = False
     # Ignore any old request when the navigation process restarts.
     self._atc_skip_request_seen = self.params_memory.get("AtcSkipRequest")
     self.gas_override_speed = 0
@@ -796,11 +797,11 @@ class CarrotServ:
       cruise_kph = float(CS.vCruiseCluster) * 3.6
       if not math.isfinite(cruise_kph) or cruise_kph <= 0:
         return
-      # Also reject if the preceding navigation cycle already selected ATC,
-      # even if the current target has just changed. Never abruptly release
-      # an existing ATC speed reduction.
+      # Reject if this or the preceding cycle actually requested an ATC
+      # reduction below cruise, not merely because ATC is the lowest of
+      # several nonbinding limits.
       deceleration_started = (atc_desired < cruise_kph - 0.5 or
-                              self.source_last in ("atc", "atc2"))
+                              self._atc_speed_reduction_last)
 
     self.atc_one_shot_skip.request(
       enabled=self.autoTurnControl > 0,
@@ -993,6 +994,7 @@ class CarrotServ:
     self.atc_paused = False
     self.atc_activate_count = 0
     self.atc_one_shot_skip.reset()
+    self._atc_speed_reduction_last = False
     self.nGoPosDist = self.nGoPosTime = 0
     self.last_update_gps_time_navi = 0
     self.szPosRoadName = ""
@@ -1530,6 +1532,13 @@ class CarrotServ:
         speed_n_sources.append((model_turn_speed, "MODEL"))
 
     desired_speed, source = min(speed_n_sources, key=lambda x: x[0])
+    if CS is not None:
+      cruise_kph = float(CS.vCruiseCluster) * 3.6
+      self._atc_speed_reduction_last = (source in ("atc", "atc2") and
+                                        math.isfinite(cruise_kph) and cruise_kph > 0 and
+                                        desired_speed < cruise_kph - 0.5)
+    else:
+      self._atc_speed_reduction_last = False
     # =========================================================
 
     if CS is not None:
