@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 int main() {
   // Every color lasts exactly 700ms; each full cycle lasts 1400ms.
