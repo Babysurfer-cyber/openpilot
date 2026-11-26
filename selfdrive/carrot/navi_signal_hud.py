@@ -61,7 +61,8 @@ def build_signal_hud(snapshot: dict[str, Any]) -> dict[str, Any]:
       state = item.get("state")
       group = item.get("group_index")
       index = item.get("signal_index")
-      if (direction not in ALLOWED_DIRECTIONS or state not in ALLOWED_STATES or
+      if (type(direction) is not str or type(state) is not str or
+          direction not in ALLOWED_DIRECTIONS or state not in ALLOWED_STATES or
           type(group) is not int or group < 0 or group > 7 or
           type(index) is not int or index < 0 or index > 11 or
           (direction, group, index) in seen):
