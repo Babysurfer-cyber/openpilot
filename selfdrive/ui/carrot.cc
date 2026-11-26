@@ -2325,8 +2325,9 @@ public:
         // The AUTO/NORM background follows the exact SAME active gate as the
         // blinking TBT icon. Do not use an independent ATC mode/string rule or
         // another clock: both must respond to the _blinker_pulse frame.
-        const bool icon_data_ready = carrot_man_alive && sm.valid("carrotMan") &&
-                                     sm.alive("modelV2");
+        // TurnInfoDrawer checks message liveness (not sm.valid), so match it
+        // exactly: a flashing icon must never lose its companion badge blink.
+        const bool icon_data_ready = carrot_man_alive && sm.alive("modelV2");
         const bool icon_atc_decel_active = icon_data_ready &&
             (carrot_man.getActiveCarrot() > 1 || carrot_man.getNGoPosDist() > 0) &&
             QString::fromStdString(carrot_man.getDesiredSource()).trimmed().compare("atc", Qt::CaseInsensitive) == 0 &&
