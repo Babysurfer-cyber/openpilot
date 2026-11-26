@@ -10,7 +10,9 @@ on:
       - 'selfdrive/carrot/tests/test_carrot_navi_atc.py'
       - 'selfdrive/ui/carrot.cc'
       - 'selfdrive/ui/atc_icon_visibility.h'
+      - 'selfdrive/ui/atc_mode_background.h'
       - 'selfdrive/ui/tests/test_atc_icon_visibility.cc'
+      - 'selfdrive/ui/tests/test_atc_mode_background.cc'
   workflow_dispatch:
 
 permissions:
@@ -30,6 +32,12 @@ jobs:
             selfdrive/ui/tests/test_atc_icon_visibility.cc \
             -o /tmp/test_atc_icon_visibility
           /tmp/test_atc_icon_visibility
+      - name: Compile and test 700ms AUTO/NORM ATC mode-background logic
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I . \
+            selfdrive/ui/tests/test_atc_mode_background.cc \
+            -o /tmp/test_atc_mode_background
+          /tmp/test_atc_mode_background
       - name: Check Python syntax
         run: |
           python3 -m py_compile \
