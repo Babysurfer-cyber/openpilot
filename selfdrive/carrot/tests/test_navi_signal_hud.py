@@ -19,7 +19,7 @@ def snap(kind="traffic_signal", value=None, *, present=True, connected=True):
 def test_direct():
   x = build_signal_hud(snap())
   assert x["meta"]["present"]
-  assert x["candidates"] == [{"direction": "STRAIGHT", "state": "RED", "remainingValid": True, "remainingSec": 25}]
+  assert x["candidates"] == [{"direction": "STRAIGHT", "state": "RED", "remainingValid": True, "remainingSec": 25, "groupIndex": 0, "signalIndex": 0}]
   assert x["directionMatchVerified"] is False
 
 
@@ -41,6 +41,37 @@ def test_multiple_valid():
   data["signals"].append({"group_index": 0, "signal_index": 1, "direction": "LEFT",
                           "state": "GREEN", "remaining_seconds": 15})
   assert len(build_signal_hud(snap(value=data))["candidates"]) == 2
+
+
+
+def test_four_signals_one_junction():
+  data = sample()
+  data["signals"] = [
+    {"group_index": 0, "signal_index": 0, "direction": "STRAIGHT", "state": "RED", "remaining_seconds": 25},
+    {"group_index": 0, "signal_index": 1, "direction": "LEFT", "state": "GREEN", "remaining_seconds": 15},
+    {"group_index": 0, "signal_index": 2, "direction": "RIGHT", "state": "RED", "remaining_seconds": 25},
+    {"group_index": 0, "signal_index": 3, "direction": "U_TURN", "state": "RED", "remaining_seconds": 25},
+  ]
+  x = build_signal_hud(snap(value=data))
+  assert x["meta"]["present"] and len(x["candidates"]) == 4
+  assert x["candidates"][1]["groupIndex"] == 0
+  assert x["candidates"][1]["direction"] == "LEFT"
+
+
+def test_different_junction_groups_are_hidden():
+  data = sample()
+  data["signals"].append({"group_index": 1, "signal_index": 1,
+                          "direction": "LEFT", "state": "GREEN", "remaining_seconds": 15})
+  assert build_signal_hud(snap(value=data))["candidates"] == []
+
+
+def test_five_signals_hidden():
+  data = sample()
+  data["signals"] = [
+    {"group_index": 0, "signal_index": i, "direction": "STRAIGHT", "state": "GREEN",
+     "remaining_seconds": 12} for i in range(5)
+  ]
+  assert build_signal_hud(snap(value=data))["candidates"] == []
 
 
 def test_more_than_two_hidden_not_trimmed():
