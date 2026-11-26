@@ -6,6 +6,7 @@ Model straightness alone cannot establish driving intent.
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -185,8 +186,13 @@ class AtcRouteIntentShadow:
   def __init__(self) -> None:
     self._identity: tuple[Any, ...] | None = None
     self._streak = 0
+    self._last_observed_s: float | None = None
 
   def observe(self, navi: Any, car_state: Any, model: Any, turn_info: int, distance_m: float) -> IntentEvidence:
+    now_s = time.monotonic()
+    if self._last_observed_s is not None and (now_s < self._last_observed_s or now_s - self._last_observed_s > 0.20):
+      self._streak = 0
+    self._last_observed_s = now_s
     identity = (navi.session_id, navi.current.sequence, turn_info) if navi is not None and navi.current.present else None
     if identity != self._identity:
       self._identity = identity
