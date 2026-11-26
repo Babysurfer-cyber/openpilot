@@ -22,6 +22,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from openpilot.common.gps import get_gps_location_service
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.carrot.carrot_navi_control import CarrotNaviControl, get_carrot_navi_control
+from openpilot.selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request
 
 nav_type_mapping = {
   12: ("turn", "left", 1),
@@ -197,6 +198,9 @@ class CarrotServ:
 
     self.atc_paused = False
     self.atc_activate_count = 0
+    self.atc_one_shot_skip = AtcOneShotSkip()
+    # Ignore any old request when the navigation process restarts.
+    self._atc_skip_request_seen = self.params_memory.get("AtcSkipRequest")
     self.gas_override_speed = 0
     self.gas_pressed_state = False
     self.source_last = "none"
@@ -756,6 +760,52 @@ class CarrotServ:
 
     return new_lat, new_lon
 
+  def _atc_current_guidance_key(self):
+    """Identify this turn independently of the next TBT instruction."""
+    if self.carrot_navi_active and self.carrot_navi_control is not None:
+      guidance = self.carrot_navi_control.current
+      if guidance.present:
+        return ("carrotNavi", self.carrot_navi_control.session_id,
+                guidance.sequence, guidance.turn_type)
+    # Legacy UDP/navInstruction has no reliable maneuver sequence.
+    # AtcOneShotSkip additionally resets on a large distance jump.
+    return ("legacy", self.xTurnInfo, self.nTBTTurnType,
+            self.szTBTMainText, self.szNearDirName, self.szFarDirName)
+
+  def _poll_atc_one_shot_request(self, sm, CS, atc_desired, atc_type):
+    raw = self.params_memory.get("AtcSkipRequest")
+    if raw == self._atc_skip_request_seen:
+      return
+    previous = self._atc_skip_request_seen
+    self._atc_skip_request_seen = raw
+    if not fresh_atc_skip_request(raw, previous, time.monotonic_ns()):
+      return
+    if CS is None or not sm.alive.get('carControl', False) or not sm.valid.get('carControl', False):
+      return
+
+    cruise_control = sm['carControl']
+    if not cruise_control.enabled or not CS.cruiseState.available:
+      return
+
+    # Ignore a cancellation once ATC has already lowered the target speed:
+    # releasing that limit in mid-deceleration could provoke acceleration.
+    deceleration_started = False
+    if self.autoTurnControl in (2, 3):
+      cruise_kph = float(CS.vCruiseCluster) * 3.6
+      if not math.isfinite(cruise_kph) or cruise_kph <= 0:
+        return
+      deceleration_started = atc_desired < cruise_kph - 0.5
+
+    self.atc_one_shot_skip.request(
+      enabled=self.autoTurnControl > 0,
+      cruise_active=True,
+      turn_type=self.xTurnInfo,
+      distance_m=self.xDistToTurn,
+      guide_distance_m=self.atc_guide_start_distance(self.nRoadLimitSpeed),
+      atc_type=atc_type,
+      deceleration_started=deceleration_started,
+    )
+
   @staticmethod
   def atc_guide_start_distance(road_limit_kph):
     # One source of truth for the speed-dependent ATC preparation window.
@@ -936,6 +986,7 @@ class CarrotServ:
     self.atcType = "none"
     self.atc_paused = False
     self.atc_activate_count = 0
+    self.atc_one_shot_skip.reset()
     self.nGoPosDist = self.nGoPosTime = 0
     self.last_update_gps_time_navi = 0
     self.szPosRoadName = ""
@@ -1268,6 +1319,15 @@ class CarrotServ:
     ### TBT 속도제어
     atc_desired, self.atcType, self.atcSpeed, self.atcDist = self.update_auto_turn(v_ego*3.6, sm, self.xTurnInfo, self.xDistToTurn, True)
     atc_desired_next, _, _, _ = self.update_auto_turn(v_ego*3.6, sm, self.xTurnInfoNext, self.xDistToTurnNext, False)
+
+    # Only the current turn/fork is skipped, never the next maneuver or
+    # independent camera/road/curve/lead targets. Retain the state until
+    # this maneuver passes or a distinct TBT item is observed.
+    self.atc_one_shot_skip.observe(self._atc_current_guidance_key(), self.xTurnInfo, self.xDistToTurn)
+    self._poll_atc_one_shot_request(sm, CS, atc_desired, self.atcType)
+    if self.atc_one_shot_skip.skipped:
+      atc_desired = 250
+      self.atcType = "none"
 
     vehicle_bump_speed = 250  
     
