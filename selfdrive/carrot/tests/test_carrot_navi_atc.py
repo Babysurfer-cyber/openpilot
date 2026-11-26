@@ -374,3 +374,21 @@ def test_mode4_atc_request_rejected_after_deceleration_has_started(navi_drive, m
   result = navi_drive.update(message=current)
   assert not serv.atc_one_shot_skip.skipped
   assert result.atcType != 'none'
+
+
+def test_mode4_skip_rejected_during_active_lane_change(navi_drive, monkeypatch):
+  serv, sm = navi_drive.serv, navi_drive.sm
+  orig_get_int = serv.params.get_int
+  serv.params.get_int = lambda key: 4 if key == 'PaddleMode' else orig_get_int(key)
+  serv.params.get_bool = lambda key: key in ('IsMetric', 'AutoTurnControlEnabled')
+  sm.data['carState'].cruiseState.available = True
+  sm.data['carState'].vCruiseCluster = 15.0
+  sm.data['modelV2'].meta.laneChangeState = log.LaneChangeState.laneChangeStarting
+  monkeypatch.setattr(carrot_serv.time, 'monotonic_ns', lambda: 100_000_000_000)
+
+  message = navigation_message(turn_type=13, distance=200)
+  navi_drive.update(message=message)
+  serv.params_memory.put_nonblocking('AtcSkipRequest', '99990000000')
+  result = navi_drive.update(message=message)
+  assert not serv.atc_one_shot_skip.skipped
+  assert result.atcType in ('atc right', 'turn right')
