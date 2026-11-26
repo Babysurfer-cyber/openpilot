@@ -32,6 +32,7 @@ from openpilot.selfdrive.carrot.carrot_serv import CarrotServ
 from openpilot.selfdrive.carrot.carrot_navi_control import get_carrot_navi_control
 from openpilot.selfdrive.carrot.carrot_navi_route import MAX_ROUTE_POINTS, RouteSource, coordinates as route_coordinates
 from openpilot.selfdrive.carrot.carrot_navi import detect_advertise_ip
+from openpilot.selfdrive.carrot.navi_signal_legacy import write_legacy_signal
 
 from openpilot.common.gps import get_gps_location_service
 
@@ -1048,11 +1049,15 @@ class CarrotMan:
         print("NavDestination put error:", e)
 
   def handle_traffic_light(self, d: dict):
+    # Keep legacy packet observability; the side channel is read-only.
     print(f"[Traffic] {d}")
 
-    # {'distance': 120, 'greenLightRemainTime': 0, 'leftLightRemainTime': 0, 'location': {'coordString': 'x:127.045286, y:37.477032', 'latitude': 37.47703188722564, 'longitude': 127.04528634430659},
-    #       'redLightRemainTime': 15, 'rightLightRemainTime': 0, 'uturnLightRemainTime': 0, 'greenLightOn': False, 'leftLightOn': False, 'redLightOn': True, 'rightLightOn': False, 'uturnLightOn': False}
-
+  def _write_legacy_signal_hud(self, kind: str, data: Any) -> None:
+    try:
+      write_legacy_signal(kind, data)
+    except (OSError, TypeError, ValueError) as exc:
+      # Signal telemetry is optional. Never block navigation or vehicle logic.
+      print(f"[signal_hud] legacy packet skipped: {exc}")
 
 
   def handle_carrot_state(self, d: dict):
@@ -1114,8 +1119,12 @@ class CarrotMan:
       else:
         self.handle_carrot_state(obj["rgdata"])
       
+    if "ssinf" in obj:
+      self._write_legacy_signal_hud("ssinf", obj["ssinf"])
+
     if "sinf" in obj:
       self.handle_traffic_light(obj["sinf"])
+      self._write_legacy_signal_hud("sinf", obj["sinf"])
 
   def carrot_navi_http_thread(self):
     asyncio.run(self.carrot_navi_http_server(7713))
