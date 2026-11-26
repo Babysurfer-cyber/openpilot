@@ -221,7 +221,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     {"PaddleMode", {PERSISTENT, INT, "0"}},
     // One-shot left-paddle ATC event: ephemeral, never a persistent control setting.
-    {"AtcSkipRequest", {CLEAR_ON_MANAGER_START | CLEAR_ON_IGNITION_OFF, STRING}},
+    {"AtcSkipRequest", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, STRING}},
     {"MyDrivingMode", {PERSISTENT, INT, "3"}},
     {"MyDrivingModeAuto", {PERSISTENT, INT, "0"}},
     {"TrafficLightDetectMode", {PERSISTENT, INT, "2"}},
