@@ -2,6 +2,7 @@
 #include "selfdrive/ui/atc_mode_background.h"
 
 #include <cassert>
+#include <initializer_list>
 
 // This test verifies the actual shared icon state, not a second ATC badge
 // timer or an independently interpreted maneuver type.
