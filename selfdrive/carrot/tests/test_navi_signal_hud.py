@@ -27,6 +27,10 @@ def test_nested_route():
   assert build_signal_hud(snap("route", {"traffic_signal": sample()}))["candidates"][0]["remainingSec"] == 25
 
 
+def test_nested_speed():
+  assert build_signal_hud(snap("speed", {"traffic_signal": sample()}))["meta"]["present"]
+
+
 def test_not_connected_or_expired():
   assert build_signal_hud(snap(connected=False))["candidates"] == []
   assert build_signal_hud(snap(present=False))["candidates"] == []
