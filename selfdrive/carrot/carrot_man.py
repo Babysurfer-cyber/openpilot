@@ -1124,7 +1124,10 @@ class CarrotMan:
 
     if "sinf" in obj:
       self.handle_traffic_light(obj["sinf"])
-      self._write_legacy_signal_hud("sinf", obj["sinf"])
+      # If both arrive in one packet, retain the more precise per-direction
+      # ssinf observation instead of overwriting it with the generic sinf.
+      if "ssinf" not in obj:
+        self._write_legacy_signal_hud("sinf", obj["sinf"])
 
   def carrot_navi_http_thread(self):
     asyncio.run(self.carrot_navi_http_server(7713))
