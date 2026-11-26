@@ -16,6 +16,10 @@ inline bool atc_guide_icon_in_range(int maneuver_distance_m, float prepare_dista
 // actually limits speed. The AUTO/NORM badge must follow this exact gate.
 inline bool atc_guide_icon_blink_active(int maneuver, int distance_m, float guide_start_m,
                                         bool current_atc_decel_active, bool canceled) {
-  return maneuver > 0 && atc_guide_icon_in_range(distance_m, guide_start_m) &&
+  // The TBT HUD draws images for 1-4 (turn/fork), 7 (U-turn) and
+  // 8 (destination). Other values have no flashing image to follow.
+  const bool has_blinkable_image = (maneuver >= 1 && maneuver <= 4) ||
+                                   maneuver == 7 || maneuver == 8;
+  return has_blinkable_image && atc_guide_icon_in_range(distance_m, guide_start_m) &&
          current_atc_decel_active && !canceled;
 }
