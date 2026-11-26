@@ -22,7 +22,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from openpilot.common.gps import get_gps_location_service
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.carrot.carrot_navi_control import CarrotNaviControl, get_carrot_navi_control
-from openpilot.selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request
+from openpilot.selfdrive.carrot.atc_one_shot_skip import AtcOneShotSkip, fresh_atc_skip_request, atc_skip_early_window_m
 
 nav_type_mapping = {
   12: ("turn", "left", 1),
@@ -811,6 +811,7 @@ class CarrotServ:
     # Ignore a cancellation once ATC has already lowered the target speed:
     # releasing that limit in mid-deceleration could provoke acceleration.
     deceleration_started = False
+    skip_window_m = self.atc_guide_start_distance(self.nRoadLimitSpeed)
     if self.autoTurnControl in (2, 3):
       cruise_kph = float(CS.vCruiseCluster)
       if not math.isfinite(cruise_kph) or cruise_kph <= 0:
@@ -820,13 +821,20 @@ class CarrotServ:
       # several nonbinding limits.
       deceleration_started = (atc_desired < cruise_kph - 0.5 or
                               self._atc_speed_reduction_last)
+      # On fast roads ATC's planned slowdown can start BEFORE the HUD guide
+      # window. Offer a short earlier opportunity to skip while ATC is still
+      # in its "prepare" phase. Do not cancel once the speed cap is effective.
+      skip_window_m = atc_skip_early_window_m(
+        skip_window_m, cruise_kph, self.atcSpeed, self.atcDist,
+        self.autoNaviSpeedDecelRate,
+      )
 
     self.atc_one_shot_skip.request(
       enabled=self.autoTurnControl > 0,
       cruise_active=True,
       turn_type=self.xTurnInfo,
       distance_m=self.xDistToTurn,
-      guide_distance_m=self.atc_guide_start_distance(self.nRoadLimitSpeed),
+      guide_distance_m=skip_window_m,
       atc_type=atc_type,
       deceleration_started=deceleration_started,
     )
