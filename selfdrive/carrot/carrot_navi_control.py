@@ -23,6 +23,10 @@ class NaviGuidanceControl:
   main_text: str = ""
   near_direction: str = ""
   far_direction: str = ""
+  # Stable maneuver position (when supplied by the app). The wire item
+  # sequence increases on each update and is NOT a maneuver identifier.
+  point_latitude: float | None = None
+  point_longitude: float | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +163,8 @@ def _guidance(item: Any, enabled: bool, now_s: float | None = None) -> NaviGuida
     main_text=_text(item, "mainText") if present else "",
     near_direction=_text(item, "nearDirection") if present else "",
     far_direction=_text(item, "farDirection") if present else "",
+    point_latitude=_float(item, "latitude", math.nan) if present and _get(item, "pointValid", False) else None,
+    point_longitude=_float(item, "longitude", math.nan) if present and _get(item, "pointValid", False) else None,
   )
 
 
