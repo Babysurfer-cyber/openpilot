@@ -1,0 +1,35 @@
+name: Paddle Mode 4 ATC one-shot tests
+
+on:
+  pull_request:
+    branches: [ms-xy-radar3]
+    paths:
+      - '.github/workflows/paddle-mode4-atc-skip.yml'
+      - 'common/params_keys.h'
+      - 'selfdrive/car/cruise.py'
+      - 'selfdrive/carrot/atc_one_shot_skip.py'
+      - 'selfdrive/carrot/carrot_serv.py'
+      - 'selfdrive/carrot/tests/test_atc_one_shot_skip.py'
+      - 'selfdrive/ui/qt/offroad/settings.cc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  atc-one-shot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python syntax
+        run: |
+          python3 -m py_compile \
+            selfdrive/car/cruise.py \
+            selfdrive/carrot/atc_one_shot_skip.py \
+            selfdrive/carrot/carrot_serv.py \
+            selfdrive/carrot/tests/test_atc_one_shot_skip.py
+      - name: Maneuver-scope and request-boundary tests
+        run: python3 -m unittest discover -s selfdrive/carrot/tests -p test_atc_one_shot_skip.py -v
