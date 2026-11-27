@@ -36,4 +36,23 @@ inline Snapshot calculate(bool connected, bool status_present,
           static_cast<float>(traveled_m) / static_cast<float>(total_m)};
 }
 
+// Read-only marker for the current upcoming ATC maneuver on the *same* route.
+// Never infer its position from a different route, stale guidance, or a turn
+// distance beyond the verified remaining journey. No vehicle control changes.
+struct AtcMarker {
+  bool visible = false;
+  float fraction = 0.0f;
+};
+
+inline AtcMarker atc_marker(const Snapshot &route, bool guidance_present,
+                            bool atc_maneuver, int maneuver_distance_m) {
+  if (!route.visible || !guidance_present || !atc_maneuver ||
+      maneuver_distance_m <= 0 || maneuver_distance_m > route.remaining_m) {
+    return {};
+  }
+  const int atc_position_m = route.traveled_m + maneuver_distance_m;
+  if (atc_position_m > route.total_m) return {};
+  return {true, static_cast<float>(atc_position_m) / static_cast<float>(route.total_m)};
+}
+
 }  // namespace route_progress
