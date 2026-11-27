@@ -543,23 +543,61 @@ def test_300m_route_congestion_uses_auto_mode_notice_once(auto_drive, monkeypatc
   drive.sm.seen = {'carrotNavi': True}
   drive.sm.alive['carrotNavi'] = drive.sm.valid['carrotNavi'] = True
 
-  assert step(drive, 1.0) > 80.
+  assert step(drive, 1.0) > 70.
   assert not chimes
 
   nav.route.meta.sequence = 2
   nav.route.meta.receivedMonoTimeNanos = 1_100_000_000
-  assert step(drive, 1.1) == 80.
+  assert step(drive, 1.1) == 70.
   assert len(chimes) == 1  # No new text or announcement
-  assert helper.log == 'Auto congestion cap: 80 km/h'
+  assert helper.log == 'Auto traffic cap: 70 km/h'
 
   nav.route.meta.sequence = 3
   nav.route.meta.receivedMonoTimeNanos = 1_200_000_000
-  assert step(drive, 1.2) == 80.
+  assert step(drive, 1.2) == 70.
   assert len(chimes) == 1  # No repeated chime or AUTO blink.
 
 
 
-def _capture_mode5_alerts(helper, monkeypatch):
+de
+def test_200m_route_slow_cap_independent_of_ego_speed(auto_drive, monkeypatch):
+  drive = auto_drive
+  helper = configure(drive, speed=110., pure=100., mixed=100., prior=100.)
+  drive.state.vEgo = drive.state.vEgoCluster = 14.  # ~50.4 km/h: no speed threshold.
+  chimes = []
+  monkeypatch.setattr(helper, '_auto_mode_chime', lambda: chimes.append(True))
+
+  nav = custom.CarrotNaviState.new_message(
+    schemaVersion=1, sessionId='test-slow-session', connected=True,
+    navigationStatus={'meta': {'present': True, 'sequence': 1, 'receivedMonoTimeNanos': 1_000_000_000},
+                      'guidanceActive': True, 'offRoute': False, 'routePresent': True},
+    route={'meta': {'present': True, 'sequence': 1, 'receivedMonoTimeNanos': 1_000_000_000},
+           'totalDistanceM': 20_000, 'remainingDistanceM': 11_200, 'trafficPresent': True,
+           'trafficSections': [
+             {'startDistanceM': 0, 'lengthM': 9_000, 'congestionCode': 1},
+             {'startDistanceM': 9_000, 'lengthM': 5_000, 'congestionCode': 2},
+             {'startDistanceM': 14_000, 'lengthM': 6_000, 'congestionCode': 1},
+           ]},
+  )
+  drive.sm.data['carrotNavi'] = nav
+  drive.sm.seen = {'carrotNavi': True}
+  drive.sm.alive['carrotNavi'] = drive.sm.valid['carrotNavi'] = True
+
+  assert step(drive, 1.0) > 90.
+  assert not chimes
+  nav.route.meta.sequence = 2
+  nav.route.meta.receivedMonoTimeNanos = 1_100_000_000
+  assert step(drive, 1.1) == 90.
+  assert len(chimes) == 1
+  assert helper.log == 'Auto traffic cap: 90 km/h'
+
+  nav.route.trafficSections[1].congestionCode = 1  # slow -> good: no restoration
+  nav.route.meta.sequence = 3
+  nav.route.meta.receivedMonoTimeNanos = 1_200_000_000
+  assert step(drive, 1.2) == 90.
+  assert len(chimes) == 1
+
+f _capture_mode5_alerts(helper, monkeypatch):
   """Spy on the existing prompt/chime pathways without filesystem side effects."""
   alerts = []
 

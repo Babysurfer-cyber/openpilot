@@ -1,8 +1,8 @@
-"""Optional mode-5 cruise set-speed cap on a confirmed upcoming map congestion section.
+"""Mode-5 cruise set-speed caps for confirmed upcoming slow and congested route sections.
 
-Naver route congestion is predictive, NOT an obstacle/lead-vehicle sensor.
-This helper changes only the requested cruise set speed. It cannot command
-brakes, resume cruise, or override ordinary lead and collision protections.
+Naver route traffic predicts general road flow; it is NOT an obstacle sensor.
+Only the requested cruise set speed is capped. Normal lead, collision and
+vehicle acceleration/braking limits remain authoritative.
 """
 from __future__ import annotations
 
@@ -11,19 +11,27 @@ import math
 import time
 from typing import Any
 
-TRIGGER_DISTANCE_M = 300
-TRIGGER_EGO_KPH = 90.0
-MAX_SET_SPEED_KPH = 80.0
+SLOW_TRIGGER_DISTANCE_M = 200
+JAM_TRIGGER_DISTANCE_M = 300
+SLOW_MAX_SET_SPEED_KPH = 90.0
+JAM_MAX_SET_SPEED_KPH = 70.0
 SERVICE_TIMEOUT_S = 1.0
 ITEM_TIMEOUT_S = 3.0
 MAX_SECTIONS = 128
 
+# Naver congestionCode: 0 unknown, 1 good, 2 slow, 3 congested.
+TRAFFIC_CAPS = {
+  2: (SLOW_TRIGGER_DISTANCE_M, SLOW_MAX_SET_SPEED_KPH),
+  3: (JAM_TRIGGER_DISTANCE_M, JAM_MAX_SET_SPEED_KPH),
+}
+
 
 @dataclass(frozen=True)
 class JamAhead:
-  key: tuple[str, int, int, int]
+  key: tuple[str, int, int, int, int]
   route_sequence: int
   distance_m: int
+  cap_kph: float
 
 
 def _fresh(meta: Any, now_s: float) -> bool:
@@ -36,11 +44,11 @@ def _fresh(meta: Any, now_s: float) -> bool:
   return 0 <= age <= ITEM_TIMEOUT_S
 
 
-def imminent_route_jam(sm: Any, *, now_s: float | None = None) -> JamAhead | None:
-  """Return a verified very_bad section starting 0..300m ahead, else None.
+def _imminent_route_traffic(sm: Any, *, now_s: float | None, allowed_codes: tuple[int, ...]) -> JamAhead | None:
+  """Select the most restrictive section approaching within its own distance.
 
-  Route distances are from the start of the *current* Naver route. The route
-  and guidance status must both be fresh, live, and mutually consistent.
+  Validate the entire current route before using any traffic section. Route
+  section offsets are measured from the beginning of the active Naver route.
   """
   if now_s is None:
     now_s = time.monotonic()
@@ -77,67 +85,91 @@ def imminent_route_jam(sm: Any, *, now_s: float | None = None) -> JamAhead | Non
           or start < last_end or length <= 0 or start + length > total or code not in (0, 1, 2, 3)):
         return None
       last_end = start + length
+      if code not in allowed_codes:
+        continue
+      trigger_m, cap_kph = TRAFFIC_CAPS[code]
       distance = start - progress
-      if code == 3 and 0 <= distance <= TRIGGER_DISTANCE_M and near is None:
-        near = JamAhead((str(nav.sessionId), total, start, length), int(route.meta.sequence), distance)
+      if 0 <= distance <= trigger_m:
+        candidate = JamAhead((str(nav.sessionId), total, start, length, code),
+                             int(route.meta.sequence), distance, cap_kph)
+        # Congestion (70 km/h) wins over slow (90 km/h) if both are ahead.
+        # Within the same severity, choose the nearest upcoming section.
+        if near is None or (candidate.cap_kph, candidate.distance_m) < (near.cap_kph, near.distance_m):
+          near = candidate
     return near
   except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
     return None
 
 
-class RouteCongestionCruiseCap:
-  """One reduction per engaged cruise session; no automatic speed restoration.
+def imminent_route_traffic(sm: Any, *, now_s: float | None = None) -> JamAhead | None:
+  """Find slow within 200m or congestion within 300m, if verified."""
+  return _imminent_route_traffic(sm, now_s=now_s, allowed_codes=(2, 3))
 
-  A second distinct route heartbeat must confirm the same approaching section.
-  Explicit driver/remote set-speed input releases the cap and prevents repeated
-  unwanted reductions until cruise is disengaged and engaged again.
+
+def imminent_route_jam(sm: Any, *, now_s: float | None = None) -> JamAhead | None:
+  """Compatibility helper: only congestion within 300m."""
+  return _imminent_route_traffic(sm, now_s=now_s, allowed_codes=(3,))
+
+
+class RouteCongestionCruiseCap:
+  """Latch non-increasing route caps (90 then optionally 70) per cruise session.
+
+  Confirm each distinct severity/section via two different current route
+  messages. Never automatically restore speed when traffic improves or
+  navigation disappears. A manual/remote speed choice releases the cap until
+  cruise is disengaged and engaged again.
   """
   def __init__(self) -> None:
     self.reset()
 
   def reset(self) -> None:
     self.active = False
+    self.cap_kph: float | None = None
     self.manual_override = False
-    self.candidate_key: tuple[str, int, int, int] | None = None
+    self.candidate_key: tuple[str, int, int, int, int] | None = None
     self.candidate_sequence: int | None = None
+
+  def _clear_candidate(self) -> None:
+    self.candidate_key = None
+    self.candidate_sequence = None
 
   def update(self, target_kph: float, ego_kph: float, sm: Any, *, engaged: bool,
              manual_speed_change: bool = False, gas_pressed: bool = False,
              now_s: float | None = None) -> tuple[float, bool]:
-    """Return (possibly reduced set speed, newly_reduced).
-
-    Unknown/stale route traffic never initiates a reduction. Once reduced,
-    loss of navigation will not silently accelerate back to the old target.
-    """
+    """Return (possibly capped set speed, whether it was lowered this update)."""
     if not engaged:
       self.reset()
       return target_kph, False
     if manual_speed_change:
       self.active = False
+      self.cap_kph = None
       self.manual_override = True
-      self.candidate_key = None
-      self.candidate_sequence = None
+      self._clear_candidate()
       return target_kph, False
     if self.manual_override:
       return target_kph, False
-    if self.active:
-      return min(target_kph, MAX_SET_SPEED_KPH), False
-    if (gas_pressed or not math.isfinite(ego_kph) or ego_kph < TRIGGER_EGO_KPH
-        or not math.isfinite(target_kph) or target_kph <= MAX_SET_SPEED_KPH):
-      self.candidate_key = None
-      self.candidate_sequence = None
-      return target_kph, False
 
-    jam = imminent_route_jam(sm, now_s=now_s)
-    if jam is None:
-      self.candidate_key = None
-      self.candidate_sequence = None
-      return target_kph, False
-    if self.candidate_key == jam.key:
-      if self.candidate_sequence != jam.route_sequence:
+    current_target = min(target_kph, self.cap_kph) if self.cap_kph is not None else target_kph
+
+    # No minimum ego-speed requirement: the map threshold is solely distance.
+    # Keep a previously confirmed cap even when navigation/inputs are stale.
+    if (gas_pressed or not math.isfinite(ego_kph) or not math.isfinite(target_kph)):
+      self._clear_candidate()
+      return current_target, False
+
+    section = imminent_route_traffic(sm, now_s=now_s)
+    if section is None or (self.cap_kph is not None and section.cap_kph >= self.cap_kph):
+      self._clear_candidate()
+      return current_target, False
+
+    if self.candidate_key == section.key:
+      if self.candidate_sequence != section.route_sequence:
+        self.cap_kph = section.cap_kph if self.cap_kph is None else min(self.cap_kph, section.cap_kph)
         self.active = True
-        return min(target_kph, MAX_SET_SPEED_KPH), True
+        self._clear_candidate()
+        updated_target = min(target_kph, self.cap_kph)
+        return updated_target, updated_target < current_target - 1e-6
     else:
-      self.candidate_key = jam.key
-      self.candidate_sequence = jam.route_sequence
-    return target_kph, False
+      self.candidate_key = section.key
+      self.candidate_sequence = section.route_sequence
+    return current_target, False
