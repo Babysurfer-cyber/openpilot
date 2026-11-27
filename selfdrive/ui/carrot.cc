@@ -1,5 +1,6 @@
 #include "selfdrive/ui/carrot.h"
 #include "selfdrive/ui/route_progress.h"
+#include "selfdrive/ui/nav_hud_hold.h"
 #include "selfdrive/ui/atc_icon_visibility.h"
 #include "selfdrive/ui/atc_mode_background.h"
 #include "selfdrive/ui/navi_signal_hud.h"
@@ -1161,6 +1162,9 @@ private:
 
     int nGoPosDist = 0;
     int nGoPosTime = 0;
+    nav_hud_hold::State hud_hold;
+    QString hud_nav_session;
+    int hud_nav_route_total_m = 0;
     route_progress::Snapshot route_state;
     bool route_atc_guidance_present = false;
     bool route_atc_maneuver = false;
@@ -1391,11 +1395,12 @@ protected:
         constexpr int compact_bar_side_margin = 37;
         NVGcolor stroke_color = COLOR_WHITE;
         // Height is shortened only for the compact HUD mode (not full-height mode).
+        // Check first, before drawing the background: a missing route should
+        // not leave an empty HUD rectangle on screen.
+        if (nGoPosDist <= 0 || nGoPosTime <= 0) return -1;
         if (s->scene._current_carrot_display == 3) {
           ui_fill_rect(s->vg, { tbt_x, 5, 790, s->fb_h - 15 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
         }
-        if (nGoPosDist > 0 && nGoPosTime > 0);
-        else return -1;
         if (s->scene._current_carrot_display == 3);
         else {
           ui_fill_rect(s->vg, { tbt_x, tbt_y - 35, compact_hud_width, 270 }, COLOR_BLACK_ALPHA(120), 30, 2, &stroke_color);
@@ -1529,72 +1534,125 @@ public:
     int draw(const UIState* s) {
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         SubMaster& sm = *(s->sm);
-        if (!sm.alive("modelV2") || !sm.alive("carrotMan") || !sm.alive("carState")) {
-            active_carrot = -1;
+        const double now_s = double(nanos_monotonic()) / 1e9;
+
+        // Determine explicit route termination separately from transient IPC
+        // loss. A session or route switch must not retain the old HUD values.
+        const bool nav_live = sm.alive("carrotNavi") && sm.valid("carrotNavi");
+        bool explicit_end = false;
+        bool route_changed = false;
+        bool nav_route_current = false;
+        if (nav_live) {
+            const auto nav = sm["carrotNavi"].getCarrotNavi();
+            const auto status = nav.getNavigationStatus();
+            const auto route = nav.getRoute();
+            if (!nav.getConnected()) {
+                explicit_end = true;
+            } else {
+                const QString session = QString::fromUtf8(nav.getSessionId().cStr());
+                if (!session.isEmpty()) {
+                    route_changed = !hud_nav_session.isEmpty() && session != hud_nav_session;
+                    hud_nav_session = session;
+                }
+                const bool status_present = status.getMeta().getPresent();
+                if (status_present && (!status.getGuidanceActive() ||
+                                       status.getOffRoute() || !status.getRoutePresent())) {
+                    explicit_end = true;
+                }
+                if (status_present && status.getGuidanceActive() && !status.getOffRoute() &&
+                    status.getRoutePresent() && route.getMeta().getPresent()) {
+                    const int total_m = route.getTotalDistanceM();
+                    const int remain_m = route.getRemainingDistanceM();
+                    if (total_m <= 0 || remain_m <= 0 ||
+                        (remain_m > total_m &&
+                         remain_m - total_m > route_progress::MAX_REMAINING_OVERSHOOT_M)) {
+                        explicit_end = true;
+                    } else {
+                        if (hud_nav_route_total_m > 0 && hud_nav_route_total_m != total_m) {
+                            route_changed = true;
+                        }
+                        hud_nav_route_total_m = total_m;
+                        nav_route_current = true;
+                    }
+                }
+            }
+        }
+
+        // Valid carrotMan navigation counters are accepted only while the
+        // active CarrotNavi route is live. An unrelated stock-nav source may
+        // still display through carrotMan if no CarrotNavi session was seen.
+        const bool man_live = sm.alive("carrotMan");
+        int live_distance_m = 0;
+        int live_time_s = 0;
+        if (man_live) {
+            const auto carrot_man = sm["carrotMan"].getCarrotMan();
+            live_distance_m = carrot_man.getNGoPosDist();
+            live_time_s = carrot_man.getNGoPosTime();
+        }
+        const bool can_refresh = hud_nav_session.isEmpty() ? man_live :
+                                 (man_live && nav_live && nav_route_current);
+        const bool usable_sample = can_refresh && live_distance_m > 0 && live_time_s > 0;
+        const auto decision = hud_hold.update(now_s, usable_sample, explicit_end, route_changed);
+
+        if (decision == nav_hud_hold::Decision::hidden) {
+            nGoPosDist = nGoPosTime = 0;
+            xTurnInfo = -1;
+            xDistToTurn = 0;
+            atc_type = "";
+            atc_decel_active = false;
+            route_state = {};
+            route_traffic_valid = false;
+            route_traffic_segments.clear();
+            route_atc_guidance_present = false;
+            route_atc_maneuver = false;
+            route_atc_distance_m = 0;
+            if (explicit_end) {
+                hud_nav_route_total_m = 0;
+            }
             return -1;
         }
-        const auto carrot_man = sm["carrotMan"].getCarrotMan();
-        updateRouteProgress(sm);
-          
-        active_carrot = carrot_man.getActiveCarrot();
 
-        if (active_carrot > 1) {
-          xSpdLimit = carrot_man.getXSpdLimit();
-          xSpdDist = carrot_man.getXSpdDist();
-          xSignType = carrot_man.getXSpdType();
-        }
-        else {
-          xSpdLimit = 0;
-          xSpdDist = 0;
-          xSignType = 0;
-        }
-        xTurnInfo = carrot_man.getXTurnInfo();
-        xDistToTurn = carrot_man.getXDistToTurn();
-        atc_guide_start_distance_m = carrot_man.getAtcGuideStartDistanceM();
-        nRoadLimitSpeed = carrot_man.getNRoadLimitSpeed();
-        if (active_carrot > 1 || carrot_man.getNGoPosDist() > 0) {
-          atc_type = QString::fromStdString(carrot_man.getAtcType()).trimmed();
-          if (atc_type.compare("none", Qt::CaseInsensitive) == 0 ||
-              atc_type.compare("null", Qt::CaseInsensitive) == 0 ||
-              atc_type == "0") {
-            atc_type = "";
-          }
+        if (decision == nav_hud_hold::Decision::fresh) {
+            updateRouteProgress(sm);
+            const auto carrot_man = sm["carrotMan"].getCarrotMan();
+            active_carrot = carrot_man.getActiveCarrot();
+            if (active_carrot > 1) {
+                xSpdLimit = carrot_man.getXSpdLimit();
+                xSpdDist = carrot_man.getXSpdDist();
+                xSignType = carrot_man.getXSpdType();
+            } else {
+                xSpdLimit = xSpdDist = xSignType = 0;
+            }
+            xTurnInfo = carrot_man.getXTurnInfo();
+            xDistToTurn = carrot_man.getXDistToTurn();
+            atc_guide_start_distance_m = carrot_man.getAtcGuideStartDistanceM();
+            nRoadLimitSpeed = carrot_man.getNRoadLimitSpeed();
+            atc_type = QString::fromStdString(carrot_man.getAtcType()).trimmed();
+            if (atc_type.compare("none", Qt::CaseInsensitive) == 0 ||
+                atc_type.compare("null", Qt::CaseInsensitive) == 0 || atc_type == "0") {
+                atc_type = "";
+            }
+            const QString desired_src = QString::fromStdString(carrot_man.getDesiredSource()).trimmed();
+            const bool car_state_live = sm.alive("carState") && sm.valid("carState");
+            atc_decel_active = car_state_live &&
+                desired_src.compare("atc", Qt::CaseInsensitive) == 0 &&
+                carrot_man.getDesiredSpeed() < sm["carState"].getCarState().getVCruiseCluster();
 
-          QString desired_src = QString::fromStdString(carrot_man.getDesiredSource()).trimmed();
-          float desired_spd = carrot_man.getDesiredSpeed();
-          float v_cruise_cluster = sm["carState"].getCarState().getVCruiseCluster();
-          atc_decel_active = (desired_src.compare("atc", Qt::CaseInsensitive) == 0 && desired_spd < v_cruise_cluster);
-
-          nGoPosDist = carrot_man.getNGoPosDist();
-          nGoPosTime = carrot_man.getNGoPosTime();
-          szSdiDescr = QString::fromStdString(carrot_man.getSzSdiDescr());
-          szPosRoadName = QString::fromStdString(carrot_man.getSzPosRoadName());
-          szTBTMainText = QString::fromStdString(carrot_man.getSzTBTMainText());
-          
-        }
-        else {
-          //xTurnInfo = -1;
-          //xDistToTurn = 0;
-          //nRoadLimitSpeed = 20;
-          atc_type = "";
-          atc_decel_active = false;
-          nGoPosDist = 0;
-          nGoPosTime = 0;
-          szSdiDescr = "";
-          szPosRoadName = "";
-          szTBTMainText = "";
+            nGoPosDist = live_distance_m;
+            nGoPosTime = live_time_s;
+            szSdiDescr = QString::fromStdString(carrot_man.getSzSdiDescr());
+            szPosRoadName = QString::fromStdString(carrot_man.getSzPosRoadName());
+            szTBTMainText = QString::fromStdString(carrot_man.getSzTBTMainText());
+        } else {
+            // Hold only the *picture* for <=2 seconds. Do not repeat a stale
+            // ATC deceleration indication while the navigation source is lost.
+            atc_decel_active = false;
         }
 
-#ifdef __UI_TEST
-        active_carrot = 2;
-        xSpdLimit = 110;
-        xSpdDist = 12345;
-        nRoadLimitSpeed = 110;
-#endif
-        // drawTurnInfo(s);   // 도로 위 AR 핀 및 방면 텍스트 비활성화
+        // modelV2 is needed for AR/model rendering, not this navigation HUD.
+        // Its one-frame timeout must not suppress arrival time or route bar.
         drawSpeedLimit(s);
         return drawTurnInfoHud(s);
-
     }
 };
 bool _right_blinker = false;
