@@ -1714,6 +1714,22 @@
       "cdescr": "0: 颜色+类型(黄线阻止), 1: 仅类型(虚线/实线), 2: 仅类型+实线扭矩override"
     },
     {
+      "group": "조향일반",
+      "name": "HumanLikeLaneChanges",
+      "title": "차선변경 속도 미리 맞춤(0)",
+      "descr": "0: 끔, 1: 켬. 진행 중인 차선변경에서 이동할 차로의 앞차에 속도를 더 일찍 맞춥니다. 조향, BSD 및 기존 차선변경 시작 조건은 유지됩니다. 재시작 없이 적용됩니다.",
+      "egroup": "LAT",
+      "etitle": "Human-like Lane Change Speed(0)",
+      "edescr": "0: Off, 1: On. During an active lane change, matches speed to the destination lane's lead vehicle earlier. Steering, BSD, and existing lane-change start conditions are preserved. Applies without a restart.",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "转向",
+      "ctitle": "变道提前匹配车速(0)",
+      "cdescr": "0: 关闭, 1: 开启。仅在变道进行中，更早匹配目标车道前车的速度。转向、盲点监测和现有变道开始条件保持不变。无需重启即可生效。"
+    },
+    {
       "group": "시작",
       "name": "HapticFeedbackWhenSpeedCamera",
       "title": "핸들햅틱기능사용(0)",

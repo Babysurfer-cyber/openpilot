@@ -140,6 +140,9 @@ def test_cutout_does_not_relax_fcw_measurements(mpc_module):
 
 
 class TestParams:
+  def get_bool(self, _key):
+    return False
+
   def get_int(self, _key):
     return 0
 
@@ -167,10 +170,12 @@ class PlannerMpc:
 
   def update(self, *_args, **kwargs):
     self.cutout_enabled = kwargs["cutout_relief_enabled"]
+    self.update_kwargs = kwargs
 
 
 @pytest.fixture(scope="module")
 def planner_module(mpc_module):
+  from openpilot.selfdrive.controls.lib.human_like_lane_changes import HumanLikeLaneChanges
   path = LIB / "longitudinal_planner.py"
   return production_definitions(path, {
     "__file__": str(path), "math": math, "time": time, "np": np, "log": log,
@@ -184,6 +189,7 @@ def planner_module(mpc_module):
     "get_cutin_predecel_accel_limit": get_cutin_predecel_accel_limit,
     "apply_cutin_predecel_accel_limit": apply_cutin_predecel_accel_limit,
     "PrepareAccel": PrepareAccel,
+    "HumanLikeLaneChanges": HumanLikeLaneChanges,
   })
 
 

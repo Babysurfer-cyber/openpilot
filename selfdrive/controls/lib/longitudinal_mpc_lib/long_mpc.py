@@ -60,6 +60,30 @@ T_DIFFS = np.diff(T_IDXS, prepend=[0.])
 COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
 
+
+def valid_lane_change_lead(lead, radarstate):
+  """Keep the optional target physical, distinct and usable by process_lead."""
+  if lead is None or not radarstate.leadOne.status:
+    return False
+  try:
+    key = (str(lead.radarSource), int(lead.radarTrackId))
+    values = (lead.dRel, lead.yRel, lead.vRel, lead.vLead, lead.vLeadK, lead.aLeadK, lead.aLeadTau)
+    if (not lead.status or not lead.radar or key[1] < 0 or key[0] == 'scc'
+        or not all(np.isfinite(value) for value in values)
+        or not 0.8 < lead.dRel <= 150.0 or not 0.0 <= lead.vLead <= 60.0
+        or not 0.0 <= lead.vLeadK <= 60.0 or not -10.0 <= lead.aLeadK <= 5.0
+        or not 0.0 <= lead.aLeadTau <= 10.0):
+      return False
+    for existing in (radarstate.leadOne, radarstate.leadTwo):
+      if existing.status and existing.radar and (str(existing.radarSource), int(existing.radarTrackId)) == key:
+        return False
+    errors = getattr(radarstate, 'radarErrors', None)
+    return not any(getattr(errors, name, False) for name in
+                   ('canError', 'radarFault', 'wrongConfig', 'radarUnavailableTemporary'))
+  except (AttributeError, TypeError, ValueError, OverflowError):
+    return False
+
+
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.moreRelaxed:
     return 1.0
@@ -269,6 +293,8 @@ class LongitudinalMpc:
       self.solver.set(i, 'x', np.zeros(X_DIM))
     self.last_cloudlog_t = 0
     self.status = False
+    self.human_lane_changes_active = False
+    self.human_lane_change_track_id = -1
     self.crash_cnt = 0.0
     self.solution_status = 0
     # timers
@@ -363,11 +389,14 @@ class LongitudinalMpc:
     self.max_a = max_a
 
   def update(self, carrot, reset_state, radarstate, v_cruise, x, v, a, j,
-             personality=log.LongitudinalPersonality.standard, cutout_relief_enabled=False):
+             personality=log.LongitudinalPersonality.standard, cutout_relief_enabled=False,
+             human_lane_changes_enabled=False, lane_change_lead=None):
     v_ego = self.x0[1]
     a_ego = self.x0[2]
     t_follow = carrot.get_T_FOLLOW(personality, v_ego, a_ego)
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
+    self.human_lane_changes_active = False
+    self.human_lane_change_track_id = -1
 
     if radarstate.leadOne.status:
       j_lead = radarstate.leadOne.jLead
@@ -425,7 +454,18 @@ class LongitudinalMpc:
           radarstate.leadOne, v_ego, T_IDXS, t_follow, stop_distance,
         )
       x_obstacles = np.column_stack([lead_0_follow_obstacle, lead_1_obstacle, cruise_obstacle, x2])
-      self.source = SOURCES[np.argmin(x_obstacles[0])]
+      if human_lane_changes_enabled and not reset_state and valid_lane_change_lead(lane_change_lead, radarstate):
+        lane_xv, _ = self.process_lead(lane_change_lead, 0.0)
+        lane_obstacle = lane_xv[:, 0] + get_stopped_equivalence_factor(lane_xv[:, 1])
+        # Physical cut-in/stopped leadTwo remains an independent constraint.
+        # The destination lead can only add an obstacle, never replace one.
+        x_obstacles = np.column_stack((x_obstacles, lane_obstacle))
+        self.human_lane_changes_active = True
+        self.human_lane_change_track_id = int(lane_change_lead.radarTrackId)
+      source_index = int(np.argmin(x_obstacles[0]))
+      # Keep the existing public plan-source enum; the extra radar target has
+      # the same secondary-following meaning as lead1 to downstream readers.
+      self.source = SOURCES[source_index] if source_index < len(SOURCES) else 'lead1'
 
       if v_cruise == 0 and self.source == 'cruise':
         self.params[:,0] = - carrot.autoNaviSpeedDecelRate
