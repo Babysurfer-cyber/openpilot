@@ -60,64 +60,6 @@ T_DIFFS = np.diff(T_IDXS, prepend=[0.])
 COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
 
-# Downstream radar adaptation of FrogPilot's radar-anchored model trajectory.
-# Only the following obstacle gets limited optimistic credit; FCW and leadTwo
-# retain the original measured-motion prediction.
-HUMAN_FOLLOWING_MAX_CREDIT_M = 4.0
-HUMAN_FOLLOWING_MAX_CREDIT_S = 0.2
-
-
-def human_like_follow_obstacle(radarstate, prediction, nominal_xv, v_ego, t_follow):
-  if prediction is None:
-    return None
-  lead = radarstate.leadOne
-  try:
-    if (not lead.status or not lead.radar or lead.radarSource != 'frontRadar'
-        or lead.radarTrackId < 0 or lead.radarTrackId != prediction.radar_track_id
-        or not all(np.isfinite(z) for z in (v_ego, t_follow, lead.dRel, lead.vLead, lead.aLeadK, lead.jLead))
-        or v_ego < 5.0 or lead.vLead < 5.0 or not 10.0 <= lead.dRel <= 150.0
-        or lead.aLeadK < -0.5 or abs(lead.jLead) > 0.5
-        or abs(lead.dRel - prediction.radar_d_rel) > 1e-3
-        or abs(lead.vLead - prediction.radar_v_lead) > 1e-3
-        or getattr(lead, 'cutOutTime', 0.0) > 0 or getattr(lead, 'cutOutConfidence', 0.0) > 0):
-      return None
-    errors = getattr(radarstate, 'radarErrors', None)
-    if any(getattr(errors, name, False) for name in
-           ('canError', 'radarFault', 'wrongConfig', 'radarUnavailableTemporary')):
-      return None
-    if getattr(getattr(radarstate, 'leadCutInRisk', None), 'status', False):
-      return None
-    if any(z.status and z.radarTrackId == lead.radarTrackId for z in getattr(radarstate, 'leadsCutIn', ())):
-      return None
-    closing_speed = v_ego - lead.vLead
-    if closing_speed > 0 and lead.dRel / closing_speed < 5.0:
-      return None
-
-    t, x, v = (np.asarray(z, dtype=float) for z in (prediction.t, prediction.x, prediction.v))
-    if (t.shape != (6,) or x.shape != t.shape or v.shape != t.shape
-        or not all(np.all(np.isfinite(z)) for z in (t, x, v, nominal_xv))
-        or abs(t[0]) > 1e-6 or t[-1] < T_IDXS[-1]
-        or np.any(np.diff(t) <= 0) or np.any(np.diff(x) < 0)
-        or np.any(v < 0) or np.any(v > 60)
-        or abs(x[0] - lead.dRel) > 1e-3 or abs(v[0] - lead.vLead) > 1e-3):
-      return None
-    # Preserve the existing immediate-collision convergence clip at h=0.
-    x_pred = nominal_xv[0, 0] + np.interp(T_IDXS, t, x - x[0])
-    v_pred = np.interp(T_IDXS, t, v)
-    x_max = x_pred[0] + np.insert(np.cumsum(np.diff(T_IDXS) * (v_pred[:-1] + v_pred[1:]) * 0.5), 0, 0.0)
-    x_pred = np.minimum(x_pred, x_max)
-    predicted = x_pred + get_stopped_equivalence_factor(v_pred)
-    nominal = nominal_xv[:, 0] + get_stopped_equivalence_factor(nominal_xv[:, 1])
-    # Never turn a tentative acceleration prediction into unlimited clearance.
-    # Predicted braking can still bring the obstacle closer and start slowing
-    # earlier. A half-second prefix gets no optimistic distance credit.
-    credit = min(HUMAN_FOLLOWING_MAX_CREDIT_M,
-                 HUMAN_FOLLOWING_MAX_CREDIT_S * max(v_ego, lead.vLead))
-    ramp = np.clip((T_IDXS - 0.5) / 1.5, 0.0, 1.0)
-    return np.minimum(predicted, nominal + credit * ramp)
-  except (AttributeError, TypeError, ValueError, OverflowError):
-    return None
-
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.moreRelaxed:
     return 1.0
@@ -327,7 +269,6 @@ class LongitudinalMpc:
       self.solver.set(i, 'x', np.zeros(X_DIM))
     self.last_cloudlog_t = 0
     self.status = False
-    self.human_like_following_active = False
     self.crash_cnt = 0.0
     self.solution_status = 0
     # timers
@@ -422,13 +363,11 @@ class LongitudinalMpc:
     self.max_a = max_a
 
   def update(self, carrot, reset_state, radarstate, v_cruise, x, v, a, j,
-             personality=log.LongitudinalPersonality.standard, cutout_relief_enabled=False,
-             human_like_following_enabled=False, human_following_prediction=None):
+             personality=log.LongitudinalPersonality.standard, cutout_relief_enabled=False):
     v_ego = self.x0[1]
     a_ego = self.x0[2]
     t_follow = carrot.get_T_FOLLOW(personality, v_ego, a_ego)
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
-    self.human_like_following_active = False
 
     if radarstate.leadOne.status:
       j_lead = radarstate.leadOne.jLead
@@ -481,15 +420,8 @@ class LongitudinalMpc:
       x2 = stop_x * np.ones(N+1) + adjust_dist
 
       lead_0_follow_obstacle = lead_0_obstacle
-      if human_like_following_enabled and not reset_state:
-        predicted_obstacle = human_like_follow_obstacle(
-          radarstate, human_following_prediction, lead_xv_0, v_ego, t_follow,
-        )
-        if predicted_obstacle is not None:
-          lead_0_follow_obstacle = predicted_obstacle
-          self.human_like_following_active = True
       if cutout_relief_enabled and not reset_state:
-        lead_0_follow_obstacle = lead_0_follow_obstacle + cutout_obstacle_relief(
+        lead_0_follow_obstacle = lead_0_obstacle + cutout_obstacle_relief(
           radarstate.leadOne, v_ego, T_IDXS, t_follow, stop_distance,
         )
       x_obstacles = np.column_stack([lead_0_follow_obstacle, lead_1_obstacle, cruise_obstacle, x2])
