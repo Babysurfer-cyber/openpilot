@@ -1563,7 +1563,9 @@ public:
                     status.getRoutePresent() && route.getMeta().getPresent()) {
                     const int total_m = route.getTotalDistanceM();
                     const int remain_m = route.getRemainingDistanceM();
-                    if (total_m <= 0 || remain_m <= 0 || remain_m > total_m) {
+                    if (total_m <= 0 || remain_m <= 0 ||
+                        (remain_m > total_m &&
+                         remain_m - total_m > route_progress::MAX_REMAINING_OVERSHOOT_M)) {
                         explicit_end = true;
                     } else {
                         if (hud_nav_route_total_m > 0 && hud_nav_route_total_m != total_m) {
