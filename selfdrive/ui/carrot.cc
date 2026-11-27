@@ -1163,6 +1163,8 @@ private:
     int nGoPosTime = 0;
     route_progress::Snapshot route_state;
     bool route_atc_guidance_present = false;
+    bool route_atc_maneuver = false;
+    int route_atc_distance_m = 0;
     struct CongestionSegment { int start_m; int length_m; int code; };
     std::vector<CongestionSegment> route_traffic_segments;
     bool route_traffic_valid = false;
@@ -1255,6 +1257,8 @@ protected:
     void updateRouteProgress(const SubMaster &sm) {
         route_state = {};
         route_atc_guidance_present = false;
+        route_atc_maneuver = false;
+        route_atc_distance_m = 0;
         route_traffic_valid = false;
         route_traffic_segments.clear();
         if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
@@ -1266,10 +1270,16 @@ protected:
             status.getGuidanceActive(), status.getOffRoute(),
             status.getRoutePresent(), route.getMeta().getPresent(),
             route.getTotalDistanceM(), route.getRemainingDistanceM());
-        // The current ATC must belong to the same live CarrotNavi session
-        // as the displayed route, not to an old or unrelated TBT source.
+        // Route-marker guidance comes directly from the *same CarrotNavi*
+        // session as this progress bar. Do not source it from carrotMan's
+        // atcType/xTurnInfo, which are gated by the ATC control-mode setting.
+        const auto guidance = nav.getGuidanceCurrent();
         route_atc_guidance_present = route_state.visible &&
-                                     nav.getGuidanceCurrent().getMeta().getPresent();
+                                     guidance.getMeta().getPresent();
+        if (route_atc_guidance_present) {
+            route_atc_maneuver = route_progress::atc_route_maneuver(guidance.getTurnType());
+            route_atc_distance_m = guidance.getDistanceM();
+        }
 
         // Never draw guessed congestion from distance or speed. Both route and
         // navigation status must be current; gaps remain neutral gray.
@@ -1328,12 +1338,11 @@ protected:
             // route. Its top aligns exactly with the original vehicle marker
             // (y - 25). The solid white pole overlaps the traffic bar.
             // This is display-only: do not alter ATC timing, speed or braking.
-            const bool has_atc_maneuver =
-                ((xTurnInfo >= 1 && xTurnInfo <= 5) || xTurnInfo == 7 || xTurnInfo == 8) &&
-                !atc_type.isEmpty() &&
+            const bool has_atc_maneuver = route_atc_maneuver &&
                 !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
             const auto atc = route_progress::atc_marker(
-                route_state, route_atc_guidance_present, has_atc_maneuver, xDistToTurn);
+                route_state, route_atc_guidance_present, has_atc_maneuver,
+                route_atc_distance_m);
             if (atc.visible) {
                 const int atc_x = x + static_cast<int>(std::lround(width * atc.fraction));
                 constexpr int flag_top_offset = -25;  // same height as vehicle triangle

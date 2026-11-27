@@ -29,6 +29,20 @@ int main() {
   assert(!calculate(true, true, true, false, true, true, 0, 0).visible);
   assert(calculate(true, true, true, false, true, true, 20000, 20000).fraction == 0.0f);
 
+  // Route guidance classification must not depend on ATC control mode.
+  // These are the raw CarrotNavi SDK turn types, not carrotMan's atcType.
+  assert(route_progress::atc_route_maneuver(12));   // left turn
+  assert(route_progress::atc_route_maneuver(13));   // right turn
+  assert(route_progress::atc_route_maneuver(101));  // off-ramp
+  assert(route_progress::atc_route_maneuver(131));  // roundabout
+  assert(route_progress::atc_route_maneuver(14));   // U-turn
+  assert(route_progress::atc_route_maneuver(201));  // destination
+  assert(!route_progress::atc_route_maneuver(51));   // notification
+  assert(!route_progress::atc_route_maneuver(153));  // tollgate
+  assert(!route_progress::atc_route_maneuver(249));  // tollgate
+  assert(!route_progress::atc_route_maneuver(-1));   // invalid
+  assert(!route_progress::atc_route_maneuver(999));  // unrecognized
+
   // Current guidance 1000m ahead is at 8400m of the same 20000m route.
   auto atc = route_progress::atc_marker(normal, true, true, 1000);
   assert(atc.visible && std::fabs(atc.fraction - 0.42f) < 0.0001f);

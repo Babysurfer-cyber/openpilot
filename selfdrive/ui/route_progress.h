@@ -36,6 +36,27 @@ inline Snapshot calculate(bool connected, bool status_present,
           static_cast<float>(traveled_m) / static_cast<float>(total_m)};
 }
 
+// Match the navigational maneuvers handled by CarrotServ's TBT mapping,
+// without consulting AutoTurnControl mode or any longitudinal control state.
+// Exclude informational-only notices and tollgates, just as the existing HUD
+// flag did for xTurnInfo=0 and xTurnInfo=6.
+inline bool atc_route_maneuver(int turn_type) {
+  switch (turn_type) {
+    // Left/right turns, forks, exits, roundabouts, U-turn, destination.
+    case 12: case 16: case 13: case 19:
+    case 102: case 105: case 112: case 115:
+    case 101: case 104: case 111: case 114:
+    case 7: case 44: case 17: case 75: case 76: case 118:
+    case 6: case 43: case 73: case 74: case 123: case 124: case 117:
+    case 131: case 132: case 140: case 141: case 133: case 134:
+    case 135: case 136: case 137: case 138: case 139: case 142:
+    case 14: case 201:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Read-only marker for the current upcoming ATC maneuver on the *same* route.
 // Never infer its position from a different route, stale guidance, or a turn
 // distance beyond the verified remaining journey. No vehicle control changes.
