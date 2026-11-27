@@ -1334,10 +1334,10 @@ protected:
                 ui_fill_rect(s->vg, {x, y, width, height}, nvgRGBA(65, 70, 75, 255), 8);
                 nvgRestore(s->vg);
             }
-            // White mini-pennant marking the next ATC maneuver on the entire
-            // route. Its top aligns exactly with the original vehicle marker
-            // (y - 25). The solid white pole overlaps the traffic bar.
-            // This is display-only: do not alter ATC timing, speed or braking.
+            // Display-only ATC route marker: a solid white vertical line,
+            // without a pennant or label. Its upper end aligns with the
+            // existing inverted position triangle (y - 25), and it crosses
+            // the full traffic bar. Never modify ATC steering or braking.
             const bool has_atc_maneuver = route_atc_maneuver &&
                 !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
             const auto atc = route_progress::atc_marker(
@@ -1345,38 +1345,12 @@ protected:
                 route_atc_distance_m);
             if (atc.visible) {
                 const int atc_x = x + static_cast<int>(std::lround(width * atc.fraction));
-                constexpr int flag_top_offset = -25;  // same height as vehicle triangle
-                constexpr int flag_height = 16;
-                constexpr int flag_width = 56;
-                constexpr int flag_notch = 7;
-                const int top = y + flag_top_offset;
-                const int bottom = top + flag_height;
-                // Keep the pennant inside the progress bar near the route end.
-                const bool reverse_flag = atc_x + flag_width > x + width;
-                const int tip = reverse_flag ? atc_x - flag_width : atc_x + flag_width;
-                const int notch = reverse_flag ? tip + flag_notch : tip - flag_notch;
-
                 nvgBeginPath(s->vg);
-                nvgMoveTo(s->vg, atc_x, top);
+                nvgMoveTo(s->vg, atc_x, y - 25);
                 nvgLineTo(s->vg, atc_x, y + height + 2);
                 nvgStrokeColor(s->vg, COLOR_WHITE);
                 nvgStrokeWidth(s->vg, 3);
                 nvgStroke(s->vg);
-
-                nvgBeginPath(s->vg);
-                nvgMoveTo(s->vg, atc_x, top);
-                nvgLineTo(s->vg, tip, top);
-                nvgLineTo(s->vg, notch, top + flag_height / 2);
-                nvgLineTo(s->vg, tip, bottom);
-                nvgLineTo(s->vg, atc_x, bottom);
-                nvgClosePath(s->vg);
-                nvgFillColor(s->vg, COLOR_WHITE);
-                nvgFill(s->vg);
-
-                nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                // ui_draw_text adds 6px internally; compensate for true centering.
-                ui_draw_text(s, atc_x + (tip - atc_x) / 2, top + flag_height / 2 - 6,
-                             "ATC", 13, COLOR_BLACK, BOLD, 0);
             }
 
             // The original white inverted triangle remains on top and legible.
