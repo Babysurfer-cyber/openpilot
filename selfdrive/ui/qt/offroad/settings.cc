@@ -675,6 +675,8 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   cruiseToggles->addItem(new CValueControl("CruiseSpeedUnit", tr("Button: Cruise Speed Unit(Extra)"), "", 1, 20, 1));
   cruiseToggles->addItem(new CValueControl("CruiseEcoControl", tr("CRUISE: Eco control(4km/h)"), tr("Temporarily increasing the set speed to improve fuel efficiency."), 0, 10, 1));
   cruiseToggles->addItem(new CValueControl("AutoSpeedUptoRoadSpeedLimit", tr("CRUISE: Auto speed up (0%)"), tr("Auto speed up based on the lead car up to RoadSpeedLimit."), 0, 200, 10));
+  cruiseToggles->addItem(new CValueControl("HumanLikeFollowing", tr("휴먼라이크 앞차 추종 (0: 끔 / 1: 켬)"),
+    tr("전방 앞차의 예상 움직임을 활용해 불필요한 제동을 줄이도록 돕습니다. 예측 정보가 부족하면 기존 추종을 사용하며, 코너레이더 감지는 유지됩니다. 재부팅 없이 적용됩니다."), 0, 1, 1));
   cruiseToggles->addItem(new CValueControl("TFollowGap1", tr("GAP1: Apply TFollow (110)x0.01s"), "", 70, 300, 5));
   cruiseToggles->addItem(new CValueControl("TFollowGap2", tr("GAP2: Apply TFollow (120)x0.01s"), "", 70, 300, 5));
   cruiseToggles->addItem(new CValueControl("TFollowGap3", tr("GAP3: Apply TFollow (160)x0.01s"), "", 70, 300, 5));

@@ -25,6 +25,7 @@ from openpilot.selfdrive.controls.lib.cutin_predecel import (
 )
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.controls.lib.longitudinal_cutout import cutout_obstacle_relief
+from openpilot.selfdrive.controls.lib.human_like_following import HumanLikeFollowing
 from openpilot.selfdrive.modeld.constants import ModelConstants, index_function
 from openpilot.selfdrive.carrot.signal_stop_prepare import PrepareAccel, PrepareDecision
 from openpilot.selfdrive.carrot.signal_start_guard import StartDecision
@@ -140,6 +141,9 @@ def test_cutout_does_not_relax_fcw_measurements(mpc_module):
 
 
 class TestParams:
+  def get_bool(self, _key):
+    return False
+
   def get_int(self, _key):
     return 0
 
@@ -177,6 +181,7 @@ def planner_module(mpc_module):
     "CV": CV, "ACCEL_MIN": ACCEL_MIN, "ACCEL_MAX": ACCEL_MAX, "DT_MDL": 0.05,
     "CONTROL_N": CONTROL_N, "ModelConstants": ModelConstants,
     "FirstOrderFilter": FirstOrderFilter, "LongitudinalMpc": PlannerMpc,
+    "HumanLikeFollowing": HumanLikeFollowing,
     "N": mpc_module["N"], "T_IDXS_MPC": mpc_module["T_IDXS"],
     "LongCtrlState": car.CarControl.Actuators.LongControlState,
     "V_CRUISE_MAX": 145.0, "V_CRUISE_UNSET": 255.0, "Params": TestParams,

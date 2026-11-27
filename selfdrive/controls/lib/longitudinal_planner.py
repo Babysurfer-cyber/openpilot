@@ -22,6 +22,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
 from openpilot.selfdrive.carrot.signal_stop_prepare import PrepareAccel
+from openpilot.selfdrive.controls.lib.human_like_following import HumanLikeFollowing
 
 
 LON_MPC_STEP = 0.2  # first step is 0.2s
@@ -126,6 +127,7 @@ class LongitudinalPlanner:
     self.v_cruise_kph = 0.0
 
     self.params = Params()
+    self._human_like_following = HumanLikeFollowing()
 
   @staticmethod
   def parse_model(model_msg):
@@ -280,6 +282,20 @@ class LongitudinalPlanner:
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality, jerk_factor = carrot.jerk_factor_apply, a_change_cost_starting = carrot.aChangeCostStarting)
     self.mpc.set_accel_limits(accel_limits_turns[0], accel_limits_turns[1])
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
+    human_following_enabled = self.params.get_bool("HumanLikeFollowing")
+    human_following_eligible = (
+      human_following_enabled and self.CP.openpilotLongitudinalControl
+      and sm['carControl'].longActive and self.mpc.mode == 'acc'
+      and not reset_state and not force_slow_decel and not self.output_should_stop
+      and not getattr(carrot, 'lane_change_active', False)
+    )
+    human_prediction = self._human_like_following.update(sm, human_following_eligible)
+    # Keep the disabled MPC call on its original defaults. The stateful matcher
+    # is cleared above on every reset, toggle-off and unsupported control mode.
+    human_following_args = ({
+      'human_like_following_enabled': human_following_eligible,
+      'human_following_prediction': human_prediction,
+    } if human_following_enabled else {})
     self.mpc.update(
       carrot, reset_state, sm['radarState'], v_cruise, x, v, a, j,
       personality=sm['selfdriveState'].personality,
@@ -289,6 +305,7 @@ class LongitudinalPlanner:
         and sm['modelV2'].meta.laneChangeState == log.LaneChangeState.off
         and not getattr(carrot, 'lane_change_active', False)
       ),
+      **human_following_args,
     )
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)

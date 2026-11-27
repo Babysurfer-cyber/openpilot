@@ -1955,6 +1955,22 @@
     },
     {
       "group": "차량간격",
+      "name": "HumanLikeFollowing",
+      "title": "휴먼라이크 앞차 추종(0)",
+      "descr": "0: 끔(기본값), 1: 켬. 전방 앞차와 일치하는 예측 움직임을 활용해 불필요한 제동을 줄이도록 돕습니다. 예측 정보가 없거나 안전하게 활용할 수 없으면 기존 추종 방식을 사용합니다. 코너 레이더 감지는 유지됩니다. 재시작 없이 적용됩니다.",
+      "egroup": "FDIST",
+      "etitle": "Human-Like Following (0)",
+      "edescr": "0: OFF (default), 1: ON. Uses predicted motion matched to the vehicle ahead to help reduce unnecessary braking. Uses standard following when predictions are unavailable or cannot be used safely. Corner radar detection remains active. Applies without restarting.",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1,
+      "cgroup": "跟车距离",
+      "ctitle": "拟人跟车(0)",
+      "cdescr": "0: 关闭(默认)，1: 开启。利用与前车匹配的预测运动，帮助减少不必要的制动。预测信息不可用或无法安全使用时，采用原有跟车方式。保留角雷达检测。无需重启即可生效。"
+    },
+    {
+      "group": "차량간격",
       "name": "TFollowGap1",
       "title": "TF(1): 차량간격시간1x0.01s(110)",
       "descr": "차간거리 1단계 차간 시간거리",
