@@ -1162,6 +1162,7 @@ private:
     int nGoPosDist = 0;
     int nGoPosTime = 0;
     route_progress::Snapshot route_state;
+    bool route_atc_guidance_present = false;
     struct CongestionSegment { int start_m; int length_m; int code; };
     std::vector<CongestionSegment> route_traffic_segments;
     bool route_traffic_valid = false;
@@ -1253,6 +1254,7 @@ protected:
     // Clear on every update, including disconnect, reroute and stale route/status.
     void updateRouteProgress(const SubMaster &sm) {
         route_state = {};
+        route_atc_guidance_present = false;
         route_traffic_valid = false;
         route_traffic_segments.clear();
         if (!sm.alive("carrotNavi") || !sm.valid("carrotNavi")) return;
@@ -1264,6 +1266,10 @@ protected:
             status.getGuidanceActive(), status.getOffRoute(),
             status.getRoutePresent(), route.getMeta().getPresent(),
             route.getTotalDistanceM(), route.getRemainingDistanceM());
+        // The current ATC must belong to the same live CarrotNavi session
+        // as the displayed route, not to an old or unrelated TBT source.
+        route_atc_guidance_present = route_state.visible &&
+                                     nav.getGuidanceCurrent().getMeta().getPresent();
 
         // Never draw guessed congestion from distance or speed. Both route and
         // navigation status must be current; gaps remain neutral gray.
@@ -1318,6 +1324,53 @@ protected:
                 ui_fill_rect(s->vg, {x, y, width, height}, nvgRGBA(65, 70, 75, 255), 8);
                 nvgRestore(s->vg);
             }
+            // White mini-pennant marking the next ATC maneuver on the entire
+            // route. Its top aligns exactly with the original vehicle marker
+            // (y - 25). The solid white pole overlaps the traffic bar.
+            // This is display-only: do not alter ATC timing, speed or braking.
+            const bool has_atc_maneuver =
+                ((xTurnInfo >= 1 && xTurnInfo <= 5) || xTurnInfo == 7 || xTurnInfo == 8) &&
+                !atc_type.isEmpty() &&
+                !atc_type.endsWith(" canceled", Qt::CaseInsensitive);
+            const auto atc = route_progress::atc_marker(
+                route_state, route_atc_guidance_present, has_atc_maneuver, xDistToTurn);
+            if (atc.visible) {
+                const int atc_x = x + static_cast<int>(std::lround(width * atc.fraction));
+                constexpr int flag_top_offset = -25;  // same height as vehicle triangle
+                constexpr int flag_height = 16;
+                constexpr int flag_width = 56;
+                constexpr int flag_notch = 7;
+                const int top = y + flag_top_offset;
+                const int bottom = top + flag_height;
+                // Keep the pennant inside the progress bar near the route end.
+                const bool reverse_flag = atc_x + flag_width > x + width;
+                const int tip = reverse_flag ? atc_x - flag_width : atc_x + flag_width;
+                const int notch = reverse_flag ? tip + flag_notch : tip - flag_notch;
+
+                nvgBeginPath(s->vg);
+                nvgMoveTo(s->vg, atc_x, top);
+                nvgLineTo(s->vg, atc_x, y + height + 2);
+                nvgStrokeColor(s->vg, COLOR_WHITE);
+                nvgStrokeWidth(s->vg, 3);
+                nvgStroke(s->vg);
+
+                nvgBeginPath(s->vg);
+                nvgMoveTo(s->vg, atc_x, top);
+                nvgLineTo(s->vg, tip, top);
+                nvgLineTo(s->vg, notch, top + flag_height / 2);
+                nvgLineTo(s->vg, tip, bottom);
+                nvgLineTo(s->vg, atc_x, bottom);
+                nvgClosePath(s->vg);
+                nvgFillColor(s->vg, COLOR_WHITE);
+                nvgFill(s->vg);
+
+                nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                // ui_draw_text adds 6px internally; compensate for true centering.
+                ui_draw_text(s, atc_x + (tip - atc_x) / 2, top + flag_height / 2 - 6,
+                             "ATC", 13, COLOR_BLACK, BOLD, 0);
+            }
+
+            // The original white inverted triangle remains on top and legible.
             const int marker_x = x + traveled_width;
             nvgBeginPath(s->vg);
             nvgMoveTo(s->vg, marker_x, y - 9);

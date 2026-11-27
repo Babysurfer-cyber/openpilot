@@ -28,5 +28,23 @@ int main() {
   assert(!calculate(true, true, true, true, true, true, 6329, 6330).visible);
   assert(!calculate(true, true, true, false, true, true, 0, 0).visible);
   assert(calculate(true, true, true, false, true, true, 20000, 20000).fraction == 0.0f);
+
+  // Current guidance 1000m ahead is at 8400m of the same 20000m route.
+  auto atc = route_progress::atc_marker(normal, true, true, 1000);
+  assert(atc.visible && std::fabs(atc.fraction - 0.42f) < 0.0001f);
+  // Re-route must always use the new route progress, not cached coordinates.
+  auto rerouted_atc = route_progress::atc_marker(rerouted, true, true, 1000);
+  assert(rerouted_atc.visible && std::fabs(rerouted_atc.fraction - 0.32f) < 0.0001f);
+  // Valid far maneuver at the very end of the route is still in-bounds.
+  auto atc_at_end = route_progress::atc_marker(normal, true, true, normal.remaining_m);
+  assert(atc_at_end.visible && atc_at_end.fraction == 1.0f);
+  assert(!route_progress::atc_marker({}, true, true, 1000).visible);
+  assert(!route_progress::atc_marker(normal, false, true, 1000).visible);
+  assert(!route_progress::atc_marker(normal, true, false, 1000).visible);
+  assert(!route_progress::atc_marker(normal, true, true, 0).visible);
+  assert(!route_progress::atc_marker(normal, true, true, -100).visible);
+  assert(!route_progress::atc_marker(normal, true, true, normal.remaining_m + 1).visible);
+  assert(!route_progress::atc_marker(normal, true, true, 2000000).visible);
+  assert(!route_progress::atc_marker(rounded_start, true, true, 0).visible);
   return 0;
 }
