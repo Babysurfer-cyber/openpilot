@@ -362,10 +362,10 @@ class VCruiseCarrot:
                              and self.carrot_cmd in ("CRUISE", "SPEED"))
     v_cruise_kph = self._update_cruise_buttons(CS, CC, self.v_cruise_kph)
 
-    # Naver route congestion is a low-confidence preview, not an obstacle
-    # sensor. Only mode 5 with engaged cruise may lower the requested setpoint,
-    # after two separate fresh navigation route messages confirm the same jam.
-    v_cruise_kph, jam_reduced = self.route_congestion_cap.update(
+    # Naver traffic is a low-confidence road preview, not an obstacle sensor.
+    # In mode 5, two fresh route messages must confirm slow within 200m (90)
+    # or congestion within 300m (70). Existing lower speeds never rise.
+    v_cruise_kph, traffic_reduced = self.route_congestion_cap.update(
       float(v_cruise_kph), float(CS.vEgo) * CV.MS_TO_KPH, sm,
       engaged=(self.current_driving_mode == 5 and CC.enabled and CS.cruiseState.available
                and CS.gearShifter == GearShifter.drive and CS.canValid
@@ -375,26 +375,26 @@ class VCruiseCarrot:
       manual_speed_change=self._auto_mode_manual_speed_change,
       gas_pressed=CS.gasPressed,
     )
-    if jam_reduced:
+    if traffic_reduced:
       # The navigation-triggered cap is another automatic mode-5 target
       # change. The shared notification below avoids double chimes if a
       # camera/road-limit change happened on the same update.
-      self._add_log("Auto congestion cap: 80 km/h")
+      self._add_log(f"Auto traffic cap: {int(v_cruise_kph)} km/h")
 
     # Notify once for every *actual* automatic mode-5 set-speed change:
-    # road limit/camera, tollgate entry/exit, and upcoming congestion.
+    # road limit/camera, tollgate entry/exit, and upcoming traffic.
     # Existing mode-5 prompts already issue audio10 through CarrotServ.
     # Emit a direct audio10 only when no prompt was sent on this update.
     # Do not chime for a manual speed choice, a disengaged cruise, or a
     # policy which leaves the requested target unchanged.
-    if ((self._auto_mode_automatic_target_change or jam_reduced)
+    if ((self._auto_mode_automatic_target_change or traffic_reduced)
         and not self._auto_mode_notification_sent
         and not self._auto_mode_manual_speed_change
         and self.current_driving_mode == 5 and CC.enabled and CS.cruiseState.available
         and CS.gearShifter == GearShifter.drive and CS.canValid
         and not CS.brakePressed and not CS.regenBraking and not self._cruise_cancel_state
         and self._activate_cruise >= 0):
-      if not jam_reduced:
+      if not traffic_reduced:
         # The HUD uses this event to blink AUTO even without a text prompt.
         self._add_log(f"Auto target change: {self.v_cruise_kph:g} -> {float(v_cruise_kph):g} km/h")
       self._auto_mode_chime()
