@@ -14,7 +14,7 @@ from tools.signal_analysis.replay_signal_assist import planner_class, REPO
 from tools.signal_analysis.test_signal_assist_planner import inputs
 
 
-@pytest.mark.parametrize('value,expected', [(0,0),(1,1),(2,2),(-1,0),(3,0),(None,0),('bad',0)])
+@pytest.mark.parametrize('value,expected', [(0,0),(1,1),(2,2),(3,3),(-1,0),(4,0),(None,0),('bad',0)])
 def test_mode_values_fail_closed(value,expected):
   assert policy.read_mode(NS(get_int=lambda k:value))==expected
 
@@ -25,7 +25,7 @@ def test_missing_native_key_is_off_until_rebuild():
   assert policy.read_mode(OldParams())==0
 
 
-@pytest.mark.parametrize('mode', [0,1,2])
+@pytest.mark.parametrize('mode', [0,1,2,3])
 def test_mode_owns_all_production_flags(monkeypatch,mode):
   from openpilot.selfdrive.modeld.signal_color_shadow import requested as observer
   from openpilot.selfdrive.modeld.signal_tracking_shadow import tracking_requested
@@ -61,7 +61,7 @@ def test_off_on_ignores_pre_enable_observation_and_clears_red(monkeypatch,tmp_pa
   assert not dec.hold and not dec.warn
 
 
-@pytest.mark.parametrize('mode', [0,1,2])
+@pytest.mark.parametrize('mode', [0,1,2,3])
 def test_mode_one_notifies_without_moving_deceleration(monkeypatch,mode):
   monkeypatch.setattr(policy,'signal_mode',lambda:0)  # unrelated real transports OFF
   cls,_=planner_class((REPO/'selfdrive/carrot/carrot_functions.py').read_text(encoding='utf-8'))
@@ -69,12 +69,12 @@ def test_mode_one_notifies_without_moving_deceleration(monkeypatch,mode):
   for i in range(25):
     t=i*.05
     p.update(sm,80.,'acc',prepare_observation=observation(t),prepare_context=dict(now=t,enabled=mode>0,
-      valid=True,drive=True,turning=False,geometry=lambda b:(30.,70.),actuate=mode==2))
+      valid=True,drive=True,turning=False,geometry=lambda b:(30.,70.),actuate=mode in (2,3)))
     sounds+=p.events.events
   assert p.prepare_decision.active==(mode>0)
   assert sounds.count('trafficSignChanged')==int(mode>0)
-  assert p.prepare_control_active==(mode==2)
-  assert (p.xState.name=='e2eStopPrepare')==(mode==2)
+  assert p.prepare_control_active==(mode in (2,3))
+  assert (p.xState.name=='e2eStopPrepare')==(mode in (2,3))
   source=REPO/'selfdrive/controls/lib/longitudinal_planner.py'
   tree=ast.parse(source.read_text(encoding='utf-8'));klass=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='LongitudinalPlanner')
   method=next(n for n in klass.body if isinstance(n,ast.FunctionDef) and n.name=='apply_signal_stop_prepare')
@@ -86,8 +86,8 @@ def test_mode_one_notifies_without_moving_deceleration(monkeypatch,mode):
   sm['carState'].aEgo=0.
   sm['radarState'].leadTwo=NS(status=False)
   ns['apply_signal_stop_prepare'](target,sm,p,False,now=1.3)
-  assert (target.output_a_target<0)==(mode==2)
-  if mode!=2:assert target.output_a_target==1. and target.coasting_target==70.
+  assert (target.output_a_target<0)==(mode in (2,3))
+  if mode not in (2,3):assert target.output_a_target==1. and target.coasting_target==70.
   else:
     for next_mode in (1,0):
       t=1.4+(1-next_mode)*.1
@@ -98,7 +98,8 @@ def test_mode_one_notifies_without_moving_deceleration(monkeypatch,mode):
       assert target.output_a_target==1. and p.xState.name!='e2eStopPrepare'
 
 
-def test_prepare_mode_change_requires_new_observation(monkeypatch):
+@pytest.mark.parametrize('next_mode', [2,3])
+def test_prepare_mode_change_requires_new_observation(monkeypatch,next_mode):
   from openpilot.selfdrive.carrot.signal_assist_runtime import SignalAssistRuntime
   from openpilot.selfdrive.carrot.signal_stop_prepare_runtime import SignalPrepareRuntime
   state=[1];monkeypatch.setattr(policy,'signal_mode',lambda:state[0])
@@ -106,7 +107,7 @@ def test_prepare_mode_change_requires_new_observation(monkeypatch):
   # Isolate transport/mode boundary from camera validity, which has real-message tests.
   monkeypatch.setattr(SignalAssistRuntime,'read',lambda *a:(observation(10.),dict(now=10.,enabled=True,valid=True,drive=True)))
   obs,ctx=runtime.read({});assert obs is not None and not ctx['actuate']
-  runtime.prepare.active=True;state[0]=2
+  runtime.prepare.active=True;state[0]=next_mode
   monkeypatch.setattr(SignalAssistRuntime,'read',lambda *a:(observation(10.),dict(now=10.1,enabled=True,valid=True,drive=True)))
   obs,ctx=runtime.read({})
   assert obs is None and ctx['actuate'] and not runtime.prepare.active

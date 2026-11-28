@@ -64,7 +64,8 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 	crossroad @12 :Crossroad;
 	route @13 :Route;
 	navigationStatus @14 :NavigationStatus;
-	# HUD-only telemetry, never used by navigation / vehicle controls.
+	# Unverified signal observations: display-only in modes 0..2; mode 3 may
+	# validate direct-source provenance for bounded assistance, never green authority.
 	signalHud @15 :SignalHud;
 
 	struct ItemMeta {
@@ -174,7 +175,7 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 	}
 
 
-	# Read-only, unverified Naver signal indicators from CarrotNM.
+	# Read-only, unverified Naver observations; no lane or departure permission.
 	struct SignalHud {
 		meta @0 :ItemMeta;
 		directionMatchVerified @1 :Bool;
@@ -185,7 +186,7 @@ struct CarrotNaviState @0xaedffd8f31e7b55d {
 			state @1 :Text;
 			remainingValid @2 :Bool;
 			remainingSec @3 :Int16;
-			groupIndex @4 :Int16; # junction grouping, used only to reject ambiguity
+			groupIndex @4 :Int16; # junction grouping, not verified lane assignment
 			signalIndex @5 :Int16;
 		}
 	}

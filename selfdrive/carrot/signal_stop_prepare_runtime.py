@@ -45,7 +45,7 @@ class SignalPrepareRuntime(SignalAssistRuntime):
     if mode != self.mode:
       self.mode, self.mode_since = mode, context['now']
       self.prepare.reset('mode_change')
-    context['actuate'] = mode == 2
+    context['actuate'] = mode in (2, 3)
     if obs is not None and obs.get('timestamp', -math.inf) < self.mode_since:
       obs = None
     context.update(geometry=lambda box: None, alignment=None, night_geometry=None, turning=True)
@@ -115,7 +115,7 @@ class SignalPrepareRuntime(SignalAssistRuntime):
     if not self.enabled and self.last_prepare_log is None:
       return
     value = asdict(decision)
-    value.update(mode=self.mode, control_active=decision.active and self.mode == 2)
+    value.update(mode=self.mode, control_active=decision.active and self.mode in (2, 3))
     if value != self.last_prepare_log:
       from openpilot.common.swaglog import cloudlog
       cloudlog.event('signalStopPrepare', **value)

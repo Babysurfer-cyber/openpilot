@@ -73,6 +73,13 @@ class CarrotPlanner:
     self.signal_green_active = False
     self.signal_lead_present = False
     self._signal_stop_owned = False
+    self._navi_signal_assist = None
+    self._navi_signal_runtime = None
+    self.navi_signal_decision = None
+    self._navi_stop_owned = False
+    self._navi_prepare_active = False
+    self._navi_prepare_alert_time = -float('inf')
+    self._navi_prepare_context = None
     self.params = Params()
     self.params_count = 0
     self.frame = 0
@@ -503,12 +510,76 @@ class CarrotPlanner:
     else:
       self.add_event(event_name)
 
+  @staticmethod
+  def _navi_motion_turning(sm, now):
+    """Independent motion gate; a missing camera colour observation is harmless."""
+    try:
+      if not (sm.seen['livePose'] and sm.valid['livePose'] and sm.alive['livePose']
+              and 0 <= now-sm.recv_time['livePose'] <= .2):
+        return True
+      pose = sm['livePose']
+      angular = pose.angularVelocityDevice
+      values = np.asarray([angular.x, angular.y, angular.z])
+      std = np.asarray([angular.xStd, angular.yStd, angular.zStd])
+      healthy = (pose.inputsOK and pose.posenetOK and pose.sensorsOK and angular.valid
+                 and np.isfinite(values).all() and np.isfinite(std).all() and (std >= 0).all())
+      # Norm is independent of mounting/calibration axes. It keeps the turn
+      # exclusion without requiring the colour detector's camera geometry.
+      return not (healthy and np.linalg.norm(values) <= np.deg2rad(1.5)
+                  and np.linalg.norm(std) <= np.deg2rad(2.0))
+    except (AttributeError, KeyError, TypeError, ValueError):
+      return True
+
+  def _update_navi_signal(self, sm, assist_mode, allowed, suspended, lead_in_stop_range,
+                          navi_observation, navi_context):
+    if self._navi_signal_assist is None:
+      if assist_mode != 3:
+        self.navi_signal_decision = None
+        self._navi_prepare_context = None
+        return None
+      from openpilot.selfdrive.carrot.navi_signal_assist import NaviSignalAssist, NaviSignalRuntime
+      self._navi_signal_assist = NaviSignalAssist()
+      self._navi_signal_runtime = NaviSignalRuntime()
+    cs = sm['carState']
+    if navi_context is None:
+      navi_observation, source_valid, received_s, now = self._navi_signal_runtime.read(assist_mode)
+      try:
+        services = ('carState', 'modelV2', 'radarState', 'selfdriveState', 'carControl')
+        vehicle_valid = all(sm.seen[s] and sm.valid[s] and sm.alive[s]
+                            and 0 <= now-sm.recv_time[s] <= .25 for s in services)
+        vehicle_valid = vehicle_valid and cs.canValid
+        enabled = sm['selfdriveState'].enabled and sm['carControl'].longActive
+      except (AttributeError, KeyError, TypeError, ValueError):
+        vehicle_valid = enabled = False
+      navi_context = dict(now=now, valid=source_valid and vehicle_valid, received_s=received_s,
+                          enabled=enabled, drive=str(cs.gearShifter) == 'drive',
+                          turning=self._navi_motion_turning(sm, now))
+    context = navi_context
+    self._navi_prepare_context = context
+    full_left = getattr(cs, 'blinkerLever', 0) == 2 and cs.leftBlinker and not cs.rightBlinker
+    direction = 'LEFT' if full_left else 'STRAIGHT'
+    # A one-touch lane-change input does not select the protected-left signal.
+    turning = bool((cs.leftBlinker and cs.rightBlinker)
+                   or (getattr(cs, 'blinkerLever', 0) == 2 and cs.rightBlinker)
+                   or (self.atcType in ('turn left', 'turn right') and not full_left))
+    self.navi_signal_decision = self._navi_signal_assist.update(
+      context['now'], navi_observation, mode=assist_mode,
+      valid=context['valid'], received_s=context['received_s'],
+      enabled=context['enabled'] and allowed and not suspended, drive=context['drive'],
+      speed=cs.vEgo, gas=cs.gasPressed, brake=cs.brakePressed, turning=turning,
+      direction=direction,
+      departure=not lead_in_stop_range and (self.trafficState == TrafficState.green
+        or sm['radarState'].leadOne.status or self.xState not in (XState.e2eStop, XState.e2eStopped)))
+    return self.navi_signal_decision
+
   def update(self, sm, v_cruise_kph, mode, *, signal_observation=None, signal_context=None,
-             start_observation=None, start_context=None, prepare_observation=None, prepare_context=None):
+             start_observation=None, start_context=None, prepare_observation=None, prepare_context=None,
+             navi_observation=None, navi_context=None):
     from openpilot.selfdrive.carrot.signal_mode import signal_mode
     from openpilot.selfdrive.carrot.signal_road_policy import signal_detection_suspended
     from openpilot.selfdrive.carrot.signal_assist import departed_signal_stop
-    self._signal_feature_active = self._signal_injected or signal_mode() > 0
+    assist_mode = signal_mode()
+    self._signal_feature_active = self._signal_injected or assist_mode > 0
     suspended = self._signal_feature_active and signal_detection_suspended(sm)
     if suspended != self.signal_detection_suspended:
       self.vFilter = MyMovingAverage(10)
@@ -700,7 +771,10 @@ class CarrotPlanner:
     # Keep the branch's existing driving-mode and steering restrictions.
     traffic_control_allowed = (self.myDrivingMode != DrivingMode.High and self.trafficLightDetectMode != 0
                                and abs(carstate.steeringAngleDeg) <= 20)
+    navi = self._update_navi_signal(sm, assist_mode, traffic_control_allowed, suspended,
+                                    lead_in_stop_range, navi_observation, navi_context)
     start_hold = False
+    camera_start_hold = False
     self.signal_observation_color = 0
     self.signal_green_active = False
     if self.start_guard is not None:
@@ -717,6 +791,17 @@ class CarrotPlanner:
         drive=context['drive'], gas=carstate.gasPressed, speed=v_ego,
         departure=self.trafficState == TrafficState.green or lead_detected or
                   self.xState not in (XState.e2eStop, XState.e2eStopped))
+      camera_start_hold = self.start_decision.hold
+      if navi is not None:
+        from dataclasses import replace
+        if navi.available:
+          self.signal_observation_color = {'red': 1, 'yellow': 3, 'green': 2}.get(navi.color, 0)
+          if navi.color != 'green':
+            self.start_decision = replace(self.start_decision, green_confirmed=False, released=False)
+        if navi.hold:
+          self.start_decision = replace(self.start_decision, hold=True,
+                                        warn=self.start_decision.warn or navi.warn,
+                                        green_confirmed=False, released=False, reason='navigation_stop')
       if lead_in_stop_range and self.start_decision.hold:
         from dataclasses import replace
         self.start_guard.warned = False  # no refusal was emitted while following
@@ -767,6 +852,22 @@ class CarrotPlanner:
         self.trafficState = TrafficState.red
       if self._signal_runtime is not None:
         self._signal_runtime.record(self.signal_decision, v_ego, stop_model_x_rl)
+
+    navi_hold = navi is not None and navi.hold and not lead_in_stop_range
+    if (navi_hold and not camera_start_hold and not signal_hold
+        and self.xState not in (XState.e2eStop, XState.e2eStopped)):
+      self._navi_stop_owned = True
+    if self._navi_stop_owned and not navi_hold:
+      self._navi_stop_owned = False
+      # Only retire the stop injected by this source. Navigation green never
+      # overrides an existing model/camera red, soft hold, or driver's stop.
+      if (not (start_hold or signal_hold) and self.trafficState != TrafficState.red
+          and self.xState == XState.e2eStopped and self.soft_hold_active == 0
+          and self.user_stop_distance < 0 and not self.carrot_stay_stop):
+        self.xState = XState.e2eCruise
+        self.actual_stop_distance = 0.0
+        self.stopping_count = 0
+        self._signal_stop_owned = False
 
     guards_disabled = (self.start_decision is None or self.start_decision.reason == 'disabled') and (
       self.signal_decision is None or self.signal_decision.reason == 'disabled')
@@ -919,7 +1020,8 @@ class CarrotPlanner:
       context = prepare_context or {'now': time.monotonic(), 'enabled': False, 'valid': False, 'drive': False}
       self.prepare_decision = self.stop_prepare.update(
         context['now'], prepare_observation,
-        enabled=context['enabled'] and not suspended and traffic_control_allowed,
+        enabled=context['enabled'] and not suspended and traffic_control_allowed
+                and not (navi is not None and navi.available),
         valid=context['valid'], drive=context['drive'],
         speed=v_ego, gas=carstate.gasPressed, brake=carstate.brakePressed,
         lead=prepare_lead_blocked(radarstate),
@@ -929,6 +1031,34 @@ class CarrotPlanner:
         geometry=context.get('geometry', lambda box: None), alignment=context.get('alignment'),
         night_geometry=context.get('night_geometry'))
       self.prepare_control_active = self.prepare_decision.active and context.get('actuate', True)
+      if navi is not None and navi.available:
+        from openpilot.selfdrive.carrot.signal_stop_prepare import PrepareDecision
+        nav_context = self._navi_prepare_context
+        # This adds only mode 2's bounded preparation cap. A navigation colour
+        # is not a measured stop line and must not create a full-stop target.
+        active = (navi.confirmed and navi.color in ('red', 'yellow')
+                  and nav_context['enabled'] and nav_context['valid'] and nav_context['drive']
+                  and not suspended and traffic_control_allowed
+                  and not (carstate.gasPressed or carstate.brakePressed)
+                  and 5/3.6 < v_ego < 82/3.6
+                  and not prepare_lead_blocked(radarstate)
+                  and not (nav_context.get('turning', True) or carstate.leftBlinker or carstate.rightBlinker)
+                  and self.xState not in (XState.e2eStop, XState.e2eStopped, XState.e2ePrepare)
+                  and self.traffic_starting_count == 0 and self.user_stop_distance < 0
+                  and nav_context['now'] >= self.stop_prepare.cooldown
+                  and mode == 'acc' and self.soft_hold_active == 0)
+        entered = active and not self._navi_prepare_active and nav_context['now']-self._navi_prepare_alert_time >= 10.
+        if entered:
+          self._navi_prepare_alert_time = nav_context['now']
+        self.prepare_decision = PrepareDecision(active=active, entered=entered,
+          reason='navigation_prepare' if active else 'navigation_reference',
+          priority='navigation_left' if (getattr(carstate, 'blinkerLever', 0) == 2
+            and carstate.leftBlinker and not carstate.rightBlinker) else 'navigation_straight',
+          evidence_kind='navigation')
+        self.prepare_control_active = active and assist_mode == 3
+        self._navi_prepare_active = active
+      else:
+        self._navi_prepare_active = False
       if self.prepare_control_active:
         self.xState = XState.e2eStopPrepare
       if self.prepare_decision.entered:

@@ -12,7 +12,7 @@ _next_read = 0.
 def read_mode(params):
   try:
     value = params.get_int(PARAM)
-    return value if value in (0, 1, 2) else 0
+    return value if value in (0, 1, 2, 3) else 0
   except Exception:
     # Includes native UnknownKeyName before Params has been rebuilt after pull.
     # A missing/unreadable setting must never enable control.

@@ -66,7 +66,7 @@ ModelRenderer* _model = NULL;
 extern  int get_path_length_idx(const cereal::XYZTData::Reader& line, const float path_height);
 int g_fps= 0;
 
-bool ui_signal_display_enabled() {
+static int ui_signal_assist_mode() {
   static Params params;
   static double next_read = 0.;
   static int mode = 0;
@@ -75,7 +75,12 @@ bool ui_signal_display_enabled() {
     mode = params.getInt("SignalAssistMode");
     next_read = now + .5;
   }
-  return mode == 1 || mode == 2;
+  return mode;
+}
+
+bool ui_signal_display_enabled() {
+  const int mode = ui_signal_assist_mode();
+  return mode >= 1 && mode <= 3;
 }
 
 const signal_display::State &ui_signal_display_state() {
@@ -128,7 +133,8 @@ static void ui_draw_text_vg(NVGcontext* vg, float x, float y, const char* string
     nvgText(vg, x, y, string, NULL);
 }
 static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
-  if (!ui_signal_display_enabled()) return;
+  const int assist_mode = ui_signal_assist_mode();
+  if (assist_mode < 1 || assist_mode > 3) return;
   const auto &display = ui_signal_display_state();
   const double now = double(nanos_monotonic()) / 1e9;
   const SubMaster &sm = *s->sm;
@@ -145,8 +151,12 @@ static void ui_draw_signal_assist(UIState *s, float cx, float cy) {
   nvgCircle(s->vg, cx, cy, 26);
   nvgFillColor(s->vg, nvgRGBA(20, 25, 30, 200));
   nvgFill(s->vg);
-  NVGcolor ring = palette[paused ? 0 : int(display.color(now))];
-  if (display.held(now) && !paused) {
+  // Mode 3's planner observation follows the selected movement and current
+  // source priority; camera display memory must not recolour or dim it.
+  const bool use_plan_color = assist_mode == 3 && plan_valid;
+  const int observed = use_plan_color ? plan.getSignalObservationColor() : int(display.color(now));
+  NVGcolor ring = palette[paused || observed < 0 || observed > 3 ? 0 : observed];
+  if (!use_plan_color && display.held(now) && !paused) {
     ring.r *= .55f; ring.g *= .55f; ring.b *= .55f;
   }
   nvgStrokeColor(s->vg, ring);
