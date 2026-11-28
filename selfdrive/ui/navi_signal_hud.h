@@ -7,6 +7,7 @@
 // Informational overlay only: never consumed by controls, cruise, or ATC.
 namespace navi_signal_hud {
 constexpr uint64_t FRESH_NS = 2500000000ULL;
+constexpr int MIN_COUNTDOWN_SECONDS = 6;
 enum class Shade { unknown, red, yellow, green };
 
 struct Lamp {
@@ -73,6 +74,16 @@ struct FourLights {
   Shade countdown_shade = Shade::unknown;
 };
 
+inline int countdown_priority(const Lamp &lamp) {
+  // Match the SDK's steady-state icon eligibility, including directions which
+  // have no dedicated position in this compact strip. Blinks have priority 0.
+  if (lamp.direction == "U_TURN" && lamp.state != "GREEN") return 0;
+  if (lamp.state == "GREEN") return 3;
+  if (lamp.state == "YELLOW") return 2;
+  if (lamp.state == "RED") return 1;
+  return 0;
+}
+
 inline FourLights four_lights(bool connected, bool present, uint64_t now, uint64_t received,
                              const std::vector<Lamp> &lamps) {
   FourLights result;
@@ -81,12 +92,18 @@ inline FourLights four_lights(bool connected, bool present, uint64_t now, uint64
   bool seen_left = false;
   bool seen_straight = false;
   bool recognized = false;
-  bool active_seen = false;
-  bool common_seconds = true;
-  bool all_seconds_valid = true;
+  const Lamp *countdown = nullptr;
+  int selected_priority = 0;
 
   for (const auto &lamp : lamps) {
     if (lamp.group_index != group) return {};
+    // Choose before checking its countdown, so a short/missing high-priority
+    // value never falls back to a lower-priority signal's longer countdown.
+    const int priority = countdown_priority(lamp);
+    if (priority > selected_priority) {
+      countdown = &lamp;
+      selected_priority = priority;
+    }
     // Data for a different approach cannot be projected onto a straight/left lamp.
     if (lamp.direction != "STRAIGHT" && lamp.direction != "LEFT") continue;
     if (lamp.direction == "STRAIGHT") {
@@ -112,19 +129,13 @@ inline FourLights four_lights(bool connected, bool present, uint64_t now, uint64
       result.straight = true;
       result.straight_blink = blink;
     }
-
-    if (!active_seen) {
-      result.remaining_seconds = lamp.remaining_seconds;
-      result.countdown_shade = c;
-    } else {
-      if (result.remaining_seconds != lamp.remaining_seconds) common_seconds = false;
-      if (result.countdown_shade != c) result.countdown_shade = Shade::unknown;
-    }
-    active_seen = true;
-    if (!lamp.remaining_valid) all_seconds_valid = false;
   }
   result.valid = recognized;
-  result.remaining_valid = recognized && active_seen && all_seconds_valid && common_seconds;
+  if (recognized && countdown != nullptr) {
+    result.remaining_seconds = countdown->remaining_seconds;
+    result.countdown_shade = shade(countdown->state);
+    result.remaining_valid = countdown->remaining_valid && countdown->remaining_seconds >= MIN_COUNTDOWN_SECONDS;
+  }
   return result;
 }
 }  // namespace navi_signal_hud
